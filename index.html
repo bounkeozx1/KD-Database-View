@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KD Database</title>
+<link rel="stylesheet" href="css/main.css">
+<link rel="stylesheet" href="css/sidebar.css">
+<style>
+  /* Row highlight flash */
+  @keyframes rowFlash {
+    0%   { background: #d4eaff; }
+    100% { background: transparent; }
+  }
+  tr.row-highlight td { animation: rowFlash 1.8s ease-out forwards; }
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ─────────────────────────────────────────── -->
+<header class="app-header">
+  <button class="mobile-menu-btn" id="mobile-menu-btn" title="Menu">&#9776;</button>
+  <span class="header-logo" data-i18n="app_title">KD Database</span>
+  <div class="header-sep"></div>
+  <span class="header-sub" data-i18n="app_sub">Worker Management System</span>
+  <div class="header-spacer"></div>
+  <!-- Language switcher -->
+  <div class="lang-switcher">
+    <button class="lang-btn" data-lang="en">EN</button>
+    <button class="lang-btn" data-lang="th">ไทย</button>
+    <button class="lang-btn" data-lang="lo">ລາວ</button>
+    <button class="lang-btn" data-lang="ko">한국어</button>
+  </div>
+</header>
+
+<!-- ── BODY ───────────────────────────────────────────── -->
+<div class="app-body">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar">
+      <span class="toggle-icon">&#9664;</span>
+    </div>
+    <div class="sidebar-resizer" id="sidebar-resizer"></div>
+
+    <div class="sidebar-header">
+      <span class="sidebar-title" data-i18n="all_groups">All Groups</span>
+      <button class="sidebar-new-btn" onclick="openGroupForm(null)" data-i18n="new_group">+ New Group</button>
+    </div>
+
+    <div class="sidebar-search">
+      <input type="text" id="sidebar-search-input" data-i18n-ph="sidebar_search" placeholder="Search groups...">
+    </div>
+
+    <div class="sidebar-tree" id="sidebar-tree"></div>
+
+    <div class="sidebar-footer" id="sidebar-footer"></div>
+  </aside>
+
+  <!-- Mobile backdrop -->
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+  <!-- MAIN CONTENT -->
+  <main class="main-content">
+
+    <!-- Stats -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="num" id="stat-total">0</div>
+        <div class="lbl" data-i18n="total_workers">Total Workers</div>
+      </div>
+      <div class="stat-card c2">
+        <div class="num" id="stat-sups">0</div>
+        <div class="lbl" data-i18n="supervisors">Supervisors</div>
+      </div>
+      <div class="stat-card c3">
+        <div class="num" id="stat-emps">0</div>
+        <div class="lbl" data-i18n="employer_types">Employer Types</div>
+      </div>
+      <div class="stat-card c4">
+        <div class="num" id="stat-expiring">0</div>
+        <div class="lbl" data-i18n="passport_alert">Passport Alert</div>
+      </div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="search-wrap">
+        <span class="search-icon">&#128269;</span>
+        <input type="text" id="search" data-i18n-ph="search_placeholder"
+               placeholder="Search name, ID, passport, village..."
+               oninput="applyFilters()">
+      </div>
+      <select id="f-employer" onchange="applyFilters()">
+        <option value="" data-i18n="all_employers">All Employers</option>
+      </select>
+      <select id="f-supervisor" onchange="applyFilters()">
+        <option value="" data-i18n="all_supervisors">All Supervisors</option>
+      </select>
+      <select id="f-blood" onchange="applyFilters()">
+        <option value="" data-i18n="all_blood">All Blood Types</option>
+        <option value="A">A</option>
+        <option value="B">B</option>
+        <option value="O">O</option>
+        <option value="AB">AB</option>
+        <option value="B+">B+</option>
+        <option value="B-">B-</option>
+      </select>
+      <button class="btn btn-add" onclick="openWorkerForm(null)">
+        <span data-i18n="add_worker">+ Add Worker</span>
+      </button>
+      <button class="btn btn-export" onclick="exportCSV()">
+        <span data-i18n="export_csv">&#8659; Export CSV</span>
+      </button>
+    </div>
+
+    <div class="count-bar" id="count-bar"></div>
+
+    <!-- Table -->
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th data-col="worker_id"      onclick="sortBy('worker_id')"><span data-i18n="col_id">Worker ID</span><span class="sort-arrow"></span></th>
+            <th data-col="en_name"        onclick="sortBy('en_name')"><span data-i18n="col_name_en">Name (EN)</span><span class="sort-arrow"></span></th>
+            <th data-col="lo_name"        onclick="sortBy('lo_name')"><span data-i18n="col_name_lo">Name (Lao)</span><span class="sort-arrow"></span></th>
+            <th data-col="employer_code"  onclick="sortBy('employer_code')"><span data-i18n="col_employer">Employer</span><span class="sort-arrow"></span></th>
+            <th data-col="group_supervisor" onclick="sortBy('group_supervisor')"><span data-i18n="col_supervisor">Supervisor</span><span class="sort-arrow"></span></th>
+            <th data-col="dob"            onclick="sortBy('dob')"><span data-i18n="col_dob">DOB</span><span class="sort-arrow"></span></th>
+            <th data-col="age"            onclick="sortBy('age')"><span data-i18n="col_age">Age</span><span class="sort-arrow"></span></th>
+            <th data-col="blood"          onclick="sortBy('blood')"><span data-i18n="col_blood">Blood</span><span class="sort-arrow"></span></th>
+            <th data-col="passport_no"    onclick="sortBy('passport_no')"><span data-i18n="col_passport">Passport No.</span><span class="sort-arrow"></span></th>
+            <th data-col="passport_expiry" onclick="sortBy('passport_expiry')"><span data-i18n="col_expiry">Expiry</span><span class="sort-arrow"></span></th>
+            <th data-col="size"           onclick="sortBy('size')"><span data-i18n="col_size">Size</span><span class="sort-arrow"></span></th>
+            <th class="no-sort"><span data-i18n="col_actions">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody id="tbl-body"></tbody>
+      </table>
+      <div class="no-data" id="no-data" style="display:none">
+        <div class="icon">&#128194;</div>
+        <p class="no-data-title" data-i18n="no_data_title">No workers in this group</p>
+        <p class="no-data-msg" data-i18n="no_data_msg">Click "+ Add Worker" to get started.</p>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     MODALS
+     ══════════════════════════════════════════════════════ -->
+
+<!-- VIEW CARD -->
+<div class="overlay" id="view-overlay">
+  <div class="view-modal">
+    <button class="vm-close" onclick="closeOverlay('view-overlay')">&#x2715;</button>
+    <div id="vm-content"></div>
+  </div>
+</div>
+
+<!-- WORKER FORM -->
+<div class="overlay" id="form-overlay">
+  <div class="form-modal" onclick="event.stopPropagation()">
+    <div class="form-header">
+      <h2 id="fm-title" data-i18n="fm_add_worker">Add Worker</h2>
+      <button class="fm-close" onclick="closeOverlay('form-overlay')">&#x2715;</button>
+    </div>
+    <div class="form-body">
+      <input type="hidden" id="f-edit-uid">
+
+      <div class="form-section">
+        <div class="form-sec-title" data-i18n="fm_sec_identity">Worker Identity</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label><span data-i18n="fm_worker_id">Worker ID</span></label>
+            <input id="f-worker-id" placeholder="e.g. VK/DY2026-001">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_employer_code">Employer Code</span></label>
+            <select id="f-employer-code">
+              <option value="">-- Select --</option>
+              <option>VK</option><option>TK</option><option>VV</option>
+              <option>HSF</option><option>NXT</option><option>XTN</option><option>PH</option>
+            </select>
+          </div>
+          <div class="form-group full">
+            <label><span data-i18n="fm_supervisor">Supervisor (Korean name)</span></label>
+            <input id="f-supervisor" placeholder="e.g. 조재희">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-sec-title" data-i18n="fm_sec_personal">Personal Information</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label><span data-i18n="fm_name_en">Name (EN)</span> <span class="req">*</span></label>
+            <input id="f-en-name" placeholder="FIRSTNAME LASTNAME">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_name_lo">Name (Lao)</span></label>
+            <input id="f-lo-name" placeholder="ທ້າວ / ນາງ ...">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_dob">Date of Birth</span> <span class="req">*</span></label>
+            <div class="date-picker" id="dp-dob">
+              <input type="number" class="dp-d" placeholder="DD" min="1" max="31">
+              <span class="dp-sep">/</span>
+              <input type="number" class="dp-m" placeholder="MM" min="1" max="12">
+              <span class="dp-sep">/</span>
+              <input type="number" class="dp-y" placeholder="YYYY" min="1900" max="2099">
+            </div>
+            <input type="hidden" id="f-dob">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_village">Village</span></label>
+            <input id="f-village" placeholder="Village name">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_blood">Blood Type</span></label>
+            <select id="f-blood">
+              <option value="">-- Select --</option>
+              <option>A</option><option>B</option><option>O</option>
+              <option>AB</option><option>B+</option><option>B-</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_hand">Left or Right</span></label>
+            <select id="f-hand">
+              <option value="">-- Select --</option>
+              <option value="R" data-i18n="fm_hand_r">Right</option>
+              <option value="L" data-i18n="fm_hand_l">Left</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_weight">Weight (Kg)</span></label>
+            <input id="f-weight" placeholder="e.g. 60" type="number">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_height">Height (Cm)</span></label>
+            <input id="f-height" placeholder="e.g. 165" type="number">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_size">Shirt Size</span></label>
+            <select id="f-size">
+              <option value="">-- Select --</option>
+              <option>S</option><option>M</option><option>L</option>
+              <option>XL</option><option>XXL</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_couple">Couple</span></label>
+            <select id="f-couple">
+              <option value="">-- Select --</option>
+              <option value="yes" data-i18n="fm_couple_yes">Yes</option>
+              <option value="no"  data-i18n="fm_couple_no">No</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_tel">Tel</span></label>
+            <input id="f-tel" placeholder="020 XXXX-XXXX">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_emg_tel">Emergency Tel</span></label>
+            <input id="f-emg-tel" placeholder="020 XXXX-XXXX">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-sec-title" data-i18n="fm_sec_passport">Passport Information</div>
+        <div class="form-grid col3">
+          <div class="form-group">
+            <label><span data-i18n="fm_passport_no">Passport No.</span> <span class="req">*</span></label>
+            <input id="f-passport-no" placeholder="P1234567">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_issue">Issue Date</span></label>
+            <div class="date-picker" id="dp-issue">
+              <input type="number" class="dp-d" placeholder="DD" min="1" max="31">
+              <span class="dp-sep">/</span>
+              <input type="number" class="dp-m" placeholder="MM" min="1" max="12">
+              <span class="dp-sep">/</span>
+              <input type="number" class="dp-y" placeholder="YYYY" min="1900" max="2099">
+            </div>
+            <input type="hidden" id="f-issue">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_expiry">Expiry Date</span></label>
+            <div class="date-picker" id="dp-expiry">
+              <input type="number" class="dp-d" placeholder="DD" min="1" max="31">
+              <span class="dp-sep">/</span>
+              <input type="number" class="dp-m" placeholder="MM" min="1" max="12">
+              <span class="dp-sep">/</span>
+              <input type="number" class="dp-y" placeholder="YYYY" min="1900" max="2099">
+            </div>
+            <input type="hidden" id="f-expiry">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="form-footer">
+      <button class="btn btn-ghost" onclick="closeOverlay('form-overlay')">
+        <span data-i18n="fm_cancel">Cancel</span>
+      </button>
+      <button class="btn btn-primary" onclick="saveWorker()">
+        <span data-i18n="fm_save">Save Worker</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- GROUP FORM -->
+<div class="overlay" id="group-overlay">
+  <div class="group-modal" onclick="event.stopPropagation()">
+    <div class="gm-header">
+      <span id="gm-title" data-i18n="gm_new_group">New Group</span>
+      <button class="fm-close" onclick="closeOverlay('group-overlay')">&#x2715;</button>
+    </div>
+    <div class="gm-body">
+      <div class="form-group">
+        <label><span data-i18n="gm_group_name">Group Name</span> <span class="req">*</span></label>
+        <input id="gf-name" placeholder="e.g. DAMYANG 2026 – Group 2">
+      </div>
+      <div class="form-group">
+        <label><span data-i18n="gm_departure">Departure Date</span></label>
+        <input id="gf-date" type="text" placeholder="e.g. 26/03/2026 or March 2026">
+      </div>
+      <div class="form-group">
+        <label><span data-i18n="gm_route">Route</span></label>
+        <input id="gf-route" placeholder="e.g. VTE → ICN">
+      </div>
+    </div>
+    <div class="gm-footer">
+      <button class="btn btn-ghost" onclick="closeOverlay('group-overlay')">
+        <span data-i18n="fm_cancel">Cancel</span>
+      </button>
+      <button class="btn btn-primary" id="gm-btn" onclick="saveGroup()">
+        <span data-i18n="gm_create">Create Group</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRM -->
+<div class="overlay" id="confirm-overlay">
+  <div class="confirm-modal" onclick="event.stopPropagation()">
+    <div class="cm-body">
+      <div class="cm-title" id="cm-title">Confirm</div>
+      <div class="cm-msg"   id="cm-msg"></div>
+    </div>
+    <div class="cm-footer">
+      <button class="btn btn-ghost" onclick="closeOverlay('confirm-overlay')">
+        <span data-i18n="fm_cancel">Cancel</span>
+      </button>
+      <button class="btn btn-danger" id="cm-confirm-btn">
+        <span data-i18n="confirm_delete">Delete</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Scripts — order matters: db → i18n → app -->
+<script src="js/db.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
