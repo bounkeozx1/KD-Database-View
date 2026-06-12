@@ -3,6 +3,13 @@
   "configurations": [
     {
       "name": "KD Database",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--no-warnings", "shell/server.js"],
+      "port": 3000,
+      "autoPort": false
+    },
+    {
+      "name": "KD Database (static, no DB)",
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "3000"],
       "port": 3000

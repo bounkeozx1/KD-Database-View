@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>Sign in · KD Database</title>
+<style>
+/* ════════════════════════════════════════════════════
+   login.html — KD Database sign-in (green / light SaaS theme)
+   ════════════════════════════════════════════════════ */
+@import url('../../vendor/fonts/fonts.css');   /* self-hosted, offline (was Google Fonts) */
+
+:root {
+  --green:        #2d6a4f;
+  --green-dark:   #245a42;
+  --green-soft:   #e8f3ec;
+  --ink:          #14181a;
+  --ink-soft:     #1f2937;
+  --muted:        #6b7280;
+  --muted-2:      #9aa3a0;
+  --line:         #e7eae7;
+  --field-bg:     #f1f3f1;
+  --field-bg-fc:  #eef2ef;
+  --black-btn:    #15181a;
+  --card:         #ffffff;
+  --radius:       14px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Inter', 'Noto Sans Lao', 'Noto Sans KR', system-ui, -apple-system, sans-serif;
+  min-height: 100dvh;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+  overflow-x: hidden;
+  background:
+    radial-gradient(60rem 40rem at 90% -10%, rgba(45,106,79,0.10), transparent 60%),
+    radial-gradient(50rem 40rem at 0% 110%, rgba(120,170,200,0.12), transparent 55%),
+    linear-gradient(180deg, #f3f7f4 0%, #f6f8f6 100%);
+}
+
+/* Language switcher — top right pill */
+.langs {
+  position: fixed; top: 22px; right: 26px;
+  display: flex; align-items: center;
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 8px;
+  box-shadow: 0 4px 16px rgba(20,40,30,0.05);
+}
+.lang-btn {
+  border: none; background: transparent;
+  color: var(--muted); font-family: inherit;
+  font-size: 0.78rem; font-weight: 700;
+  padding: 4px 11px; border-radius: 999px;
+  cursor: pointer; letter-spacing: 0.3px;
+  transition: color 0.15s;
+}
+.lang-btn:hover { color: var(--ink); }
+.lang-btn.active { color: var(--green); }
+.lang-sep { width: 1px; height: 14px; background: var(--line); }
+
+/* Layout */
+.wrap {
+  min-height: 100dvh;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 40px 18px;
+}
+
+/* Brand + heading */
+.brand-logo {
+  width: 60px; height: 60px; border-radius: 16px;
+  background: var(--green);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 800; font-size: 1.35rem; letter-spacing: 0.5px;
+  box-shadow: 0 10px 24px rgba(45,106,79,0.28);
+  margin-bottom: 26px;
+}
+.title {
+  font-size: 2.6rem; font-weight: 800; letter-spacing: -1px;
+  line-height: 1.05; text-align: center; color: var(--ink);
+}
+.subtitle {
+  margin-top: 14px;
+  font-size: 1rem; color: var(--muted); text-align: center;
+}
+
+/* Card */
+.card {
+  width: 100%; max-width: 440px;
+  margin-top: 34px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 30px 30px 26px;
+  box-shadow: 0 24px 60px -24px rgba(20,40,30,0.18), 0 2px 6px rgba(20,40,30,0.04);
+}
+
+.field { margin-bottom: 18px; }
+.field-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.label {
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--ink-soft);
+}
+.forgot {
+  font-size: 0.82rem; font-weight: 600; color: var(--green);
+  text-decoration: none; cursor: pointer;
+}
+.forgot:hover { text-decoration: underline; }
+
+.input-wrap {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--field-bg);
+  border: 1.5px solid transparent;
+  border-radius: 12px;
+  padding: 0 14px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.input-wrap:focus-within {
+  background: #fff;
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(45,106,79,0.12);
+}
+.input-wrap svg { flex-shrink: 0; color: #9aa3a0; }
+.input-wrap input {
+  flex: 1; border: none; outline: none; background: transparent;
+  font-family: inherit; font-size: 0.95rem; color: var(--ink);
+  height: 50px;
+}
+.input-wrap input::placeholder { color: #9aa3a0; }
+.icon-btn {
+  border: none; background: transparent; cursor: pointer;
+  color: #9aa3a0; padding: 4px; display: flex; align-items: center;
+}
+.icon-btn:hover { color: var(--ink); }
+
+/* Checkbox */
+.remember {
+  display: flex; align-items: center; gap: 9px;
+  margin: 4px 0 20px; cursor: pointer;
+  font-size: 0.88rem; color: var(--ink-soft); user-select: none;
+}
+.remember input { position: absolute; opacity: 0; pointer-events: none; }
+.checkbox {
+  width: 18px; height: 18px; border-radius: 5px;
+  border: 1.5px solid #cdd3cd; background: #fff;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: all 0.15s;
+}
+.remember input:checked + .checkbox {
+  background: var(--green); border-color: var(--green);
+}
+.checkbox svg { opacity: 0; color: #fff; transition: opacity 0.15s; }
+.remember input:checked + .checkbox svg { opacity: 1; }
+
+/* Sign-in button (black, per design) */
+.signin-btn {
+  width: 100%; height: 54px;
+  border: none; border-radius: 13px;
+  background: var(--black-btn); color: #fff;
+  font-family: inherit; font-size: 1rem; font-weight: 700;
+  cursor: pointer; transition: transform 0.08s, background 0.15s;
+}
+.signin-btn:hover { background: #000; }
+.signin-btn:active { transform: scale(0.99); }
+
+.error {
+  color: #dc2626; font-size: 0.84rem; font-weight: 600;
+  min-height: 1.1rem; margin-bottom: 6px; text-align: center;
+}
+
+.signup {
+  margin-top: 22px; text-align: center;
+  font-size: 0.9rem; color: var(--muted);
+}
+.signup a { color: var(--green); font-weight: 700; text-decoration: none; cursor: pointer; }
+.signup a:hover { text-decoration: underline; }
+
+.footer-version {
+  margin-top: 34px;
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--muted-2); text-align: center;
+}
+
+.diag {
+  margin-top: 16px; text-align: center;
+  font-size: 0.68rem; font-family: ui-monospace, monospace; color: var(--muted-2);
+}
+.diag .bad { color: #dc2626; font-weight: 700; }
+
+@media (max-width: 480px) {
+  .title { font-size: 2.1rem; }
+  .card { padding: 24px 20px; }
+}
+</style>
+</head>
+<body>
+
+<!-- Language switcher -->
+<div class="langs">
+  <button class="lang-btn" data-lang="en">EN</button>
+  <span class="lang-sep"></span>
+  <button class="lang-btn" data-lang="th">TH</button>
+  <span class="lang-sep"></span>
+  <button class="lang-btn" data-lang="lo">LO</button>
+  <span class="lang-sep"></span>
+  <button class="lang-btn" data-lang="ko">KO</button>
+</div>
+
+<div class="wrap">
+  <div class="brand-logo">KD</div>
+  <h1 class="title" data-i18n="login_welcome">Welcome back</h1>
+  <p class="subtitle" data-i18n="login_welcome_sub">Log in to your KD Database account to continue.</p>
+
+  <form class="card" onsubmit="return submitLogin(event)">
+    <!-- Username -->
+    <div class="field">
+      <div class="field-head">
+        <label class="label" for="username" data-i18n="login_user">Username</label>
+      </div>
+      <div class="input-wrap">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        <input type="text" id="username" name="username" autocomplete="off" placeholder="e.g. admin">
+      </div>
+    </div>
+
+    <!-- Password -->
+    <div class="field">
+      <div class="field-head">
+        <label class="label" for="password" data-i18n="login_pass">Password</label>
+        <a class="forgot" onclick="showReset(event)" data-i18n="login_forgot_short">Forgot?</a>
+      </div>
+      <div class="input-wrap">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <input type="password" id="password" name="password" autocomplete="off" placeholder="••••••••">
+        <button type="button" class="icon-btn" id="pw-toggle" onclick="togglePw()" title="Show/hide">
+          <svg id="pw-eye" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Remember -->
+    <label class="remember">
+      <input type="checkbox" id="remember">
+      <span class="checkbox">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </span>
+      <span data-i18n="login_keep">Keep me logged in for 30 days</span>
+    </label>
+
+    <div class="error" id="error"></div>
+
+    <button type="submit" class="signin-btn" data-i18n="login_btn">Sign In</button>
+
+    <p class="signup">
+      <span data-i18n="login_no_account">Don't have an account?</span>
+      <a onclick="showReset(event)" data-i18n="login_request">Request Access</a>
+    </p>
+  </form>
+
+  <div class="footer-version">KD Database Management System v2.1.0</div>
+  <div class="diag" id="diag"></div>
+</div>
+
+<script>
+  /* Cache-busting loader (works on http and file://) */
+  (function () {
+    var bust = (location.protocol === 'file:') ? '' : '?t=' + Date.now();
+    document.write('<scr' + 'ipt src="../scripts/db.js' + bust + '"><\/scr' + 'ipt>');
+    document.write('<scr' + 'ipt src="../scripts/i18n.js' + bust + '"><\/scr' + 'ipt>');
+  })();
+</script>
+<script>
+  function showDiag() {
+    var dbOk = (typeof DB !== 'undefined' && typeof DB.login === 'function');
+    var el = document.getElementById('diag');
+    if (el) el.innerHTML = 'scripts: ' + (dbOk ? 'ok' : '<span class="bad">FAILED TO LOAD — Ctrl+Shift+R</span>');
+  }
+
+  var _serverDown = false;
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    showDiag();
+
+    try {
+      await DB.init();
+    } catch (e) {
+      _serverDown = true;
+      var errEl = document.getElementById('error');
+      if (errEl) {
+        errEl.style.color = '#b45309';
+        errEl.innerHTML = '⚠ Server ไม่ตอบสนอง &mdash; รัน <code style="font-size:0.78rem;background:#fef3c7;padding:1px 5px;border-radius:4px;">npm start</code> แล้ว refresh';
+      }
+      var btn = document.querySelector('.signin-btn');
+      if (btn) { btn.disabled = true; btn.style.opacity = '0.45'; btn.style.cursor = 'not-allowed'; }
+    }
+
+    try {
+      if (new URLSearchParams(location.search).has('reset') && typeof DB !== 'undefined' && DB.hardReset) {
+        DB.hardReset();
+      }
+    } catch (e) {}
+
+    try {
+      if (typeof DB !== 'undefined' && DB.getCurrentUser && DB.getCurrentUser()) {
+        window.location.replace('index.html');
+        return;
+      }
+    } catch (e) {}
+
+    try { if (typeof applyTranslations === 'function') applyTranslations(); } catch (e) {}
+    try { document.documentElement.lang = (typeof currentLang !== 'undefined') ? currentLang : 'en'; } catch (e) {}
+
+    document.querySelectorAll('.lang-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        try { setLang(b.dataset.lang); applyTranslations(); document.documentElement.lang = b.dataset.lang; } catch (e) {}
+      });
+    });
+
+    const u = document.getElementById('username');
+    if (u) u.focus();
+  });
+
+  function togglePw() {
+    const input = document.getElementById('password');
+    const eye = document.getElementById('pw-eye');
+    if (input.type === 'password') {
+      input.type = 'text';
+      eye.innerHTML = '<path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.5 13.5 0 0 0 2 12s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/>';
+    } else {
+      input.type = 'password';
+      eye.innerHTML = '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>';
+    }
+  }
+
+  async function submitLogin(e) {
+    if (e) e.preventDefault();
+    const errEl = document.getElementById('error');
+    try {
+      if (typeof DB === 'undefined' || typeof DB.login !== 'function') {
+        errEl.textContent = 'Scripts not loaded — hard-refresh the page (Ctrl+Shift+R).';
+        return false;
+      }
+      const uname = document.getElementById('username').value.trim();
+      const pwd   = document.getElementById('password').value;
+      if (!uname || !pwd) {
+        errEl.textContent = (typeof t === 'function' ? t('login_err') : 'Invalid username or password') +
+          ' — ' + (!uname && !pwd ? 'both fields are empty' : !uname ? 'username is empty' : 'password is empty');
+        return false;
+      }
+      const user = await DB.login(uname, pwd);
+      if (!user) { errEl.textContent = (typeof t === 'function' ? t('login_err') : 'Invalid username or password'); return false; }
+      window.location.replace('index.html');
+    } catch (err) {
+      errEl.textContent = 'Error: ' + ((err && err.message) ? err.message : String(err));
+    }
+    return false;
+  }
+
+  function showReset(e) {
+    if (e) e.preventDefault();
+    const el = document.getElementById('error');
+    el.style.color = 'var(--muted)';
+    el.textContent = (typeof t === 'function') ? t('login_reset_note')
+      : 'Front-end demo — ask an admin to reset it in Settings → User Accounts.';
+  }
+</script>
+
+</body>
+</html>

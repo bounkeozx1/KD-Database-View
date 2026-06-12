@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>KD Database</title>
+<script>
+  /* Load CSS fresh over http/https (defeats stale cache); plain on file://. */
+  (function () {
+    var bust = (location.protocol === 'file:') ? '' : '?t=' + Date.now();
+    document.write('<link rel="stylesheet" href="../styles/main.css' + bust + '">');
+    document.write('<link rel="stylesheet" href="../styles/sidebar.css' + bust + '">');
+  })();
+</script>
+<style>
+  /* Row highlight flash */
+  @keyframes rowFlash {
+    0%   { background: #d4eaff; }
+    100% { background: transparent; }
+  }
+  tr.row-highlight td { animation: rowFlash 1.8s ease-out forwards; }
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ─────────────────────────────────────────── -->
+<header class="app-header">
+  <button class="mobile-menu-btn" id="mobile-menu-btn" title="Menu">&#9776;</button>
+  <div class="header-spacer"></div>
+</header>
+
+<!-- ── BODY ───────────────────────────────────────────── -->
+<div class="app-body">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-resizer" id="sidebar-resizer"></div>
+
+    <!-- Brand bar — the logo itself toggles the sidebar -->
+    <div class="sb-brandbar">
+      <button class="sidebar-brand" id="sidebar-toggle" title="Collapse / expand sidebar">
+        <span class="sb-logo">KD</span>
+        <span class="sb-brand-text">
+          <span class="sb-brand-name" data-i18n="app_title">KD Database</span>
+          <span class="sb-brand-sub">Management v2.1</span>
+        </span>
+      </button>
+    </div>
+
+    <div class="sidebar-scroll">
+      <!-- Primary nav -->
+      <nav class="sb-nav">
+        <button class="sb-nav-item admin-only" onclick="openGroupForm(null)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          <span data-i18n="nav_new_group">New Group</span>
+        </button>
+        <button class="sb-nav-item active" id="nav-dashboard" onclick="navTo('dashboard', this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+          <span data-i18n="nav_library">Library</span>
+        </button>
+
+        <!-- More (with submenu) -->
+        <div class="sb-more" id="sb-more">
+          <button class="sb-nav-item" onclick="toggleMoreMenu(event)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+            <span data-i18n="nav_more">More</span>
+          </button>
+          <div class="sb-submenu" id="more-menu">
+            <button class="admin-only" onclick="openImport();closeMoreMenu()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <span>Import PPTX</span>
+            </button>
+            <button onclick="exportCSV();closeMoreMenu()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span data-i18n="export_csv">Export CSV</span>
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      <!-- Pinned -->
+      <div class="sb-section" id="sb-pinned-section" style="display:none">
+        <div class="sb-section-label sb-section-static">
+          <span data-i18n="sec_pinned">Pinned</span>
+        </div>
+        <div class="sidebar-tree" id="pinned-tree"></div>
+      </div>
+
+      <!-- Projects (groups) — click a project to open it -->
+      <div class="sb-section" id="sb-groups-section">
+        <div class="sb-section-label sb-section-static">
+          <span data-i18n="nav_projects">Projects</span>
+          <span class="sb-count" id="groups-count"></span>
+          <button class="sb-section-add admin-only" onclick="openGroupForm(null);event.stopPropagation();" title="New project">+</button>
+        </div>
+        <div class="sidebar-tree" id="sidebar-tree"></div>
+      </div>
+    </div>
+
+    <!-- Footer: user (opens profile menu) -->
+    <div class="sidebar-footer" id="sidebar-footer"></div>
+
+    <!-- Profile menu (expanded popup above footer) -->
+    <div class="sb-profile-menu" id="sb-profile-menu">
+      <!-- Profile header: photo + name + role -->
+      <div class="pm-profile-head" id="pm-profile-head">
+        <!-- filled by renderSidebarUser() -->
+      </div>
+
+      <div class="pm-sep"></div>
+      <!-- All accounts (current + switchable) -->
+      <div class="pm-section-label" data-i18n="pm_account">Account</div>
+      <div id="pm-accounts"></div>
+      <button class="pm-item" onclick="profileAddAccount()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+        <span data-i18n="pm_add_account">Add account</span>
+      </button>
+
+      <div class="pm-sep"></div>
+      <button class="pm-item" onclick="openSettings();closeProfileMenu()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span data-i18n="settings">Settings</span>
+      </button>
+
+      <div class="pm-sep"></div>
+      <button class="pm-item pm-logout" onclick="doLogout()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span data-i18n="logout">Logout</span>
+      </button>
+    </div>
+    <!-- Hidden file input for profile photo upload -->
+    <input type="file" id="pm-photo-input" accept="image/*" style="display:none" onchange="handleProfilePhotoUpload(event)">
+  </aside>
+
+  <!-- Mobile backdrop -->
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+  <!-- MAIN CONTENT -->
+  <main class="main-content">
+
+    <!-- Page title row -->
+    <div class="page-head">
+      <div>
+        <h1 class="page-title" id="page-title-group">Dashboard</h1>
+        <p class="page-sub" id="page-sub" data-i18n="app_sub">Worker Management System</p>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-export" onclick="exportCSV()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span data-i18n="export_csv">Export</span>
+        </button>
+        <button class="btn btn-import admin-only" onclick="openImport()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span>Import PPTX</span>
+        </button>
+        <button class="btn btn-add admin-only" onclick="openWorkerForm(null)">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+          <span data-i18n="add_worker">Add Worker</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-top">
+          <span class="stat-ic stat-ic-green">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </span>
+        </div>
+        <div class="num" id="stat-total">0</div>
+        <div class="lbl" data-i18n="total_workers">Total Workers</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-top">
+          <span class="stat-ic stat-ic-gray">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </span>
+        </div>
+        <div class="num" id="stat-sups">0</div>
+        <div class="lbl" data-i18n="supervisors">Supervisors</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-top">
+          <span class="stat-ic stat-ic-gray">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><line x1="9" y1="9" x2="9" y2="9.01"/><line x1="9" y1="12" x2="9" y2="12.01"/><line x1="9" y1="15" x2="9" y2="15.01"/></svg>
+          </span>
+          <span class="stat-badge badge-gray" id="stat-emps-badge">Sectors</span>
+        </div>
+        <div class="num" id="stat-emps">0</div>
+        <div class="lbl" data-i18n="employer_types">Employer Types</div>
+      </div>
+      <div class="stat-card stat-alert stat-clickable" onclick="navTo('alerts')" title="View expiring passports">
+        <div class="stat-top">
+          <span class="stat-ic stat-ic-red">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12" y2="17.01"/></svg>
+          </span>
+          <span class="stat-badge badge-red" id="stat-expiring-badge">—</span>
+        </div>
+        <div class="num" id="stat-expiring">0</div>
+        <div class="lbl" data-i18n="passport_alert">Passport Alerts</div>
+      </div>
+    </div>
+
+    <!-- Data panel -->
+    <div class="data-panel">
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="search-wrap">
+        <span class="search-icon">&#128269;</span>
+        <input type="text" id="search" data-i18n-ph="search_placeholder"
+               placeholder="Search name, ID, passport, village..."
+               oninput="applyFilters()">
+      </div>
+      <select id="f-employer" onchange="applyFilters()">
+        <option value="" data-i18n="all_employers">All Employers</option>
+      </select>
+      <select id="f-supervisor" onchange="applyFilters()">
+        <option value="" data-i18n="all_supervisors">All Supervisors</option>
+      </select>
+      <select id="f-blood" onchange="applyFilters()">
+        <option value="" data-i18n="all_blood">All Blood Types</option>
+        <option value="A">A</option>
+        <option value="B">B</option>
+        <option value="O">O</option>
+        <option value="AB">AB</option>
+        <option value="B+">B+</option>
+        <option value="B-">B-</option>
+      </select>
+
+      <!-- View mode toggle: Table / Cards -->
+      <div class="view-toggle" id="view-toggle">
+        <button class="view-btn active" id="view-table" onclick="setViewMode('table')" title="Table view">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+        </button>
+        <button class="view-btn" id="view-cards" onclick="setViewMode('cards')" title="Card view">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="count-bar" id="count-bar"></div>
+
+    <!-- Table -->
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th data-col="worker_id"      onclick="sortBy('worker_id')"><span data-i18n="col_id">Worker ID</span><span class="sort-arrow"></span></th>
+            <th data-col="en_name"        onclick="sortBy('en_name')"><span data-i18n="col_name_en">Name (EN)</span><span class="sort-arrow"></span></th>
+            <th data-col="lo_name"        onclick="sortBy('lo_name')"><span data-i18n="col_name_lo">Name (Lao)</span><span class="sort-arrow"></span></th>
+            <th data-col="employer_code"  onclick="sortBy('employer_code')"><span data-i18n="col_employer">Employer</span><span class="sort-arrow"></span></th>
+            <th data-col="group_supervisor" onclick="sortBy('group_supervisor')"><span data-i18n="col_supervisor">Supervisor</span><span class="sort-arrow"></span></th>
+            <th data-col="dob"            onclick="sortBy('dob')"><span data-i18n="col_dob">DOB</span><span class="sort-arrow"></span></th>
+            <th data-col="age"            onclick="sortBy('age')"><span data-i18n="col_age">Age</span><span class="sort-arrow"></span></th>
+            <th data-col="blood"          onclick="sortBy('blood')"><span data-i18n="col_blood">Blood</span><span class="sort-arrow"></span></th>
+            <th data-col="passport_no"    onclick="sortBy('passport_no')"><span data-i18n="col_passport">Passport No.</span><span class="sort-arrow"></span></th>
+            <th data-col="passport_expiry" onclick="sortBy('passport_expiry')"><span data-i18n="col_expiry">Expiry</span><span class="sort-arrow"></span></th>
+            <th data-col="size"           onclick="sortBy('size')"><span data-i18n="col_size">Size</span><span class="sort-arrow"></span></th>
+            <th class="no-sort"><span data-i18n="col_actions">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody id="tbl-body"></tbody>
+      </table>
+      <div class="no-data" id="no-data" style="display:none">
+        <div class="icon">&#128194;</div>
+        <p class="no-data-title" data-i18n="no_data_title">No workers in this group</p>
+        <p class="no-data-msg" data-i18n="no_data_msg">Click "+ Add Worker" to get started.</p>
+      </div>
+    </div>
+
+    <!-- Card / ID-card view -->
+    <div class="cards-wrap" id="cards-wrap" style="display:none">
+      <div class="cards-grid" id="cards-grid"></div>
+    </div>
+
+    </div><!-- /data-panel -->
+  </main>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     MODALS
+     ══════════════════════════════════════════════════════ -->
+
+<!-- EMPLOYEE DETAIL — slide-in panel from the right -->
+<div class="overlay drawer-overlay" id="view-overlay">
+  <div class="detail-drawer" onclick="event.stopPropagation()">
+    <button class="vm-close" onclick="closeOverlay('view-overlay')" title="Close">&#x2715;</button>
+    <div id="vm-content"></div>
+  </div>
+</div>
+
+<!-- Contextual 3-dot action menu (floating) -->
+<div class="row-menu" id="row-menu"></div>
+
+<!-- Document preview lightbox -->
+<div class="overlay" id="docview-overlay">
+  <div class="docview-modal" onclick="event.stopPropagation()">
+    <button class="fm-close" onclick="closeOverlay('docview-overlay')">&#x2715;</button>
+    <div id="docview-body"></div>
+  </div>
+</div>
+
+<!-- WORKER FORM -->
+<div class="overlay" id="form-overlay">
+  <div class="form-modal" onclick="event.stopPropagation()">
+    <div class="form-header">
+      <h2 id="fm-title" data-i18n="fm_add_worker">Add Worker</h2>
+      <button class="btn-scan-passport admin-only" onclick="openPassportScan()" title="Scan Passport MRZ">
+        <span class="scan-icon">&#128247;</span> Scan Passport
+      </button>
+      <button class="fm-close" onclick="closeOverlay('form-overlay')">&#x2715;</button>
+    </div>
+    <div class="form-body">
+      <input type="hidden" id="f-edit-uid">
+      <input type="hidden" id="f-photo">
+
+      <!-- Employee photo -->
+      <div class="form-photo-row">
+        <div class="form-photo" id="form-photo-preview"></div>
+        <div class="form-photo-actions">
+          <label class="btn btn-ghost btn-sm" style="cursor:pointer">
+            <span data-i18n="fm_photo_upload">Upload photo</span>
+            <input type="file" accept="image/*" style="display:none" onchange="handlePhotoUpload(this)">
+          </label>
+          <button type="button" class="btn btn-ghost btn-sm" id="f-photo-remove" onclick="removePhoto()" style="display:none" data-i18n="fm_photo_remove">Remove</button>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-sec-title" data-i18n="fm_sec_identity">Worker Identity</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label><span data-i18n="fm_kr_city">Korean City (destination)</span></label>
+            <select id="f-kr-city" onchange="updateIdPreview()"></select>
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_la_city">Lao City (origin)</span></label>
+            <select id="f-la-city" onchange="updateIdPreview()"></select>
+          </div>
+          <div class="form-group full">
+            <label><span data-i18n="fm_worker_id">Worker ID</span></label>
+            <div class="id-gen-row">
+              <input id="f-worker-id" readonly placeholder="—">
+              <button type="button" class="btn btn-ghost btn-sm" onclick="regenerateId()" data-i18n="fm_gen_id">Regenerate</button>
+            </div>
+            <div class="id-hint" id="f-id-hint" data-i18n="fm_id_hint">Auto-generated on save</div>
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_employer_code">Employer Code</span></label>
+            <select id="f-employer-code">
+              <option value="">-- Select --</option>
+              <option>VK</option><option>TK</option><option>VV</option>
+              <option>HSF</option><option>NXT</option><option>XTN</option><option>PH</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_supervisor">Supervisor (Korean name)</span></label>
+            <input id="f-supervisor" placeholder="e.g. 조재희">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-sec-title" data-i18n="fm_sec_personal">Personal Information</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label><span data-i18n="fm_name_en">Name (EN)</span> <span class="req">*</span></label>
+            <input id="f-en-name" placeholder="FIRSTNAME LASTNAME">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_name_lo">Name (Lao)</span></label>
+            <input id="f-lo-name" placeholder="ທ້າວ / ນາງ ...">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_dob">Date of Birth</span> <span class="req">*</span></label>
+            <div class="date-picker" id="dp-dob">
+              <input type="number" class="dp-d" placeholder="DD" min="1" max="31">
+              <span class="dp-sep">/</span>
+              <input type="number" class="dp-m" placeholder="MM" min="1" max="12">
+              <span class="dp-sep">/</span>
+              <input type="number" class="dp-y" placeholder="YYYY" min="1900" max="2099">
+            </div>
+            <input type="hidden" id="f-dob">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_village">Village</span></label>
+            <input id="f-village" placeholder="Village name">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_nationality">Nationality</span></label>
+            <input id="f-nationality" placeholder="e.g. LAO">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_sex">Gender</span></label>
+            <select id="f-sex">
+              <option value="">-- Select --</option>
+              <option value="M" data-i18n="fm_sex_m">Male</option>
+              <option value="F" data-i18n="fm_sex_f">Female</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_blood">Blood Type</span></label>
+            <select id="f-blood">
+              <option value="">-- Select --</option>
+              <option>A</option><option>B</option><option>O</option>
+              <option>AB</option><option>B+</option><option>B-</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_hand">Left or Right</span></label>
+            <select id="f-hand">
+              <option value="">-- Select --</option>
+              <option value="R" data-i18n="fm_hand_r">Right</option>
+              <option value="L" data-i18n="fm_hand_l">Left</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_weight">Weight (Kg)</span></label>
+            <input id="f-weight" placeholder="e.g. 60" type="number">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_height">Height (Cm)</span></label>
+            <input id="f-height" placeholder="e.g. 165" type="number">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_size">Shirt Size</span></label>
+            <select id="f-size">
+              <option value="">-- Select --</option>
+              <option>S</option><option>M</option><option>L</option>
+              <option>XL</option><option>XXL</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_couple">Couple</span></label>
+            <select id="f-couple">
+              <option value="">-- Select --</option>
+              <option value="yes" data-i18n="fm_couple_yes">Yes</option>
+              <option value="no"  data-i18n="fm_couple_no">No</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_tel">Tel</span></label>
+            <input id="f-tel" placeholder="020 XXXX-XXXX">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_emg_tel">Emergency Tel</span></label>
+            <input id="f-emg-tel" placeholder="020 XXXX-XXXX">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-sec-title">Qualification &amp; Status</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Grade</label>
+            <select id="f-grade">
+              <option value="">-- Select --</option>
+              <option value="A">A — ດີເດັ່ນ</option>
+              <option value="B">B — ດີ</option>
+              <option value="C">C — ປານກາງ</option>
+              <option value="D">D — ຕ້ອງປັບປຸງ</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Visa Status</label>
+            <select id="f-visa-status">
+              <option value="">-- Select --</option>
+              <option value="not_started">ຍັງບໍ່ເລີ່ມ</option>
+              <option value="applied">ຍື່ນຂໍແລ້ວ</option>
+              <option value="approved">ອະນຸມັດແລ້ວ</option>
+              <option value="rejected">ຖືກປະຕິເສດ</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Education / ການສຶກສາ</label>
+            <input id="f-education" placeholder="e.g. High School, University">
+          </div>
+          <div class="form-group">
+            <label>Work Experience / ປະສົບການ</label>
+            <input id="f-work-experience" placeholder="e.g. 2 years factory, farming">
+          </div>
+          <div class="form-group" style="grid-column:span 2">
+            <label>Language Skills / ພາສາ</label>
+            <input id="f-languages" placeholder="e.g. ລາວ, Korean basic, English">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-sec-title" data-i18n="fm_sec_passport">Passport Information</div>
+        <div class="form-grid col3">
+          <div class="form-group">
+            <label><span data-i18n="fm_passport_no">Passport No.</span> <span class="req">*</span></label>
+            <input id="f-passport-no" placeholder="P1234567">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_issue">Issue Date</span></label>
+            <div class="date-picker" id="dp-issue">
+              <input type="number" class="dp-d" placeholder="DD" min="1" max="31">
+              <span class="dp-sep">/</span>
+              <input type="number" class="dp-m" placeholder="MM" min="1" max="12">
+              <span class="dp-sep">/</span>
+              <input type="number" class="dp-y" placeholder="YYYY" min="1900" max="2099">
+            </div>
+            <input type="hidden" id="f-issue">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_expiry">Expiry Date</span></label>
+            <div class="date-picker" id="dp-expiry">
+              <input type="number" class="dp-d" placeholder="DD" min="1" max="31">
+              <span class="dp-sep">/</span>
+              <input type="number" class="dp-m" placeholder="MM" min="1" max="12">
+              <span class="dp-sep">/</span>
+              <input type="number" class="dp-y" placeholder="YYYY" min="1900" max="2099">
+            </div>
+            <input type="hidden" id="f-expiry">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="form-footer">
+      <button class="btn btn-ghost" onclick="closeOverlay('form-overlay')">
+        <span data-i18n="fm_cancel">Cancel</span>
+      </button>
+      <button class="btn btn-primary" onclick="saveWorker()">
+        <span data-i18n="fm_save">Save Worker</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- GROUP FORM -->
+<div class="overlay" id="group-overlay">
+  <div class="group-modal" onclick="event.stopPropagation()">
+    <div class="gm-header">
+      <span id="gm-title" data-i18n="gm_new_group">New Group</span>
+      <button class="fm-close" onclick="closeOverlay('group-overlay')">&#x2715;</button>
+    </div>
+    <div class="gm-body">
+      <div class="form-group">
+        <label><span data-i18n="gm_group_name">Group Name</span> <span class="req">*</span></label>
+        <input id="gf-name" placeholder="e.g. DAMYANG 2026 – Group 2">
+      </div>
+      <div class="form-group">
+        <label><span data-i18n="gm_departure">Departure Date</span></label>
+        <input id="gf-date" type="text" placeholder="e.g. 26/03/2026 or March 2026">
+      </div>
+      <div class="form-group">
+        <label><span data-i18n="gm_route">Route</span></label>
+        <input id="gf-route" placeholder="e.g. VTE → ICN">
+      </div>
+    </div>
+    <div class="gm-footer">
+      <button class="btn btn-ghost" onclick="closeOverlay('group-overlay')">
+        <span data-i18n="fm_cancel">Cancel</span>
+      </button>
+      <button class="btn btn-primary" id="gm-btn" onclick="saveGroup()">
+        <span data-i18n="gm_create">Create Group</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- CONFIRM -->
+<div class="overlay" id="confirm-overlay">
+  <div class="confirm-modal" onclick="event.stopPropagation()">
+    <div class="cm-body">
+      <div class="cm-title" id="cm-title">Confirm</div>
+      <div class="cm-msg"   id="cm-msg"></div>
+    </div>
+    <div class="cm-footer">
+      <button class="btn btn-ghost" id="cm-cancel-btn" onclick="closeOverlay('confirm-overlay')">
+        <span data-i18n="fm_cancel">Cancel</span>
+      </button>
+      <button class="btn btn-danger" id="cm-confirm-btn">
+        <span data-i18n="confirm_delete">Delete</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- PASSPORT SCAN (Admin only) -->
+<div class="overlay" id="scan-overlay" style="padding:0">
+  <div class="scan-modal" onclick="event.stopPropagation()">
+
+    <!-- Header -->
+    <div class="scan-header">
+      <span class="scan-header-title">&#128247; Scan Passport MRZ</span>
+      <div class="scan-header-actions">
+        <button class="scan-ctrl-btn" id="scan-pause-btn" onclick="scanTogglePause()">&#9646;&#9646; หยุด</button>
+        <button class="scan-ctrl-btn scan-capture-btn" onclick="scanCaptureNow()">&#128247; ถ่ายภาพ</button>
+        <button class="scan-ctrl-btn scan-close-btn" onclick="closePassportScan()">&#x2715;</button>
+      </div>
+    </div>
+
+    <!-- Camera area -->
+    <div class="scan-camera-wrap">
+      <video id="scan-video" autoplay muted playsinline class="scan-video"></video>
+
+      <!-- Passport alignment guide -->
+      <div class="scan-guide">
+        <div class="scan-overlay-frame" id="scan-overlay-frame">
+          <span class="scan-corner tl"></span><span class="scan-corner tr"></span>
+          <span class="scan-corner bl"></span><span class="scan-corner br"></span>
+          <!-- MRZ zone indicator -->
+          <div class="scan-mrz-zone">
+            <span class="scan-mrz-label">MRZ zone</span>
+          </div>
+        </div>
+        <div class="scan-guide-hint">จัดให้ 2 บรรทัดด้านล่างพาสปอร์ตอยู่ใน MRZ zone</div>
+      </div>
+
+      <!-- Hidden canvas for OCR preprocessing -->
+      <canvas id="scan-canvas" style="display:none"></canvas>
+    </div>
+
+    <!-- Status + results -->
+    <div class="scan-bottom">
+      <div class="scan-status scan-status-idle" id="scan-status">กำลังเริ่มต้น…</div>
+      <div id="scan-result-box" style="display:none"></div>
+      <div class="scan-footer-btns">
+        <button class="btn btn-ghost" onclick="closePassportScan()">ยกเลิก</button>
+        <button class="scan-ctrl-btn" id="scan-debug-btn" style="display:none" onclick="scanShowDebug()" title="ดู raw OCR text">&#128295; Debug</button>
+        <button class="btn btn-primary" id="scan-apply-btn" disabled onclick="applyPassportScan()">
+          &#10003; ใช้ข้อมูลนี้
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- IMPORT PPTX (Admin only) -->
+<div class="overlay" id="import-overlay">
+  <div class="import-modal" onclick="event.stopPropagation()">
+    <div class="form-header">
+      <h2>&#8593; Import ข้อมูลจาก PPTX</h2>
+      <button class="fm-close" onclick="closeOverlay('import-overlay')">&#x2715;</button>
+    </div>
+    <div class="import-body">
+      <!-- Drop / browse zone -->
+      <label class="import-dropzone" id="import-dropzone">
+        <div class="import-dz-icon">&#128196;</div>
+        <div class="import-dz-text">คลิกเพื่อเลือกไฟล์ <strong>.pptx</strong><br>
+          <span class="import-dz-sub">รองรับ format บัตรพนักงาน KD (1 สไลด์ = 1 คน)</span>
+        </div>
+        <input type="file" id="import-file" accept=".pptx"
+               style="display:none" onchange="handleImportFile(this)">
+      </label>
+
+      <div class="import-status" id="import-status"></div>
+
+      <!-- Target group -->
+      <div class="import-target-wrap" id="import-target-wrap" style="display:none">
+        <label class="import-target-label">นำเข้าไปยังกลุ่ม:</label>
+        <select id="import-target-group" style="flex:1"></select>
+      </div>
+
+      <!-- Preview table -->
+      <div id="import-preview"></div>
+    </div>
+    <div class="form-footer">
+      <button class="btn btn-ghost" onclick="closeOverlay('import-overlay')">ยกเลิก</button>
+      <button class="btn btn-primary" id="import-btn-go" disabled onclick="doImport()">
+        &#8593; นำเข้าข้อมูล
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS (Admin only) -->
+<div class="overlay" id="settings-overlay">
+  <div class="settings-modal" onclick="event.stopPropagation()">
+    <div class="form-header">
+      <h2 data-i18n="set_title">System Settings</h2>
+      <button class="fm-close" onclick="closeOverlay('settings-overlay')">&#x2715;</button>
+    </div>
+    <div class="set-tabs" id="set-tabs">
+      <button class="set-tab active" data-tab="appearance" onclick="switchSettingsTab('appearance')" data-i18n="set_tab_appearance">Appearance</button>
+      <button class="set-tab admin-only" data-tab="cities" onclick="switchSettingsTab('cities')" data-i18n="set_tab_cities">City Dictionary</button>
+      <button class="set-tab admin-only" data-tab="users" onclick="switchSettingsTab('users')" data-i18n="set_tab_users">User Accounts</button>
+    </div>
+
+    <div class="set-body">
+      <!-- Appearance pane -->
+      <div class="set-pane" id="set-pane-appearance">
+        <div class="app-section-title" data-i18n="set_theme">Theme</div>
+        <div class="theme-options">
+          <button class="theme-opt" data-theme-val="light" onclick="setThemePref('light')">
+            <span class="theme-opt-icon">☀️</span>
+            <span data-i18n="theme_light">Light</span>
+          </button>
+          <button class="theme-opt" data-theme-val="dark" onclick="setThemePref('dark')">
+            <span class="theme-opt-icon">🌙</span>
+            <span data-i18n="theme_dark">Dark</span>
+          </button>
+          <button class="theme-opt" data-theme-val="system" onclick="setThemePref('system')">
+            <span class="theme-opt-icon">💻</span>
+            <span data-i18n="theme_system">System</span>
+          </button>
+        </div>
+        <div class="app-section-title" data-i18n="set_language">Language</div>
+        <div class="lang-row">
+          <button class="lang-btn" data-lang="en">English</button>
+          <button class="lang-btn" data-lang="th">ไทย</button>
+          <button class="lang-btn" data-lang="lo">ລາວ</button>
+          <button class="lang-btn" data-lang="ko">한국어</button>
+        </div>
+      </div>
+
+      <!-- Cities pane -->
+      <div class="set-pane" id="set-pane-cities" style="display:none">
+        <div class="set-cols">
+          <div class="set-col">
+            <div class="set-col-title" data-i18n="set_kr_cities">Korean Cities</div>
+            <div class="set-list" id="set-kr-list"></div>
+            <div class="set-add-row">
+              <input id="set-kr-name" data-i18n-ph="set_city_name" placeholder="City name">
+              <input id="set-kr-code" class="code-in" maxlength="5" data-i18n-ph="set_city_code" placeholder="Code">
+              <button class="btn btn-add btn-sm" onclick="addCity('kr')" data-i18n="set_add">Add</button>
+            </div>
+          </div>
+          <div class="set-col">
+            <div class="set-col-title" data-i18n="set_la_cities">Lao Cities</div>
+            <div class="set-list" id="set-la-list"></div>
+            <div class="set-add-row">
+              <input id="set-la-name" data-i18n-ph="set_city_name" placeholder="City name">
+              <input id="set-la-code" class="code-in" maxlength="5" data-i18n-ph="set_city_code" placeholder="Code">
+              <button class="btn btn-add btn-sm" onclick="addCity('la')" data-i18n="set_add">Add</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Users pane -->
+      <div class="set-pane" id="set-pane-users" style="display:none">
+        <div class="set-list" id="set-users-list"></div>
+        <div class="set-add-row users-add">
+          <input id="set-u-name" data-i18n-ph="set_name" placeholder="Display name">
+          <input id="set-u-user" data-i18n-ph="set_username" placeholder="Username">
+          <input id="set-u-pass" type="text" data-i18n-ph="set_password" placeholder="Password">
+          <select id="set-u-role">
+            <option value="admin" data-i18n="role_admin">Admin</option>
+            <option value="viewer" data-i18n="role_viewer">Viewer</option>
+          </select>
+          <button class="btn btn-add btn-sm" onclick="addUser()" data-i18n="set_add">Add</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Scripts — order matters: db → i18n → app -->
+<script>
+  /* Load scripts fresh every time over http/https (defeats stale browser
+     cache), but plain by name on file:// where query strings break loading. */
+  (function () {
+    var bust = (location.protocol === 'file:') ? '' : '?t=' + Date.now();
+    var files = [
+      '../scripts/db.js',
+      '../scripts/i18n.js',
+      '../scripts/app.js',
+      '../../domains/recruitment/intake-import/pptx-import.js',
+      '../../domains/recruitment/passport-scan/passport-scan.js'
+    ];
+    for (var i = 0; i < files.length; i++) {
+      document.write('<scr' + 'ipt src="' + files[i] + bust + '"><\/scr' + 'ipt>');
+    }
+  })();
+</script>
+
+</body>
+</html>

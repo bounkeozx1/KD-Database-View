@@ -1,0 +1,16 @@
+{
+  "name": "kd-database",
+  "version": "2.2.0",
+  "private": true,
+  "description": "KD Employment worker management — offline, SQLite-backed (zero dependencies).",
+  "type": "commonjs",
+  "engines": { "node": ">=22.5" },
+  "scripts": {
+    "start": "node --no-warnings shell/server.js",
+    "init-db": "node --no-warnings infra/scripts/init-db.js",
+    "backup": "node --no-warnings infra/scripts/backup.js",
+    "restore": "node --no-warnings infra/scripts/restore.js",
+    "reconcile": "node --no-warnings infra/scripts/reconcile.js",
+    "selftest": "node --no-warnings infra/scripts/selftest.js"
+  }
+}

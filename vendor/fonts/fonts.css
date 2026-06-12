@@ -1,0 +1,22 @@
+/* ════════════════════════════════════════════════════════════════
+   vendor/fonts/fonts.css — self-hosted fonts (OFFLINE, no Google CDN)
+   Replaces the previous @import url('https://fonts.googleapis.com/…').
+   url()s are relative to THIS file (vendor/fonts/), so any stylesheet
+   may @import it regardless of its own location.
+   Families: Inter (UI latin) · Noto Sans Lao (lo) · Noto Sans KR (ko)
+   ════════════════════════════════════════════════════════════════ */
+
+/* ── Inter (Latin) ── */
+@font-face { font-family:'Inter'; font-style:normal; font-weight:400; font-display:swap; src:url('inter-latin-400.woff2') format('woff2'); }
+@font-face { font-family:'Inter'; font-style:normal; font-weight:500; font-display:swap; src:url('inter-latin-500.woff2') format('woff2'); }
+@font-face { font-family:'Inter'; font-style:normal; font-weight:600; font-display:swap; src:url('inter-latin-600.woff2') format('woff2'); }
+@font-face { font-family:'Inter'; font-style:normal; font-weight:700; font-display:swap; src:url('inter-latin-700.woff2') format('woff2'); }
+@font-face { font-family:'Inter'; font-style:normal; font-weight:800; font-display:swap; src:url('inter-latin-800.woff2') format('woff2'); }
+
+/* ── Noto Sans Lao ── */
+@font-face { font-family:'Noto Sans Lao'; font-style:normal; font-weight:400; font-display:swap; src:url('noto-lao-400.woff2') format('woff2'); }
+@font-face { font-family:'Noto Sans Lao'; font-style:normal; font-weight:600; font-display:swap; src:url('noto-lao-600.woff2') format('woff2'); }
+
+/* ── Noto Sans KR ── */
+@font-face { font-family:'Noto Sans KR'; font-style:normal; font-weight:400; font-display:swap; src:url('noto-kr-400.woff2') format('woff2'); }
+@font-face { font-family:'Noto Sans KR'; font-style:normal; font-weight:600; font-display:swap; src:url('noto-kr-600.woff2') format('woff2'); }
