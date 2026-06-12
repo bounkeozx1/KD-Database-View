@@ -26,11 +26,37 @@
 </head>
 <body>
 
-<!-- ── HEADER ─────────────────────────────────────────── -->
-<header class="app-header">
-  <button class="mobile-menu-btn" id="mobile-menu-btn" title="Menu">&#9776;</button>
-  <div class="header-spacer"></div>
-</header>
+<!-- Mobile sidebar toggle (floating, replaces old header hamburger) -->
+<button class="mobile-fab-menu" id="mobile-menu-btn" title="Menu" onclick="toggleMobileMenu()">&#9776;</button>
+
+<!-- Save status bar (3-px stripe at top of main) -->
+<div class="save-bar" id="save-bar"></div>
+
+<!-- FAB — Add Worker (mobile only, admin only) -->
+<button class="fab admin-only" id="fab-add" onclick="openWorkerForm(null)" title="Add Worker">+</button>
+
+<!-- Bottom Navigation (mobile only) -->
+<nav class="bottom-nav" id="bottom-nav">
+  <button class="bn-item active" id="bn-dashboard" onclick="navTo('dashboard',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    <span data-i18n="nav_dashboard">Dashboard</span>
+  </button>
+  <button class="bn-item" id="bn-workers" onclick="navTo('workers',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    <span data-i18n="all_groups">Workers</span>
+  </button>
+  <button class="bn-item" id="bn-alerts" onclick="navTo('alerts',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <span data-i18n="passport_alert">Alerts</span>
+  </button>
+  <button class="bn-item" id="bn-settings" onclick="openSettings()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9"/></svg>
+    <span data-i18n="settings">Settings</span>
+  </button>
+</nav>
+
+<!-- Toast stack -->
+<div class="toast-stack" id="toast-stack"></div>
 
 <!-- ── BODY ───────────────────────────────────────────── -->
 <div class="app-body">
@@ -141,6 +167,31 @@
   <!-- MAIN CONTENT -->
   <main class="main-content">
 
+    <!-- Dashboard welcome (shown when no group is selected) -->
+    <div id="dashboard-welcome" class="dashboard-welcome" style="display:none">
+      <h2>KD EMPLOYMENT CO., LTD</h2>
+      <p data-i18n="app_sub">Worker Management System</p>
+    </div>
+
+    <!-- Charts row (dashboard) -->
+    <div class="dash-charts" id="dash-charts" style="display:none">
+      <div class="chart-card">
+        <div class="chart-title">Grade Distribution</div>
+        <div class="chart-svg-wrap" id="chart-grade"></div>
+        <div class="chart-legend" id="chart-grade-legend"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Visa Status</div>
+        <div class="chart-svg-wrap" id="chart-visa"></div>
+        <div class="chart-legend" id="chart-visa-legend"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Passport Expiry</div>
+        <div class="chart-svg-wrap" id="chart-expiry"></div>
+        <div class="chart-legend" id="chart-expiry-legend"></div>
+      </div>
+    </div>
+
     <!-- Page title row -->
     <div class="page-head">
       <div>
@@ -156,7 +207,7 @@
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           <span>Import PPTX</span>
         </button>
-        <button class="btn btn-add admin-only" onclick="openWorkerForm(null)">
+        <button class="btn btn-add admin-only" id="btn-add-worker" onclick="openWorkerForm(null)">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
           <span data-i18n="add_worker">Add Worker</span>
         </button>
@@ -286,11 +337,42 @@
      MODALS
      ══════════════════════════════════════════════════════ -->
 
-<!-- EMPLOYEE DETAIL — slide-in panel from the right -->
+<!-- EMPLOYEE DETAIL — full-screen panel -->
 <div class="overlay drawer-overlay" id="view-overlay">
   <div class="detail-drawer" onclick="event.stopPropagation()">
-    <button class="vm-close" onclick="closeOverlay('view-overlay')" title="Close">&#x2715;</button>
-    <div id="vm-content"></div>
+    <!-- Top bar with close + edit + delete -->
+    <div class="vm-topbar" id="vm-topbar">
+      <button class="vm-close-new" onclick="closeOverlay('view-overlay')" title="Close">&#x2190;</button>
+      <div class="vm-topbar-name">
+        <div class="vm-topbar-en" id="vm-topbar-en"></div>
+        <div class="vm-topbar-lo" id="vm-topbar-lo"></div>
+      </div>
+      <div class="vm-topbar-actions" id="vm-topbar-actions"></div>
+    </div>
+    <!-- Tabs -->
+    <div class="detail-tabs">
+      <button class="detail-tab active" data-tab="info" onclick="switchDetailTab('info',this)">
+        <span>Info</span>
+      </button>
+      <button class="detail-tab" data-tab="docs" onclick="switchDetailTab('docs',this)">
+        <span data-i18n="vc_documents">Documents</span>
+      </button>
+      <button class="detail-tab" data-tab="activity" onclick="switchDetailTab('activity',this)">
+        <span>Activity</span>
+      </button>
+    </div>
+    <!-- Pane: Info -->
+    <div class="detail-pane active" id="detail-pane-info">
+      <div id="vm-content"></div>
+    </div>
+    <!-- Pane: Documents -->
+    <div class="detail-pane" id="detail-pane-docs">
+      <div id="vm-docs-content"></div>
+    </div>
+    <!-- Pane: Activity log -->
+    <div class="detail-pane" id="detail-pane-activity">
+      <div id="vm-activity-content" class="activity-list"><div class="act-empty">Loading…</div></div>
+    </div>
   </div>
 </div>
 

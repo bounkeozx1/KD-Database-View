@@ -124,6 +124,19 @@ function _writeDocuments(employeeUid, documents) {
     if (p) ins.run(employeeUid, cat, p, f.type || 'image', f.name || '');
   }));
 }
+/* ── Activity Log ── */
+function logActivity(employeeUid, action, detail, performedBy) {
+  try {
+    d().prepare('INSERT INTO activity_log (employee_uid,action,detail,performed_by) VALUES (?,?,?,?)')
+      .run(employeeUid || null, action, detail || null, performedBy || null);
+  } catch (e) {}
+}
+function getActivity(employeeUid) {
+  return d().prepare(
+    'SELECT id, action, detail, performed_by, created_at FROM activity_log WHERE employee_uid=? ORDER BY id DESC LIMIT 50'
+  ).all(employeeUid);
+}
+
 function addEmployee(groupId, w) {
   const id = w.uid || uid();
   const photo = saveDataUrl(w.photo, 'photo');
@@ -132,6 +145,7 @@ function addEmployee(groupId, w) {
   d().prepare('INSERT INTO employees (' + cols.join(',') + ') VALUES (' + cols.map(() => '?').join(',') + ')').run(...vals);
   _writePassport(id, w);
   if (w.documents) _writeDocuments(id, w.documents);
+  logActivity(id, 'created', w.en_name || id, w._by || null);
   return id;
 }
 function updateEmployee(id, patch) {
@@ -141,21 +155,22 @@ function updateEmployee(id, patch) {
   if ('photo' in patch) {
     const cur = d().prepare('SELECT photo_path FROM employees WHERE uid=?').get(id);
     oldPhoto = cur && cur.photo_path || '';
-    newPhoto = saveDataUrl(patch.photo, 'photo');   // data: → new file; stored path → unchanged
+    newPhoto = saveDataUrl(patch.photo, 'photo');
     photoChanged = true;
     cols.push('photo_path=?'); vals.push(newPhoto);
   }
   if (cols.length) { vals.push(id); d().prepare('UPDATE employees SET ' + cols.join(',') + ' WHERE uid=?').run(...vals); }
-  // Remove the previous photo file only when it actually changed (no orphan, no data loss).
   if (photoChanged && oldPhoto && oldPhoto !== newPhoto && isStoredPath(oldPhoto)) deleteStored(oldPhoto);
   if ('passport_no' in patch || 'passport_issue' in patch || 'passport_expiry' in patch) _writePassport(id, patch);
   if ('documents' in patch) _writeDocuments(id, patch.documents);
+  const changed = Object.keys(patch).filter(k => !['photo','documents','_by'].includes(k)).join(', ');
+  if (changed) logActivity(id, 'updated', changed, patch._by || null);
 }
 function deleteEmployee(id) {
-  const e = d().prepare('SELECT photo_path FROM employees WHERE uid=?').get(id);
+  const e = d().prepare('SELECT photo_path, en_name FROM employees WHERE uid=?').get(id);
   if (e && e.photo_path) deleteStored(e.photo_path);
   d().prepare('SELECT file_path FROM documents WHERE employee_uid=?').all(id).forEach(x => deleteStored(x.file_path));
-  d().prepare('DELETE FROM employees WHERE uid=?').run(id); // cascades passport/documents
+  d().prepare('DELETE FROM employees WHERE uid=?').run(id);
 }
 
 /* ── Cities ── */
@@ -259,4 +274,5 @@ module.exports = {
   addEmployee, updateEmployee, deleteEmployee,
   addCity, deleteCity, addUser, deleteUser, login, importAll,
   listDocuments, addDocument, deleteDocument,
+  getActivity,
 };

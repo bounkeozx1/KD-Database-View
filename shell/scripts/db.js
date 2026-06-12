@@ -277,6 +277,11 @@ const DB = (() => {
       return _api('DELETE', '/documents/' + docId);
     },
 
+    /* ── Activity Log ── */
+    async getActivity(uid) {
+      return (await _api('GET', '/employees/' + encodeURIComponent(uid) + '/activity')).log || [];
+    },
+
     /* ── Admin ── */
     async backup()      { return (await _api('POST', '/admin/backup')).file; },
     async listBackups() { return (await _api('GET', '/admin/backups')).files || []; },

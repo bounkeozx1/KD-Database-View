@@ -90,6 +90,10 @@ async function handleApi(req, res, pathname) {
 
     // Employees
     if (seg[0] === 'employees' && seg[1]) {
+      // Activity log sub-resource
+      if (method === 'GET' && seg[2] === 'activity')
+        return json(res, 200, { ok: true, log: repo.getActivity(seg[1]) });
+
       // Documents sub-resource
       if (seg[2] === 'documents') {
         if (method === 'GET')

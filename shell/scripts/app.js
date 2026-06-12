@@ -5,6 +5,7 @@
 
 // ── State ─────────────────────────────────────────────────────────
 let activeGroupId = '';
+let _currentViewUid = null;  // uid of worker currently shown in detail overlay
 let sidebarSearchQ = '';
 let tableFiltered  = [];
 let sortCol  = 'worker_id';
@@ -20,6 +21,25 @@ const expandedGroups = new Set(); // tracks which groups have workers list open
 const pinnedGroups = new Set(     // pinned group ids (ChatGPT-style "Pinned")
   (() => { try { return JSON.parse(localStorage.getItem('kd_pinned') || '[]'); } catch (e) { return []; } })()
 );
+
+// ── TOAST NOTIFICATIONS ──────────────────────────────────────────
+function toast(msg, type) {
+  const stack = document.getElementById('toast-stack');
+  if (!stack) return;
+  const el = document.createElement('div');
+  el.className = 'toast toast-' + (type || 'ok');
+  el.textContent = msg;
+  stack.appendChild(el);
+  setTimeout(() => {
+    el.classList.add('removing');
+    setTimeout(() => el.remove(), 320);
+  }, 2800);
+}
+
+// ── MOBILE MENU ───────────────────────────────────────────────────
+function toggleMobileMenu() {
+  document.getElementById('sidebar')?.classList.toggle('open');
+}
 
 // ── THEME (light / dark / system) ────────────────────────────────
 // Apply saved theme as early as possible to avoid a flash.
@@ -74,34 +94,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 // page-exit while writes are still in flight or failing.
 function initSaveStatusUI() {
   if (typeof DB === 'undefined' || !DB.onSaveStatus) return;
-  let el = document.getElementById('kd-save-status');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'kd-save-status';
-    el.setAttribute('role', 'status');
-    el.setAttribute('aria-live', 'polite');
-    el.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:9999;display:none;' +
-      'padding:8px 14px;border-radius:999px;color:#fff;' +
-      'font:600 0.82rem/1.2 Inter,system-ui,sans-serif;' +
-      'box-shadow:0 6px 20px rgba(0,0,0,0.18);transition:opacity .25s;pointer-events:none;';
-    document.body.appendChild(el);
-  }
+  const bar = document.getElementById('save-bar');
   let hideTimer = null;
-  const show = (bg, text) => {
+  const setClass = (cls) => {
+    if (!bar) return;
     if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
-    el.style.background = bg; el.textContent = text;
-    el.style.display = ''; el.style.opacity = '1';
+    bar.className = 'save-bar' + (cls ? ' ' + cls : '');
   };
   DB.onSaveStatus(s => {
-    if (s.failed > 0)        show('#dc2626', '⚠ ' + t('save_failed', { n: s.failed }));
-    else if (s.pending > 0)  show('#1f2937', t('save_saving'));
-    else {                   // all clear
-      if (s.event === 'idle') { el.style.display = 'none'; return; } // initial registration — nothing to show
-      show('#2d6a4f', '✔ ' + t('save_saved')); // brief confirmation, then fade
-      hideTimer = setTimeout(() => {
-        el.style.opacity = '0';
-        setTimeout(() => { el.style.display = 'none'; }, 250);
-      }, 1400);
+    if (s.failed > 0)       { setClass('error'); }
+    else if (s.pending > 0) { setClass('saving'); }
+    else {
+      if (s.event === 'idle') return;
+      setClass('saved');
+      hideTimer = setTimeout(() => setClass(''), 1600);
     }
   });
   window.addEventListener('beforeunload', (e) => {
@@ -569,23 +575,31 @@ function navTo(view, el) {
   document.querySelectorAll('.sb-nav-item').forEach(b => b.classList.remove('active'));
   if (el) el.classList.add('active');
 
-  if (view === 'dashboard') {       // "Library" = home (all workers in the group)
+  const dashWelcome = document.getElementById('dashboard-welcome');
+  const dashCharts  = document.getElementById('dash-charts');
+
+  if (view === 'dashboard') {
     quickFilter = '';
     document.getElementById('search').value = '';
     document.getElementById('f-employer').value = '';
     document.getElementById('f-supervisor').value = '';
     document.getElementById('f-blood').value = '';
-  } else if (view === 'alerts') {
-    quickFilter = 'alerts';
-  } else if (view === 'projects') {
-    // "Projects" = the groups list — scroll the sidebar to it
-    document.getElementById('sb-groups-section')?.classList.remove('collapsed');
-    document.getElementById('sb-groups-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    return;
+    if (dashWelcome) dashWelcome.style.display = '';
+    if (dashCharts)  { dashCharts.style.display = ''; renderDashCharts(); }
+  } else {
+    if (dashWelcome) dashWelcome.style.display = 'none';
+    if (dashCharts)  dashCharts.style.display = 'none';
+    if (view === 'alerts') quickFilter = 'alerts';
+    else if (view === 'projects') {
+      document.getElementById('sb-groups-section')?.classList.remove('collapsed');
+      document.getElementById('sb-groups-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      document.getElementById('sidebar').classList.remove('open');
+      return;
+    }
   }
   applyFilters();
   document.querySelector('.main-content')?.scrollTo({ top: 0, behavior: 'smooth' });
-  document.getElementById('sidebar').classList.remove('open'); // close on mobile
+  document.getElementById('sidebar').classList.remove('open');
 }
 
 // ── Sidebar search row (ChatGPT "Search") ─────────────────────────
@@ -781,37 +795,9 @@ function toggleGroupExpand(id, event) {
 
 // ── SIDEBAR RESIZE ────────────────────────────────────────────────
 function initSidebarResize() {
-  const sidebar  = document.getElementById('sidebar');
-  const resizer  = document.getElementById('sidebar-resizer');
-  const toggle   = document.getElementById('sidebar-toggle');
-
-  let startX, startW;
-
-  resizer.addEventListener('mousedown', e => {
-    startX = e.clientX;
-    startW = sidebar.offsetWidth;
-    resizer.classList.add('dragging');
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-
-    function onMove(e) {
-      const w = Math.max(180, Math.min(480, startW + e.clientX - startX));
-      sidebar.style.width = w + 'px';
-      document.documentElement.style.setProperty('--sidebar-w', w + 'px');
-    }
-    function onUp() {
-      resizer.classList.remove('dragging');
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    }
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  });
-
-  toggle.addEventListener('click', () => {
-    sidebar.classList.toggle('collapsed');
+  const toggle = document.getElementById('sidebar-toggle');
+  if (toggle) toggle.addEventListener('click', () => {
+    document.getElementById('sidebar')?.classList.toggle('collapsed');
   });
 }
 
@@ -820,8 +806,110 @@ function initMobileMenu() {
   const sidebar = document.getElementById('sidebar');
   const backdrop= document.getElementById('sidebar-backdrop');
 
-  btn.addEventListener('click', () => sidebar.classList.toggle('open'));
-  backdrop.addEventListener('click', () => sidebar.classList.remove('open'));
+  if (btn) btn.addEventListener('click', () => sidebar?.classList.toggle('open'));
+  if (backdrop) backdrop.addEventListener('click', () => sidebar?.classList.remove('open'));
+}
+
+// ── DETAIL TABS ───────────────────────────────────────────────────
+function switchDetailTab(tab, el) {
+  document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.detail-pane').forEach(p => p.classList.remove('active'));
+  if (el) el.classList.add('active');
+  document.getElementById('detail-pane-' + tab)?.classList.add('active');
+  if (tab === 'activity' && _currentViewUid) loadActivityLog(_currentViewUid);
+  if (tab === 'docs'     && _currentViewUid) _loadAndRenderDocs(_currentViewUid);
+}
+
+async function loadActivityLog(uid) {
+  const container = document.getElementById('vm-activity-content');
+  if (!container) return;
+  container.innerHTML = '<div class="act-empty">Loading…</div>';
+  let log = [];
+  try { log = await DB.getActivity(uid); } catch (e) { log = []; }
+  if (!log.length) {
+    container.innerHTML = '<div class="act-empty">No activity yet</div>';
+    return;
+  }
+  const actionIcons = { created: '✦', updated: '✎', deleted: '✕', photo_updated: '◉' };
+  container.innerHTML = log.map(entry => {
+    const icon = actionIcons[entry.action] || '•';
+    const ts = entry.created_at ? new Date(entry.created_at).toLocaleString() : '';
+    return '<div class="act-item">' +
+      '<div class="act-dot">' + icon + '</div>' +
+      '<div class="act-body">' +
+        '<div class="act-action">' + esc(entry.action) +
+          (entry.performed_by ? ' <span class="act-by">by ' + esc(entry.performed_by) + '</span>' : '') +
+        '</div>' +
+        (entry.detail ? '<div class="act-detail">' + esc(entry.detail) + '</div>' : '') +
+        (ts ? '<div class="act-time">' + ts + '</div>' : '') +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+// ── DASHBOARD CHARTS (SVG, pure, offline-first) ───────────────────
+function renderDashCharts() {
+  const ws = DB.getWorkers(activeGroupId);
+
+  _renderPieChart('chart-grade', 'chart-grade-legend', _countBy(ws, 'grade'),
+    { A:'#16a34a', B:'#2563eb', C:'#d97706', D:'#dc2626', '':'#9ca3af' });
+
+  _renderPieChart('chart-visa', 'chart-visa-legend', _countBy(ws, 'visa_status'),
+    { approved:'#16a34a', applied:'#2563eb', not_started:'#9ca3af', rejected:'#dc2626', '':'#d1d5db' });
+
+  const expiryBuckets = { expired:0, warn:0, near:0, ok:0 };
+  ws.forEach(w => {
+    const c = expiryClass(w.passport_expiry);
+    if      (c === 'expiry-expired') expiryBuckets.expired++;
+    else if (c === 'expiry-warn')    expiryBuckets.warn++;
+    else if (c === 'expiry-near')    expiryBuckets.near++;
+    else                             expiryBuckets.ok++;
+  });
+  _renderPieChart('chart-expiry', 'chart-expiry-legend', expiryBuckets,
+    { expired:'#dc2626', warn:'#f59e0b', near:'#fbbf24', ok:'#16a34a' });
+}
+
+function _countBy(arr, key) {
+  const out = {};
+  arr.forEach(item => { const v = item[key] || ''; out[v] = (out[v] || 0) + 1; });
+  return out;
+}
+
+function _renderPieChart(svgId, legendId, counts, colors) {
+  const svgEl    = document.getElementById(svgId);
+  const legendEl = document.getElementById(legendId);
+  if (!svgEl) return;
+
+  const entries = Object.entries(counts).filter(([,v]) => v > 0);
+  const total   = entries.reduce((s, [,v]) => s + v, 0);
+
+  if (!total) {
+    svgEl.innerHTML = '<p style="color:var(--text-muted);font-size:0.8rem;text-align:center">No data</p>';
+    if (legendEl) legendEl.innerHTML = '';
+    return;
+  }
+
+  let svgPaths   = '';
+  let legendHtml = '';
+  let startAngle = -Math.PI / 2;
+  const cx = 60, cy = 60, r = 52;
+
+  entries.forEach(([key, val]) => {
+    const angle = (val / total) * 2 * Math.PI;
+    const x1    = cx + r * Math.cos(startAngle);
+    const y1    = cy + r * Math.sin(startAngle);
+    const x2    = cx + r * Math.cos(startAngle + angle);
+    const y2    = cy + r * Math.sin(startAngle + angle);
+    const large = angle > Math.PI ? 1 : 0;
+    const color = colors[key] || '#9ca3af';
+    svgPaths   += `<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${large},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${color}" stroke="var(--bg-card,#fff)" stroke-width="1.5"/>`;
+    legendHtml += `<div class="chart-legend-item"><span style="background:${color}"></span>${esc(key || '—')} (${val})</div>`;
+    startAngle += angle;
+  });
+
+  svgEl.innerHTML = `<svg viewBox="0 0 120 120" width="110" height="110">${svgPaths}` +
+    `<text x="60" y="64" text-anchor="middle" font-size="13" font-weight="700" fill="var(--text,#1f2937)">${total}</text></svg>`;
+  if (legendEl) legendEl.innerHTML = legendHtml;
 }
 
 // ── GROUP SWITCH ──────────────────────────────────────────────────
@@ -1115,50 +1203,83 @@ function openView(uid) {
   const w = g && g.workers.find(x => x.uid === uid);
   if (!w) return;
 
-  const age  = calcAge(w.dob);
-  const warn = expiryClass(w.passport_expiry) !== 'expiry-ok';
+  _currentViewUid = uid;
+
+  const age   = calcAge(w.dob);
   const idNum = w.worker_id ? w.worker_id.split('-').pop() : '--';
 
-  function bc(type) {
-    const on = w.blood === type;
-    return '<div class="vm-bc"><div class="vm-box' + (on ? ' on' : '') + '">' + (on ? '✓' : '') + '</div>' + type + '</div>';
+  const gradeColors = { A:'#16a34a', B:'#2563eb', C:'#d97706', D:'#dc2626' };
+  const gradeColor  = gradeColors[w.grade] || '#6b7280';
+  const gradeChip   = w.grade
+    ? '<span class="vm-grade-chip" style="background:' + gradeColor + '">Grade ' + esc(w.grade) + '</span>'
+    : '';
+
+  // Topbar
+  const enEl = document.getElementById('vm-topbar-en');
+  const loEl = document.getElementById('vm-topbar-lo');
+  if (enEl) enEl.textContent = w.en_name || '';
+  if (loEl) loEl.innerHTML   = gradeChip + (w.lo_name ? '<span class="vm-topbar-lo-text">' + esc(w.lo_name) + '</span>' : '');
+
+  const actionsEl = document.getElementById('vm-topbar-actions');
+  if (actionsEl) {
+    actionsEl.innerHTML = isAdmin()
+      ? '<button class="vm-action-btn" onclick="openWorkerForm(\'' + esc(uid) + '\')">&#9998; Edit</button>'
+      : '';
   }
+
+  // Reset tabs to Info
+  document.querySelectorAll('.detail-tab').forEach(tb => tb.classList.remove('active'));
+  document.querySelectorAll('.detail-pane').forEach(p  => p.classList.remove('active'));
+  const infoTab  = document.querySelector('.detail-tab[data-tab="info"]');
+  const infoPane = document.getElementById('detail-pane-info');
+  if (infoTab)  infoTab.classList.add('active');
+  if (infoPane) infoPane.classList.add('active');
+
+  // Reset activity pane
+  const actContent = document.getElementById('vm-activity-content');
+  if (actContent) actContent.innerHTML = '<div class="act-empty">Loading…</div>';
+
+  // Photo section (editable for admin)
+  const photoHtml = isAdmin()
+    ? '<div class="vm-photo-large" onclick="_triggerPhotoEdit(\'' + esc(uid) + '\')" title="Click to change photo">' +
+        personPhoto(w, 'avatar-xl') +
+        '<div class="vm-photo-overlay">&#9998;</div>' +
+      '</div>' +
+      '<input type="file" id="photo-edit-input" accept="image/*" style="display:none" ' +
+      'onchange="_handlePhotoEdit(this,\'' + esc(uid) + '\')">'
+    : '<div class="vm-photo-large">' + personPhoto(w, 'avatar-xl') + '</div>';
 
   const idDisplay = w.worker_id
     ? w.worker_id.replace(/(\d+)$/, '<span class="id-num">$1</span>')
     : '<span style="color:#aaa">No ID</span>';
 
-  const plane = personPhoto(w, 'avatar-xl');
+  const visaLabels = { not_started:'ຍັງບໍ່ເລີ່ມ', applied:'ຍື່ນຂໍແລ້ວ', approved:'ອະນຸມັດ ✓', rejected:'ຖືກປະຕິເສດ ✗' };
+  const visaColors = { not_started:'#888', applied:'#2563eb', approved:'#16a34a', rejected:'#dc2626' };
+  const warn = expiryClass(w.passport_expiry) !== 'expiry-ok';
 
   function row(label, sub, val) {
     return '<tr><td>' + label + (sub ? '<span class="sub">' + sub + '</span>' : '') + '</td><td>' + val + '</td></tr>';
   }
 
-  const gradeColors = { A:'#16a34a', B:'#2563eb', C:'#d97706', D:'#dc2626' };
-  const gradeChip = w.grade
-    ? '<span class="vm-grade-chip" style="background:' + (gradeColors[w.grade]||'#666') + '">Grade ' + esc(w.grade) + '</span>'
-    : '';
-  const visaLabels = { not_started:'ຍັງບໍ່ເລີ່ມ', applied:'ຍື່ນຂໍແລ້ວ', approved:'ອະນຸມັດ ✓', rejected:'ຖືກປະຕິເສດ ✗' };
-  const visaColors = { not_started:'#888', applied:'#2563eb', approved:'#16a34a', rejected:'#dc2626' };
-
   document.getElementById('vm-content').innerHTML =
-    '<div class="vm-header">' +
-      '<span class="vm-id">' + idDisplay + '</span>' +
-      gradeChip +
-      '<div class="vm-bloods">' + bc('A') + bc('B+') + bc('B-') + bc('O') + bc('AB') + '</div>' +
-      (g ? '<span class="vm-group-tag">' + esc(g.name) + '</span>' : '') +
-    '</div>' +
-    '<div class="vm-body">' +
-      '<div class="vm-left">' +
+    '<div class="vm-info-layout">' +
+      '<div class="vm-info-photo">' + photoHtml + '</div>' +
+      '<div class="vm-info-main">' +
+        '<div class="vm-header">' +
+          '<span class="vm-id">' + idDisplay + '</span>' +
+          (g ? '<span class="vm-group-tag">' + esc(g.name) + '</span>' : '') +
+          (w.couple === 'yes' ? '<span class="vm-couple-chip">부부</span>' : '') +
+        '</div>' +
         '<div class="vm-sup-bar">' +
           '<span class="vm-sup-name">' + esc(w.group_supervisor || '--') + '</span>' +
           '<span class="vm-sup-seq">' + idNum + '</span>' +
         '</div>' +
+        (warn ? '<div class="vm-warn">&#9888; ' + t('vc_passport_warn', { date: w.passport_expiry }) + '</div>' : '') +
         '<table class="vm-tbl">' +
           row(t('vc_name'), '/ຊື່', esc(w.en_name)) +
-          row('ຊື່ ແລະ ນາມສະກຸນ', '', esc(w.lo_name)) +
+          row('ຊື່ ນາມສະກຸນ', '', esc(w.lo_name)) +
           row(t('vc_dob'), 'ວັນເດືອນປີເກີດ', esc(w.dob)) +
-          row(t('vc_age'), 'ອາຍຸ', age || '--') +
+          row(t('vc_age'), 'ອາຍຸ', age ? age + ' yrs' : '--') +
           (w.nationality ? row(t('vc_nationality'), 'ສັນຊາດ', esc(w.nationality)) : '') +
           (w.sex ? row(t('vc_sex'), 'ເພດ', w.sex === 'M' ? '♂ ' + t('fm_sex_m') : '♀ ' + t('fm_sex_f')) : '') +
           row(t('vc_village'), 'ບ້ານ', esc(w.village || '--')) +
@@ -1173,26 +1294,52 @@ function openView(uid) {
             '<span class="' + expiryClass(w.passport_expiry) + '">' + esc(w.passport_expiry || '--') + '</span></div>') +
           row(t('vc_tel'), 'ໂທ / Emergency', esc(w.tel || '--') + (w.emg_tel ? ' &nbsp; ' + esc(w.emg_tel) : '')) +
           (w.visa_status ? row('Visa Status', 'ວີຊາ', '<span style="color:' + (visaColors[w.visa_status]||'#888') + ';font-weight:700">' + esc(visaLabels[w.visa_status]||w.visa_status) + '</span>') : '') +
-          (w.education ? row('Education', 'ການສຶກສາ', esc(w.education)) : '') +
+          (w.education    ? row('Education', 'ການສຶກສາ', esc(w.education)) : '') +
           (w.work_experience ? row('Experience', 'ປະສົບການ', esc(w.work_experience)) : '') +
-          (w.languages ? row('Languages', 'ພາສາ', esc(w.languages)) : '') +
+          (w.languages    ? row('Languages', 'ພາສາ', esc(w.languages)) : '') +
         '</table>' +
       '</div>' +
-      '<div class="vm-right">' +
-        '<div class="vm-photo">' + plane + '</div>' +
-        (w.couple === 'yes' ? '<div class="vm-couple">부부</div>' : '') +
-        '<table class="vm-rtbl">' +
-          '<tr><td class="rl" colspan="2">ຈໍານວນເພດ / ຄູ່ຜົວເມຍ</td><td class="rl" colspan="2">--</td></tr>' +
-          '<tr><td class="rl">여성</td><td class="rl"></td><td class="rl">배정인원</td><td>0 명</td></tr>' +
-          '<tr><td class="rl">남성</td><td class="rl"></td><td class="rl">입국자 수</td><td>0 명</td></tr>' +
-          '<tr><td class="rl">부부</td><td class="rl"></td><td class="rl" style="font-size:0.68rem">TEL</td><td style="font-size:0.7rem">' + esc(w.tel || '--') + '</td></tr>' +
-        '</table>' +
-      '</div>' +
-    '</div>' +
-    (warn ? '<div class="vm-warn">&#9888; ' + t('vc_passport_warn', { date: w.passport_expiry }) + '</div>' : '') +
-    renderDocuments(w);
+    '</div>';
+
+  // Docs tab - render placeholder for on-demand load
+  document.getElementById('vm-docs-content').innerHTML =
+    '<div class="vm-docs-title">&#128193; ' + t('vc_documents') + '</div>' +
+    '<div class="doc-loading">&#8203;</div>';
 
   openOverlay('view-overlay');
+}
+
+function _triggerPhotoEdit(uid) {
+  const inp = document.getElementById('photo-edit-input');
+  if (inp) { inp.dataset.uid = uid; inp.click(); }
+}
+
+async function _handlePhotoEdit(input, uid) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  input.value = '';
+  _fileToDataURL(file, 800, async dataUrl => {
+    try {
+      await DB.updateEmployee(uid, { photo: dataUrl, _by: currentUser?.username });
+      // refresh worker in memory
+      const g = DB.getGroup(activeGroupId);
+      const w = g && g.workers.find(x => x.uid === uid);
+      if (w) w.photo = dataUrl;
+      // update photo in overlay
+      const photoEl = document.querySelector('.vm-photo-large');
+      if (photoEl) {
+        const w2 = g && g.workers.find(x => x.uid === uid);
+        if (w2) photoEl.querySelector('.avatar-xl') && (photoEl.innerHTML =
+          personPhoto(w2, 'avatar-xl') +
+          '<div class="vm-photo-overlay">&#9998;</div>' +
+          '<input type="file" id="photo-edit-input" accept="image/*" style="display:none" ' +
+          'onchange="_handlePhotoEdit(this,\'' + esc(uid) + '\')">');
+      }
+      toast('Photo updated', 'ok');
+    } catch (e) {
+      toast('Photo upload failed', 'err');
+    }
+  });
 }
 
 // ── DOCUMENTS (inside the detail drawer, versioned) ───────────────
@@ -1206,16 +1353,12 @@ const DOC_CATS = [
 ];
 
 function renderDocuments(w) {
-  // Render placeholder — async load fills it in after
   setTimeout(() => _loadAndRenderDocs(w.uid), 0);
-  return '<div class="vm-docs" id="vm-docs-' + w.uid + '">' +
-    '<div class="vm-docs-title">&#128193; ' + t('vc_documents') + '</div>' +
-    '<div class="doc-loading">&#8203;</div>' +
-    '</div>';
+  return '';
 }
 
 async function _loadAndRenderDocs(uid) {
-  const container = document.getElementById('vm-docs-' + uid);
+  const container = document.getElementById('vm-docs-content') || document.getElementById('vm-docs-' + uid);
   if (!container) return;
   let docs = {};
   try { docs = await DB.getDocuments(uid); } catch (e) { docs = {}; }
@@ -1265,7 +1408,7 @@ async function _loadAndRenderDocs(uid) {
     '</div>';
   }).join('');
 
-  container.innerHTML = '<div class="vm-docs-title">&#128193; ' + t('vc_documents') + '</div>' + html;
+  container.innerHTML = '<div class="vm-docs-title">&#128193; ' + t('vc_documents') + '</div>' + (html || '<div class="doc-loading">No documents</div>');
 }
 
 function handleDocUpload(input, uid, cat) {
@@ -1273,12 +1416,13 @@ function handleDocUpload(input, uid, cat) {
   if (!file) return;
   input.value = '';
   _fileToDataURL(file, 1600, async dataUrl => {
-    const container = document.getElementById('vm-docs-' + uid);
+    const container = document.getElementById('vm-docs-content') || document.getElementById('vm-docs-' + uid);
     if (container) container.innerHTML = '<div class="vm-docs-title">&#128193; ' + t('vc_documents') + '</div><div class="doc-loading">&#8203;</div>';
     try {
       await DB.uploadDocument(uid, activeGroupId, cat, dataUrl, file.name);
+      toast('Document uploaded', 'ok');
     } catch (e) {
-      alert('Upload failed: ' + (e && e.message || e));
+      toast('Upload failed: ' + (e && e.message || e), 'err');
       return;
     }
     _loadAndRenderDocs(uid);
@@ -1288,9 +1432,10 @@ function handleDocUpload(input, uid, cat) {
 async function deleteDocById(event, docId, uid) {
   if (event) event.stopPropagation();
   if (!isAdmin()) return;
-  if (!confirm('Delete this document version?')) return;
-  try { await DB.deleteDocument(docId); } catch (e) { alert('Delete failed'); return; }
+  if (!window.confirm('Delete this document version?')) return;
+  try { await DB.deleteDocument(docId); } catch (e) { toast('Delete failed', 'err'); return; }
   _loadAndRenderDocs(uid);
+  toast('Document deleted', 'ok');
 }
 
 function openDocViewById(docId, path, type, name) {
@@ -1651,7 +1796,10 @@ function exportCSV() {
 
 // ── OVERLAY HELPERS ───────────────────────────────────────────────
 function openOverlay(id)  { document.getElementById(id).classList.add('open'); }
-function closeOverlay(id) { document.getElementById(id).classList.remove('open'); }
+function closeOverlay(id) {
+  document.getElementById(id).classList.remove('open');
+  if (id === 'view-overlay') _currentViewUid = null;
+}
 
 // Click outside to close
 ['view-overlay','form-overlay','group-overlay','confirm-overlay','settings-overlay','import-overlay','scan-overlay','docview-overlay'].forEach(id => {

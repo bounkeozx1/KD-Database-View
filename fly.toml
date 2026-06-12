@@ -1,19 +1,26 @@
-app = "kd-database-view"
-primary_region = "sin"
+# fly.toml app configuration file generated for kd-database-view on 2026-06-12T10:09:03+07:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'kd-database-view'
+primary_region = 'sin'
 
 [build]
+
+[[mounts]]
+  source = 'kd_data'
+  destination = '/app/data'
 
 [http_service]
   internal_port = 3000
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "256mb"
-
-[[mounts]]
-  source = "kd_data"
-  destination = "/app/data"
+  size = 'shared-cpu-1x'
+  memory = '256mb'
+  cpus = 1
+  memory_mb = 256

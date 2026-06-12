@@ -754,7 +754,16 @@ const I18N = {
   }
 };
 
-let currentLang = localStorage.getItem('kd_lang') || 'en';
+function _detectLangFromTimezone() {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    if (tz === 'Asia/Seoul' || tz === 'Asia/Pyongyang') return 'ko';
+    if (tz === 'Asia/Vientiane') return 'lo';
+    if (tz === 'Asia/Bangkok') return 'th';
+  } catch (e) {}
+  return 'en';
+}
+let currentLang = _detectLangFromTimezone();
 
 function t(key, vars) {
   const dict = I18N[currentLang] || I18N.en;

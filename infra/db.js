@@ -133,6 +133,15 @@ function migrate() {
   if (!empCols.includes('education'))       db.exec("ALTER TABLE employees ADD COLUMN education TEXT DEFAULT ''");
   if (!empCols.includes('work_experience')) db.exec("ALTER TABLE employees ADD COLUMN work_experience TEXT DEFAULT ''");
   if (!empCols.includes('languages'))       db.exec("ALTER TABLE employees ADD COLUMN languages TEXT DEFAULT ''");
+
+  db.exec(`CREATE TABLE IF NOT EXISTS activity_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_uid TEXT,
+    action       TEXT NOT NULL,
+    detail       TEXT,
+    performed_by TEXT,
+    created_at   TEXT DEFAULT (datetime('now'))
+  ); CREATE INDEX IF NOT EXISTS idx_act_emp ON activity_log(employee_uid);`);
 }
 
 function init() {
