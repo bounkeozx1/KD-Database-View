@@ -493,11 +493,18 @@ tr:last-child td { border-bottom: none; }
 .detail-drawer {
   width: 100%; max-width: 880px; height: 100dvh;
   background: var(--bg-card); overflow-y: auto; position: relative;
-  box-shadow: -12px 0 40px -12px rgba(0,0,0,0.45);
-  transform: translateX(100%);
-  transition: transform 0.3s cubic-bezier(.4,0,.2,1);
+  box-shadow: 0 0 80px rgba(0,0,0,0.35);
+  opacity: 0;
+  transform: scale(0.86) translateY(36px);
+  transform-origin: center 15%;
 }
-.drawer-overlay.open .detail-drawer { transform: translateX(0); }
+.drawer-overlay.open .detail-drawer {
+  animation: idCardPopIn 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+@keyframes idCardPopIn {
+  0%   { transform: scale(0.86) translateY(36px); opacity: 0; }
+  100% { transform: scale(1)    translateY(0);    opacity: 1; }
+}
 .detail-drawer .vm-close {
   position: absolute; top: 10px; right: 12px; z-index: 20;
   width: 32px; height: 32px; border-radius: 50%;
@@ -1553,6 +1560,121 @@ body[data-role="viewer"] .fab { display: none !important; }
 
 /* ── Toast animation ── */
 .toast.removing { opacity: 0; transform: translateX(40px); transition: all 0.3s ease; }
+
+/* ══════════════════════════════════════════════
+   ID BADGE CARD — Physical card style profile
+   ══════════════════════════════════════════════ */
+.id-badge-card {
+  margin: 16px 20px 4px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #c9f040;
+  box-shadow: 0 12px 40px -8px rgba(0,0,0,0.22);
+}
+
+/* Top visual zone — swoosh + photo + grade chip */
+.idc-visual {
+  position: relative;
+  height: 168px;
+  background: #c9f040;
+  overflow: hidden;
+}
+.idc-swoosh {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+}
+.idc-grade-flag {
+  position: absolute; top: 14px; left: 14px; z-index: 5;
+  background: #1a2235; color: #c9f040;
+  padding: 4px 11px; border-radius: 7px;
+  font-size: 0.7rem; font-weight: 800; letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.idc-seq {
+  position: absolute; top: 15px; right: 15px; z-index: 5;
+  color: rgba(255,255,255,0.65);
+  font-size: 0.68rem; font-family: monospace; font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.idc-photo {
+  position: absolute; bottom: 14px; left: 18px; z-index: 5;
+  width: 80px; height: 80px;
+  border-radius: 14px; overflow: hidden;
+  border: 3px solid #c9f040;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.22);
+  cursor: default;
+}
+.idc-photo.editable { cursor: pointer; }
+.idc-photo .avatar,
+.idc-photo .avatar-xl {
+  width: 100% !important; height: 100% !important;
+  border-radius: 0 !important; font-size: 1.6rem !important;
+}
+.idc-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.idc-photo-edit {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,0.38);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 1.1rem;
+  opacity: 0; transition: opacity 0.15s;
+}
+.idc-photo.editable:hover .idc-photo-edit { opacity: 1; }
+
+/* Body section — name + tags */
+.idc-body {
+  background: #c9f040;
+  padding: 12px 18px 14px;
+}
+.idc-name {
+  font-size: 1.65rem; font-weight: 900;
+  color: #1a2235; line-height: 1.1;
+  letter-spacing: -0.025em;
+}
+.idc-lo {
+  font-size: 0.85rem; color: rgba(26,34,53,0.6);
+  margin-top: 3px; font-weight: 500;
+}
+.idc-tags {
+  display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px;
+}
+.idc-tag {
+  background: rgba(26,34,53,0.13);
+  color: #1a2235;
+  padding: 3px 9px; border-radius: 5px;
+  font-size: 0.7rem; font-weight: 700;
+}
+.idc-tag-couple {
+  background: rgba(26,34,53,0.22);
+}
+
+/* Divider */
+.idc-divider {
+  height: 1px; background: rgba(26,34,53,0.12);
+  margin: 0 18px;
+}
+
+/* Footer — ID + logo */
+.idc-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 18px 14px;
+  background: #c9f040;
+}
+.idc-foot-id {
+  font-family: monospace; font-size: 0.72rem;
+  color: rgba(26,34,53,0.5); font-weight: 700; letter-spacing: 0.04em;
+}
+.idc-foot-logo {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: #1a2235; color: #c9f040;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.7rem; font-weight: 900; letter-spacing: 0.05em;
+}
+
+/* Info section below badge card */
+.vm-detail-section { padding: 4px 20px 24px; }
+.vm-detail-section .vm-warn { margin-bottom: 12px; }
 
 @media (max-width: 768px) {
   .vm-info-layout { flex-direction: column; align-items: center; }

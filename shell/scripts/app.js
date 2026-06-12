@@ -1197,6 +1197,48 @@ window.addEventListener('resize', () => {
   if (m !== _wasMobile) { _wasMobile = m; if (document.body.classList.contains('authed')) renderTable(); }
 });
 
+// ── ID BADGE CARD builder ─────────────────────────────────────────
+function _renderBadgeCard(w, g) {
+  const gradeColors = { A:'#16a34a', B:'#2563eb', C:'#d97706', D:'#dc2626' };
+  const idSeq = w.worker_id ? '#' + w.worker_id.split('-').pop() : '';
+
+  const photoHtml = isAdmin()
+    ? '<div class="idc-photo editable" onclick="_triggerPhotoEdit(\'' + esc(w.uid) + '\')" title="Tap to change photo">' +
+        personPhoto(w, 'avatar-xl') +
+        '<div class="idc-photo-edit">&#9998;</div>' +
+      '</div>' +
+      '<input type="file" id="photo-edit-input" accept="image/*" style="display:none" onchange="_handlePhotoEdit(this,\'' + esc(w.uid) + '\')">'
+    : '<div class="idc-photo">' + personPhoto(w, 'avatar-xl') + '</div>';
+
+  const tags = [];
+  if (w.employer_code) tags.push('<span class="idc-tag">' + esc(w.employer_code) + '</span>');
+  if (g && g.name)     tags.push('<span class="idc-tag">' + esc(g.name) + '</span>');
+  if (w.group_supervisor) tags.push('<span class="idc-tag">' + esc(w.group_supervisor) + '</span>');
+  if (w.couple === 'yes') tags.push('<span class="idc-tag idc-tag-couple">부부</span>');
+
+  return '<div class="id-badge-card">' +
+    '<div class="idc-visual">' +
+      '<svg class="idc-swoosh" viewBox="0 0 300 168" xmlns="http://www.w3.org/2000/svg">' +
+        '<path d="M300,0 C258,0 218,24 184,70 C140,130 128,160 68,168 L300,168 Z" fill="#1a2235"/>' +
+        '<path d="M300,0 C282,8 272,38 278,82 C283,118 294,148 300,168 L300,0 Z" fill="rgba(26,34,53,0.35)"/>' +
+      '</svg>' +
+      (w.grade ? '<div class="idc-grade-flag">GRADE ' + esc(w.grade) + '</div>' : '') +
+      (idSeq   ? '<div class="idc-seq">' + esc(idSeq) + '</div>' : '') +
+      photoHtml +
+    '</div>' +
+    '<div class="idc-body">' +
+      '<div class="idc-name">' + esc(w.en_name || '--') + '</div>' +
+      (w.lo_name ? '<div class="idc-lo">' + esc(w.lo_name) + '</div>' : '') +
+      (tags.length ? '<div class="idc-tags">' + tags.join('') + '</div>' : '') +
+    '</div>' +
+    '<div class="idc-divider"></div>' +
+    '<div class="idc-foot">' +
+      '<span class="idc-foot-id">' + esc(w.worker_id || '--') + '</span>' +
+      '<div class="idc-foot-logo">KD</div>' +
+    '</div>' +
+  '</div>';
+}
+
 // ── VIEW CARD ─────────────────────────────────────────────────────
 function openView(uid) {
   const g = DB.getGroup(activeGroupId);
@@ -1239,20 +1281,6 @@ function openView(uid) {
   const actContent = document.getElementById('vm-activity-content');
   if (actContent) actContent.innerHTML = '<div class="act-empty">Loading…</div>';
 
-  // Photo section (editable for admin)
-  const photoHtml = isAdmin()
-    ? '<div class="vm-photo-large" onclick="_triggerPhotoEdit(\'' + esc(uid) + '\')" title="Click to change photo">' +
-        personPhoto(w, 'avatar-xl') +
-        '<div class="vm-photo-overlay">&#9998;</div>' +
-      '</div>' +
-      '<input type="file" id="photo-edit-input" accept="image/*" style="display:none" ' +
-      'onchange="_handlePhotoEdit(this,\'' + esc(uid) + '\')">'
-    : '<div class="vm-photo-large">' + personPhoto(w, 'avatar-xl') + '</div>';
-
-  const idDisplay = w.worker_id
-    ? w.worker_id.replace(/(\d+)$/, '<span class="id-num">$1</span>')
-    : '<span style="color:#aaa">No ID</span>';
-
   const visaLabels = { not_started:'ຍັງບໍ່ເລີ່ມ', applied:'ຍື່ນຂໍແລ້ວ', approved:'ອະນຸມັດ ✓', rejected:'ຖືກປະຕິເສດ ✗' };
   const visaColors = { not_started:'#888', applied:'#2563eb', approved:'#16a34a', rejected:'#dc2626' };
   const warn = expiryClass(w.passport_expiry) !== 'expiry-ok';
@@ -1262,43 +1290,32 @@ function openView(uid) {
   }
 
   document.getElementById('vm-content').innerHTML =
-    '<div class="vm-info-layout">' +
-      '<div class="vm-info-photo">' + photoHtml + '</div>' +
-      '<div class="vm-info-main">' +
-        '<div class="vm-header">' +
-          '<span class="vm-id">' + idDisplay + '</span>' +
-          (g ? '<span class="vm-group-tag">' + esc(g.name) + '</span>' : '') +
-          (w.couple === 'yes' ? '<span class="vm-couple-chip">부부</span>' : '') +
-        '</div>' +
-        '<div class="vm-sup-bar">' +
-          '<span class="vm-sup-name">' + esc(w.group_supervisor || '--') + '</span>' +
-          '<span class="vm-sup-seq">' + idNum + '</span>' +
-        '</div>' +
-        (warn ? '<div class="vm-warn">&#9888; ' + t('vc_passport_warn', { date: w.passport_expiry }) + '</div>' : '') +
-        '<table class="vm-tbl">' +
-          row(t('vc_name'), '/ຊື່', esc(w.en_name)) +
-          row('ຊື່ ນາມສະກຸນ', '', esc(w.lo_name)) +
-          row(t('vc_dob'), 'ວັນເດືອນປີເກີດ', esc(w.dob)) +
-          row(t('vc_age'), 'ອາຍຸ', age ? age + ' yrs' : '--') +
-          (w.nationality ? row(t('vc_nationality'), 'ສັນຊາດ', esc(w.nationality)) : '') +
-          (w.sex ? row(t('vc_sex'), 'ເພດ', w.sex === 'M' ? '♂ ' + t('fm_sex_m') : '♀ ' + t('fm_sex_f')) : '') +
-          row(t('vc_village'), 'ບ້ານ', esc(w.village || '--')) +
-          row(t('vc_weight_height'), 'Kg ; Cm',
-            '<div class="split"><span>' + (w.weight ? w.weight + 'Kg' : '--') + '</span><span>' + (w.height ? w.height + 'Cm' : '--') + '</span></div>') +
-          row(t('vc_size'), 'ຂະໜາດເສື້ອ', esc(w.size || '--')) +
-          row(t('vc_hand'), 'ຊ້າຍຫຼືຂວາ', w.hand === 'R' ? 'R (Right)' : w.hand === 'L' ? 'L (Left)' : '--') +
-          row(t('vc_blood'), 'ກຸ່ມເລືອດ', esc(w.blood || '--')) +
-          row(t('vc_passport'), 'ເລກທີ', '<span style="font-family:monospace">' + esc(w.passport_no) + '</span>') +
-          row(t('vc_issue_expiry'), 'ວັນທີອອກ / ໝົດອາຍຸ',
-            '<div class="split"><span>' + esc(w.passport_issue || '--') + '</span>' +
-            '<span class="' + expiryClass(w.passport_expiry) + '">' + esc(w.passport_expiry || '--') + '</span></div>') +
-          row(t('vc_tel'), 'ໂທ / Emergency', esc(w.tel || '--') + (w.emg_tel ? ' &nbsp; ' + esc(w.emg_tel) : '')) +
-          (w.visa_status ? row('Visa Status', 'ວີຊາ', '<span style="color:' + (visaColors[w.visa_status]||'#888') + ';font-weight:700">' + esc(visaLabels[w.visa_status]||w.visa_status) + '</span>') : '') +
-          (w.education    ? row('Education', 'ການສຶກສາ', esc(w.education)) : '') +
-          (w.work_experience ? row('Experience', 'ປະສົບການ', esc(w.work_experience)) : '') +
-          (w.languages    ? row('Languages', 'ພາສາ', esc(w.languages)) : '') +
-        '</table>' +
-      '</div>' +
+    _renderBadgeCard(w, g) +
+    '<div class="vm-detail-section">' +
+      (warn ? '<div class="vm-warn">&#9888; ' + t('vc_passport_warn', { date: w.passport_expiry }) + '</div>' : '') +
+      '<table class="vm-tbl">' +
+        row(t('vc_name'), '/ຊື່', esc(w.en_name)) +
+        row('ຊື່ ນາມສະກຸນ', '', esc(w.lo_name)) +
+        row(t('vc_dob'), 'ວັນເດືອນປີເກີດ', esc(w.dob)) +
+        row(t('vc_age'), 'ອາຍຸ', age ? age + ' yrs' : '--') +
+        (w.nationality ? row(t('vc_nationality'), 'ສັນຊາດ', esc(w.nationality)) : '') +
+        (w.sex ? row(t('vc_sex'), 'ເພດ', w.sex === 'M' ? '♂ ' + t('fm_sex_m') : '♀ ' + t('fm_sex_f')) : '') +
+        row(t('vc_village'), 'ບ້ານ', esc(w.village || '--')) +
+        row(t('vc_weight_height'), 'Kg ; Cm',
+          '<div class="split"><span>' + (w.weight ? w.weight + 'Kg' : '--') + '</span><span>' + (w.height ? w.height + 'Cm' : '--') + '</span></div>') +
+        row(t('vc_size'), 'ຂະໜາດເສື້ອ', esc(w.size || '--')) +
+        row(t('vc_hand'), 'ຊ້າຍຫຼືຂວາ', w.hand === 'R' ? 'R (Right)' : w.hand === 'L' ? 'L (Left)' : '--') +
+        row(t('vc_blood'), 'ກຸ່ມເລືອດ', esc(w.blood || '--')) +
+        row(t('vc_passport'), 'ເລກທີ', '<span style="font-family:monospace">' + esc(w.passport_no) + '</span>') +
+        row(t('vc_issue_expiry'), 'ວັນທີອອກ / ໝົດອາຍຸ',
+          '<div class="split"><span>' + esc(w.passport_issue || '--') + '</span>' +
+          '<span class="' + expiryClass(w.passport_expiry) + '">' + esc(w.passport_expiry || '--') + '</span></div>') +
+        row(t('vc_tel'), 'ໂທ / Emergency', esc(w.tel || '--') + (w.emg_tel ? ' &nbsp; ' + esc(w.emg_tel) : '')) +
+        (w.visa_status ? row('Visa Status', 'ວີຊາ', '<span style="color:' + (visaColors[w.visa_status]||'#888') + ';font-weight:700">' + esc(visaLabels[w.visa_status]||w.visa_status) + '</span>') : '') +
+        (w.education    ? row('Education', 'ການສຶກສາ', esc(w.education)) : '') +
+        (w.work_experience ? row('Experience', 'ປະສົບການ', esc(w.work_experience)) : '') +
+        (w.languages    ? row('Languages', 'ພາສາ', esc(w.languages)) : '') +
+      '</table>' +
     '</div>';
 
   // Docs tab - render placeholder for on-demand load
@@ -1321,19 +1338,15 @@ async function _handlePhotoEdit(input, uid) {
   _fileToDataURL(file, 800, async dataUrl => {
     try {
       await DB.updateEmployee(uid, { photo: dataUrl, _by: currentUser?.username });
-      // refresh worker in memory
       const g = DB.getGroup(activeGroupId);
       const w = g && g.workers.find(x => x.uid === uid);
       if (w) w.photo = dataUrl;
-      // update photo in overlay
-      const photoEl = document.querySelector('.vm-photo-large');
-      if (photoEl) {
-        const w2 = g && g.workers.find(x => x.uid === uid);
-        if (w2) photoEl.querySelector('.avatar-xl') && (photoEl.innerHTML =
-          personPhoto(w2, 'avatar-xl') +
-          '<div class="vm-photo-overlay">&#9998;</div>' +
-          '<input type="file" id="photo-edit-input" accept="image/*" style="display:none" ' +
-          'onchange="_handlePhotoEdit(this,\'' + esc(uid) + '\')">');
+      // Refresh the badge card photo in-place
+      const idcPhoto = document.querySelector('.idc-photo');
+      if (idcPhoto && w) {
+        idcPhoto.innerHTML =
+          personPhoto(w, 'avatar-xl') +
+          '<div class="idc-photo-edit">&#9998;</div>';
       }
       toast('Photo updated', 'ok');
     } catch (e) {
