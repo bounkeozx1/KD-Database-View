@@ -132,8 +132,8 @@ function startApp(user) {
   if (window.matchMedia('(max-width: 768px)').matches) viewMode = 'cards';
 
   const groups = DB.getGroups();
-  activeGroupId = groups[0]?.id || '';
-  if (activeGroupId) expandedGroups.add(activeGroupId);
+  activeGroupId = '';  // Start on dashboard, not a group
+  if (groups.length) expandedGroups.add(groups[0].id);
 
   // One-time listeners
   if (!appInited) {
@@ -147,10 +147,15 @@ function startApp(user) {
   applyTranslations();
   renderSidebar();
   renderSidebarUser();
-  renderStats();
+  updateLogoDisplay();
+
+  // Show dashboard view on initial load
+  const dw = document.getElementById('dashboard-welcome');
+  const gv = document.getElementById('group-view');
+  if (dw) dw.style.display = '';
+  if (gv) gv.style.display = 'none';
+  renderDashboard();
   rebuildFilters();
-  applyFilters();
-  renderTable();
 }
 
 // ⌘K / Ctrl+K → open & focus the sidebar search
@@ -576,28 +581,39 @@ function navTo(view, el) {
   if (el) el.classList.add('active');
 
   const dashWelcome = document.getElementById('dashboard-welcome');
-  const dashCharts  = document.getElementById('dash-charts');
+  const groupView   = document.getElementById('group-view');
 
   if (view === 'dashboard') {
     quickFilter = '';
-    document.getElementById('search').value = '';
-    document.getElementById('f-employer').value = '';
+    const s = document.getElementById('search');
+    const ts = document.getElementById('th-search-input');
+    if (s)  s.value  = '';
+    if (ts) ts.value = '';
+    document.getElementById('f-employer').value   = '';
     document.getElementById('f-supervisor').value = '';
-    document.getElementById('f-blood').value = '';
+    document.getElementById('f-blood').value      = '';
     if (dashWelcome) dashWelcome.style.display = '';
-    if (dashCharts)  { dashCharts.style.display = ''; renderDashCharts(); }
+    if (groupView)   groupView.style.display   = 'none';
+    renderDashboard();
   } else {
     if (dashWelcome) dashWelcome.style.display = 'none';
-    if (dashCharts)  dashCharts.style.display = 'none';
-    if (view === 'alerts') quickFilter = 'alerts';
-    else if (view === 'projects') {
+    if (groupView)   groupView.style.display   = '';
+    if (view === 'alerts') {
+      quickFilter = 'alerts';
+    } else if (view === 'workers') {
+      quickFilter = '';
+      if (!activeGroupId) {
+        const groups = DB.getGroups();
+        if (groups.length) { activeGroupId = groups[0].id; renderSidebar(); renderStats(); }
+      }
+    } else if (view === 'projects') {
       document.getElementById('sb-groups-section')?.classList.remove('collapsed');
-      document.getElementById('sb-groups-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       document.getElementById('sidebar').classList.remove('open');
       return;
     }
+    applyFilters();
+    renderTable();
   }
-  applyFilters();
   document.querySelector('.main-content')?.scrollTo({ top: 0, behavior: 'smooth' });
   document.getElementById('sidebar').classList.remove('open');
 }
@@ -695,6 +711,202 @@ function handleProfilePhotoUpload(e) {
   e.target.value = '';
 }
 
+// ── Top header user chip ──────────────────────────────────────────
+function renderTopHeader() {
+  const el = document.getElementById('th-user-chip');
+  if (!el || !currentUser) return;
+  const name = currentUser.name || currentUser.username;
+  el.innerHTML =
+    profileAvatarHtml(currentUser.username, name, 'avatar-sm', false) +
+    '<div class="th-user-info">' +
+      '<span class="th-user-name">' + esc(name) + '</span>' +
+      '<span class="th-user-email">' + esc(currentUser.username) + '</span>' +
+    '</div>';
+}
+
+// ── Dashboard render (Donezo-style) ───────────────────────────────
+function renderDashboard() {
+  const groups     = DB.getGroups();
+  const allWorkers = groups.flatMap(g => g.workers || []);
+  const total      = groups.length;
+  const active     = groups.filter(g => (g.workers || []).length > 0).length;
+  const workers    = allWorkers.length;
+
+  let alertCount = 0;
+  allWorkers.forEach(w => {
+    const c = expiryClass(w.passport_expiry);
+    if (c === 'expiry-expired' || c === 'expiry-warn') alertCount++;
+  });
+
+  // Stats
+  const el = id => document.getElementById(id);
+  if (el('dz-total-groups'))  el('dz-total-groups').textContent  = total;
+  if (el('dz-active-groups')) el('dz-active-groups').textContent = active;
+  if (el('dz-total-workers')) el('dz-total-workers').textContent = workers;
+  if (el('dz-alerts-num'))    el('dz-alerts-num').textContent    = alertCount;
+  if (el('dz-groups-foot'))   el('dz-groups-foot').innerHTML     =
+    '<span style="color:var(--sb-green,#3dba7a)">▲ ' + total + '</span>&nbsp;total projects';
+  if (el('dz-alerts-foot'))   el('dz-alerts-foot').textContent   =
+    alertCount > 0 ? 'Needs attention' : 'All clear';
+
+  // Notification badge in header
+  const nb = el('th-notif-badge');
+  if (nb) { nb.textContent = alertCount; nb.style.display = alertCount > 0 ? 'flex' : 'none'; }
+
+  // Workers badge in sidebar
+  const wb = el('sb-workers-badge');
+  if (wb) { wb.textContent = workers; wb.style.display = workers > 0 ? '' : 'none'; }
+  const ab = el('sb-alerts-badge');
+  if (ab) { ab.textContent = alertCount; ab.style.display = alertCount > 0 ? '' : 'none'; }
+
+  _dzBarChart(groups);
+  _dzReminders(allWorkers);
+  _dzProjects(groups);
+  _dzTeam(allWorkers, groups);
+  _dzProgress(allWorkers);
+}
+
+function _dzBarChart(groups) {
+  const el = document.getElementById('dz-bar-chart');
+  if (!el) return;
+  if (!groups.length) { el.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem">No groups yet</p>'; return; }
+  const maxC = Math.max(...groups.map(g => (g.workers || []).length), 1);
+  const maxH  = 120;
+  const colors = ['#16a34a','#2563eb','#d97706','#dc2626','#7c3aed','#0891b2','#db2777','#16a34a'];
+  el.innerHTML = groups.slice(0, 10).map((g, i) => {
+    const cnt  = (g.workers || []).length;
+    const h    = Math.max(Math.round((cnt / maxC) * maxH), 4);
+    const col  = colors[i % colors.length];
+    const name = (g.name || g.destination || '?').split(' ')[0].substring(0, 8);
+    const isMax = cnt === maxC && cnt > 0;
+    return '<div class="dz-bar-item">' +
+      '<span class="dz-bar-val">' + cnt + '</span>' +
+      '<div class="dz-bar-col' + (isMax ? '' : ' dz-inactive') + '" style="height:' + h + 'px;background:' + col + '"></div>' +
+      '<span class="dz-bar-label" title="' + esc(g.name || '') + '">' + esc(name) + '</span>' +
+    '</div>';
+  }).join('');
+}
+
+function _dzReminders(allWorkers) {
+  const el = document.getElementById('dz-reminders');
+  if (!el) return;
+  const expiring = allWorkers.filter(w => {
+    const c = expiryClass(w.passport_expiry);
+    return c === 'expiry-expired' || c === 'expiry-warn' || c === 'expiry-near';
+  }).slice(0, 2);
+  if (!expiring.length) {
+    el.innerHTML = '<div class="dz-reminder-item"><div class="dz-reminder-name">All Clear ✓</div><div class="dz-reminder-sub">No upcoming passport expirations.</div></div>';
+    return;
+  }
+  const first   = expiring[0];
+  const name    = first.en_name || first.lo_name || '—';
+  const expDate = first.passport_expiry ? new Date(first.passport_expiry).toLocaleDateString() : '—';
+  el.innerHTML =
+    expiring.map(w => {
+      const n = w.en_name || w.lo_name || '—';
+      const d = w.passport_expiry ? new Date(w.passport_expiry).toLocaleDateString() : '—';
+      return '<div class="dz-reminder-item">' +
+        '<div class="dz-reminder-name">' + esc(n) + '</div>' +
+        '<div class="dz-reminder-sub">Passport expires: ' + d + '</div>' +
+      '</div>';
+    }).join('') +
+    '<button class="dz-reminder-btn" onclick="navTo(\'alerts\', document.getElementById(\'nav-alerts\'))">' +
+      '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg>' +
+      ' View Alerts' +
+    '</button>';
+}
+
+function _dzProjects(groups) {
+  const el = document.getElementById('dz-projects-list');
+  if (!el) return;
+  if (!groups.length) { el.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem">No projects yet</p>'; return; }
+  const colors = ['#16a34a','#2563eb','#d97706','#dc2626','#7c3aed','#0891b2'];
+  el.innerHTML = groups.slice(0, 6).map((g, i) => {
+    const cnt   = (g.workers || []).length;
+    const short = (g.name || g.destination || '?').substring(0, 2).toUpperCase();
+    const col   = colors[i % colors.length];
+    return '<div class="dz-project-item" onclick="openGroup(\'' + esc(g.id) + '\')">' +
+      '<div class="dz-project-ic" style="background:' + col + '22;color:' + col + '">' + esc(short) + '</div>' +
+      '<div class="dz-project-info">' +
+        '<div class="dz-project-name">' + esc(g.name || g.destination || '—') + '</div>' +
+        '<div class="dz-project-meta">' + cnt + ' workers</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function _dzTeam(allWorkers, groups) {
+  const el = document.getElementById('dz-team-list');
+  if (!el) return;
+  if (!allWorkers.length) { el.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem">No workers yet</p>'; return; }
+  const gMap = {};
+  groups.forEach(g => (g.workers || []).forEach(w => { gMap[w.uid] = g.name || g.destination || '—'; }));
+  el.innerHTML = allWorkers.slice(0, 5).map(w => {
+    const name  = w.en_name || w.lo_name || '—';
+    const grp   = gMap[w.uid] || '—';
+    const c     = expiryClass(w.passport_expiry);
+    const pill  = c === 'expiry-expired' ? '<span class="dz-status-pill dz-pill-bad">Expired</span>'
+                : c === 'expiry-warn'    ? '<span class="dz-status-pill dz-pill-warn">Expiring</span>'
+                :                          '<span class="dz-status-pill dz-pill-ok">Active</span>';
+    return '<div class="dz-team-item" onclick="openView(\'' + esc(w.uid) + '\')">' +
+      personPhoto(w, 'avatar-sm') +
+      '<div class="dz-team-info">' +
+        '<div class="dz-team-name">' + esc(name) + '</div>' +
+        '<div class="dz-team-sub">Working on <b>' + esc(grp) + '</b></div>' +
+      '</div>' +
+      pill +
+    '</div>';
+  }).join('');
+}
+
+function _dzProgress(allWorkers) {
+  const el = document.getElementById('dz-progress-wrap');
+  if (!el) return;
+  if (!allWorkers.length) { el.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem;text-align:center">No data</p>'; return; }
+  let expired = 0, warn = 0, near = 0, ok = 0;
+  allWorkers.forEach(w => {
+    const c = expiryClass(w.passport_expiry);
+    if      (c === 'expiry-expired') expired++;
+    else if (c === 'expiry-warn')    warn++;
+    else if (c === 'expiry-near')    near++;
+    else                             ok++;
+  });
+  const total   = allWorkers.length;
+  const okPct   = Math.round((ok / total) * 100);
+  const r = 52, cx = 65, cy = 65, stroke = 18;
+  const segs = [
+    { v: ok,      color: '#16a34a', label: 'Valid' },
+    { v: near,    color: '#fbbf24', label: 'Near' },
+    { v: warn,    color: '#f59e0b', label: 'Warn' },
+    { v: expired, color: '#dc2626', label: 'Expired' },
+  ].filter(s => s.v > 0);
+  let startA = -Math.PI / 2;
+  let paths  = '';
+  segs.forEach(s => {
+    const angle = (s.v / total) * 2 * Math.PI;
+    const x1 = cx + r * Math.cos(startA), y1 = cy + r * Math.sin(startA);
+    const x2 = cx + r * Math.cos(startA + angle), y2 = cy + r * Math.sin(startA + angle);
+    const lg = angle > Math.PI ? 1 : 0;
+    paths += '<path d="M' + cx + ',' + cy + ' L' + x1.toFixed(1) + ',' + y1.toFixed(1) + ' A' + r + ',' + r + ' 0 ' + lg + ',1 ' + x2.toFixed(1) + ',' + y2.toFixed(1) + ' Z" fill="' + s.color + '" opacity="0.9"/>';
+    startA += angle;
+  });
+  el.innerHTML =
+    '<div class="dz-donut-area">' +
+      '<div class="dz-donut-wrap">' +
+        '<svg width="130" height="130" viewBox="0 0 130 130">' + paths +
+          '<circle cx="' + cx + '" cy="' + cy + '" r="' + (r - stroke) + '" fill="var(--bg-card)"/>' +
+        '</svg>' +
+        '<div class="dz-donut-inner">' +
+          '<span class="dz-donut-pct">' + okPct + '%</span>' +
+          '<span class="dz-donut-lbl">Valid</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="dz-legend-row">' +
+        segs.map(s => '<div class="dz-legend-item"><div class="dz-legend-dot" style="background:' + s.color + '"></div>' + esc(s.label) + '</div>').join('') +
+      '</div>' +
+    '</div>';
+}
+
 // ── Sidebar footer user chip (opens profile menu) ─────────────────
 function renderSidebarUser() {
   const el = document.getElementById('sidebar-footer');
@@ -714,38 +926,21 @@ function renderSidebarUser() {
       '<svg class="sb-user-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>' +
     '</button>';
 
-  // Profile head (big avatar + name + role badge)
+  // Profile head — Claude.ai style: avatar + name + role
   const head = document.getElementById('pm-profile-head');
   if (head) {
     head.innerHTML =
-      profileAvatarHtml(currentUser.username, name, 'avatar-lg', true) +
-      '<div class="pm-profile-name">' + esc(name) + '</div>' +
-      '<span class="role-badge ' + roleCls + '">' + esc(roleTxt) + '</span>';
+      '<div class="pm-uhd">' +
+        profileAvatarHtml(currentUser.username, name, 'avatar-lg', true) +
+        '<div class="pm-uhd-info">' +
+          '<div class="pm-uhd-name">' + esc(name) + '</div>' +
+          '<span class="role-badge ' + roleCls + '">' + esc(roleTxt) + '</span>' +
+        '</div>' +
+      '</div>';
   }
 
-  // Accounts list: current user first (no click), then others (clickable to switch)
-  const accEl = document.getElementById('pm-accounts');
-  if (!accEl) return;
-  const allUsers = (DB.getUsers ? DB.getUsers() : []);
-  accEl.innerHTML = allUsers.map(u => {
-    const isCurrent = u.username === currentUser.username;
-    const uName = u.name || u.username;
-    const uRoleTxt = t(u.role === 'admin' ? 'role_admin' : 'role_viewer');
-    const uRoleCls = u.role === 'admin' ? 'role-admin' : 'role-viewer';
-    const checkmark = isCurrent
-      ? '<svg class="pm-check" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>'
-      : '';
-    const clickAttr = isCurrent ? '' : ' clickable" onclick="profileSwitchAccount(\'' + esc(u.username) + '\')';
-    return '<div class="pm-user-card' + (isCurrent ? '' : ' clickable') + '"' +
-      (isCurrent ? '' : ' onclick="profileSwitchAccount(\'' + esc(u.username) + '\')"') + '>' +
-      profileAvatarHtml(u.username, uName, 'avatar-xs', false) +
-      '<div class="pm-user-info">' +
-        '<span class="pm-user-name">' + esc(uName) + '</span>' +
-        '<span class="pm-user-sub"><span class="role-badge ' + uRoleCls + '">' + esc(uRoleTxt) + '</span> @' + esc(u.username) + '</span>' +
-      '</div>' +
-      checkmark +
-    '</div>';
-  }).join('');
+  // Top header user chip
+  renderTopHeader();
 }
 
 // Switch to another account without a full logout (demo convenience)
@@ -915,19 +1110,41 @@ function _renderPieChart(svgId, legendId, counts, colors) {
 // ── GROUP SWITCH ──────────────────────────────────────────────────
 function switchGroup(id) {
   activeGroupId = id;
-  expandedGroups.add(id); // auto-expand selected group
+  expandedGroups.add(id);
   highlightedWorkerUid = null;
   document.getElementById('search').value = '';
-  document.getElementById('f-employer').value = '';
+  const ts = document.getElementById('th-search-input');
+  if (ts) ts.value = '';
+  document.getElementById('f-employer').value   = '';
   document.getElementById('f-supervisor').value = '';
-  document.getElementById('f-blood').value = '';
+  document.getElementById('f-blood').value      = '';
+  // Show group view, hide dashboard
+  const dw = document.getElementById('dashboard-welcome');
+  const gv = document.getElementById('group-view');
+  if (dw) dw.style.display = 'none';
+  if (gv) gv.style.display = '';
+  document.querySelectorAll('.sb-nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('nav-workers')?.classList.add('active');
   renderSidebar();
   renderStats();
   rebuildFilters();
   applyFilters();
   renderTable();
-  // On mobile, close sidebar after selection
   document.getElementById('sidebar').classList.remove('open');
+}
+
+// ── Navigate to a specific group (from dashboard cards) ───────────
+function openGroup(groupId) {
+  switchGroup(groupId);
+}
+
+// ── Sync top-header search ↔ toolbar search ───────────────────────
+function syncSearch(input) {
+  const other = input.id === 'th-search-input'
+    ? document.getElementById('search')
+    : document.getElementById('th-search-input');
+  if (other) other.value = input.value;
+  applyFilters();
 }
 
 // ── STATS ─────────────────────────────────────────────────────────
@@ -1862,6 +2079,40 @@ function renderAppearance() {
   document.querySelectorAll('.lang-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.lang === (typeof currentLang !== 'undefined' ? currentLang : 'en'));
   });
+  updateLogoDisplay();
+}
+
+function updateLogoDisplay() {
+  const logo = localStorage.getItem('kd_company_logo');
+  const logoImg = logo ? '<img src="' + logo + '" alt="KD">' : 'KD';
+  const thLogo = document.getElementById('th-logo-icon');
+  if (thLogo) thLogo.innerHTML = logoImg;
+  const sbLogo = document.querySelector('.sb-logo');
+  if (sbLogo) sbLogo.innerHTML = logoImg;
+  const preview = document.getElementById('logo-preview-wrap');
+  if (preview) preview.innerHTML = logo
+    ? '<img src="' + logo + '" class="logo-preview-img" alt="Logo">'
+    : '<span class="logo-preview-text">KD</span>';
+  const removeBtn = document.getElementById('logo-remove-btn');
+  if (removeBtn) removeBtn.style.display = logo ? 'inline-flex' : 'none';
+}
+
+function handleLogoUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    localStorage.setItem('kd_company_logo', e.target.result);
+    updateLogoDisplay();
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeCompanyLogo() {
+  localStorage.removeItem('kd_company_logo');
+  const inp = document.getElementById('logo-file-input');
+  if (inp) inp.value = '';
+  updateLogoDisplay();
 }
 
 function renderSettings() {

@@ -110,9 +110,7 @@ CREATE INDEX IF NOT EXISTS idx_doc_emp ON documents(employee_uid);
 
 // Default master data (so login + dropdowns work on a fresh install).
 const DEFAULT_USERS = [
-  { username: 'admin',   password: 'admin1234',   role: 'admin',  name: 'Administrator' },
-  { username: 'manager', password: 'manager1234', role: 'admin',  name: 'Manager' },
-  { username: 'viewer',  password: 'viewer1234',  role: 'viewer', name: 'Viewer' },
+  { username: 'admin', password: 'admin1234', role: 'admin', name: 'Administrator' },
 ];
 const DEFAULT_EMPLOYERS = ['VK','TK','VV','HSF','NXT','XTN','PH','PL','TMX'];
 const DEFAULT_CITIES = {
