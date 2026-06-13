@@ -63,6 +63,9 @@
 }
 [data-theme="dark"] body { background: var(--bg); }
 
+/* Prevent background scroll when any overlay is open */
+body.no-scroll { overflow: hidden !important; }
+
 /* Global input / select / textarea dark mode override */
 [data-theme="dark"] input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
 [data-theme="dark"] select,

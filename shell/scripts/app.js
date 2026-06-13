@@ -1808,10 +1808,14 @@ function exportCSV() {
 }
 
 // ── OVERLAY HELPERS ───────────────────────────────────────────────
-function openOverlay(id)  { document.getElementById(id).classList.add('open'); }
+function openOverlay(id) {
+  document.getElementById(id).classList.add('open');
+  document.body.classList.add('no-scroll');
+}
 function closeOverlay(id) {
   document.getElementById(id).classList.remove('open');
   if (id === 'view-overlay') _currentViewUid = null;
+  if (!document.querySelector('.overlay.open')) document.body.classList.remove('no-scroll');
 }
 
 // Click outside to close
