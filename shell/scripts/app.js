@@ -16,7 +16,10 @@ let confirmCallback = null;
 let currentUser = null;             // {username, role, name} or null
 let appInited   = false;            // one-time listeners guard
 let quickFilter = '';               // '' | 'alerts' (sidebar nav view)
-let viewMode = localStorage.getItem('kd_view') || 'table'; // 'table' | 'cards'
+let viewMode = localStorage.getItem('kd_view') || 'table'; // 'table' | 'cards' | 'idcard' | 'slide'
+let dzSegment  = 'group';           // dashboard chart segment: group|krcity|lacity|status
+let dzTimeline = 'all';             // dashboard chart timeline: all|3|6|12 (months to passport expiry)
+let _dzGroupsCache = [];            // last groups passed to renderDashboard (for re-render on filter change)
 const expandedGroups = new Set(); // tracks which groups have workers list open
 const pinnedGroups = new Set(     // pinned group ids (ChatGPT-style "Pinned")
   (() => { try { return JSON.parse(localStorage.getItem('kd_pinned') || '[]'); } catch (e) { return []; } })()
@@ -586,7 +589,7 @@ function navTo(view, el) {
   if (view === 'dashboard') {
     quickFilter = '';
     const s = document.getElementById('search');
-    const ts = document.getElementById('th-search-input');
+    const ts = document.getElementById('sidebar-search-input');
     if (s)  s.value  = '';
     if (ts) ts.value = '';
     document.getElementById('f-employer').value   = '';
@@ -618,13 +621,10 @@ function navTo(view, el) {
   document.getElementById('sidebar').classList.remove('open');
 }
 
-// ── Sidebar search row (ChatGPT "Search") ─────────────────────────
-function toggleSidebarSearch(forceOpen) {
-  const box = document.getElementById('sb-search');
-  if (!box) return;
-  const open = forceOpen || box.style.display === 'none';
-  box.style.display = open ? 'flex' : 'none';
-  if (open) { const i = document.getElementById('sidebar-search-input'); i.focus(); i.select(); }
+// ── Sidebar search (now always visible — just focus it) ───────────
+function toggleSidebarSearch() {
+  const i = document.getElementById('sidebar-search-input');
+  if (i) { i.focus(); i.select(); }
 }
 
 // ── "More" submenu ────────────────────────────────────────────────
@@ -745,9 +745,9 @@ function renderDashboard() {
   if (el('dz-total-workers')) el('dz-total-workers').textContent = workers;
   if (el('dz-alerts-num'))    el('dz-alerts-num').textContent    = alertCount;
   if (el('dz-groups-foot'))   el('dz-groups-foot').innerHTML     =
-    '<span style="color:var(--sb-green,#3dba7a)">▲ ' + total + '</span>&nbsp;total projects';
+    '<span style="color:var(--sb-green,#3dba7a)">▲ ' + total + '</span>&nbsp;' + t('dz_total_projects');
   if (el('dz-alerts-foot'))   el('dz-alerts-foot').textContent   =
-    alertCount > 0 ? 'Needs attention' : 'All clear';
+    alertCount > 0 ? t('dz_needs_attention') : t('dz_all_clear');
 
   // Notification badge in header
   const nb = el('th-notif-badge');
@@ -764,25 +764,143 @@ function renderDashboard() {
   _dzProjects(groups);
   _dzTeam(allWorkers, groups);
   _dzProgress(allWorkers);
+  _dzCompare(groups);
+}
+
+// Grouped-bar comparison between two groups (passport status + headcount)
+function _dzCompare(groups) {
+  const selA = document.getElementById('dz-cmp-a');
+  const selB = document.getElementById('dz-cmp-b');
+  const el   = document.getElementById('dz-compare-chart');
+  if (!selA || !selB || !el) return;
+  if (groups.length < 2) {
+    el.innerHTML = '<div class="dz-bar-empty">' + t('dz_compare_need2') + '</div>';
+    selA.innerHTML = ''; selB.innerHTML = '';
+    return;
+  }
+  const optHtml = groups.map((g, i) => '<option value="' + i + '">' + esc(g.name || g.destination || ('Group ' + (i + 1))) + '</option>').join('');
+  const aPrev = selA.value, bPrev = selB.value;
+  selA.innerHTML = optHtml; selB.innerHTML = optHtml;
+  selA.value = (aPrev !== '' && groups[aPrev]) ? aPrev : '0';
+  selB.value = (bPrev !== '' && groups[bPrev]) ? bPrev : '1';
+  if (selA.value === selB.value) selB.value = (selA.value === '0') ? '1' : '0';
+
+  const gA = groups[+selA.value], gB = groups[+selB.value];
+  const tally = g => {
+    const c = { total: (g.workers || []).length, ok: 0, near: 0, warn: 0, expired: 0 };
+    (g.workers || []).forEach(w => {
+      const cl = expiryClass(w.passport_expiry);
+      if (cl === 'expiry-expired') c.expired++; else if (cl === 'expiry-warn') c.warn++; else if (cl === 'expiry-near') c.near++; else c.ok++;
+    });
+    return c;
+  };
+  const cA = tally(gA), cB = tally(gB);
+  const cats = [
+    { key: 'total',   label: t('dz_total_workers') },
+    { key: 'ok',      label: t('dz_valid') },
+    { key: 'near',    label: t('dz_near') },
+    { key: 'warn',    label: t('dz_warn') },
+    { key: 'expired', label: t('dz_expired') },
+  ];
+  const maxV = Math.max(1, ...cats.map(c => Math.max(cA[c.key], cB[c.key])));
+  const colA = '#2d6a4f', colB = '#2563eb';
+  el.innerHTML =
+    '<div class="dz-cmp-legend">' +
+      '<span class="dz-cmp-leg"><i style="background:' + colA + '"></i>' + esc(gA.name || 'A') + '</span>' +
+      '<span class="dz-cmp-leg"><i style="background:' + colB + '"></i>' + esc(gB.name || 'B') + '</span>' +
+    '</div>' +
+    '<div class="dz-cmp-bars">' +
+      cats.map((c, i) => {
+        const ha = Math.round((cA[c.key] / maxV) * 100), hb = Math.round((cB[c.key] / maxV) * 100);
+        return '<div class="dz-cmp-group">' +
+          '<div class="dz-cmp-pair">' +
+            '<div class="dz-cmp-bar" style="height:' + Math.max(ha, 3) + '%;background:' + colA + ';animation-delay:' + (i * 0.05).toFixed(2) + 's" title="' + esc(gA.name || 'A') + ': ' + cA[c.key] + '"><span>' + cA[c.key] + '</span></div>' +
+            '<div class="dz-cmp-bar" style="height:' + Math.max(hb, 3) + '%;background:' + colB + ';animation-delay:' + (i * 0.05 + 0.03).toFixed(2) + 's" title="' + esc(gB.name || 'B') + ': ' + cB[c.key] + '"><span>' + cB[c.key] + '</span></div>' +
+          '</div>' +
+          '<div class="dz-cmp-label">' + esc(c.label) + '</div>' +
+        '</div>';
+      }).join('') +
+    '</div>';
+}
+
+// Is this worker's passport expiring within `months` months from now?
+function _withinMonths(expiry, months) {
+  if (months === 'all') return true;
+  const d = parseDate(expiry);
+  if (!d) return false;            // unknown expiry → excluded from time-boxed views
+  const now = new Date();
+  const limit = new Date(now.getFullYear(), now.getMonth() + Number(months), now.getDate());
+  return d <= limit;              // expires on/before the horizon (includes already-expired)
+}
+
+function setDzSegment(v) { dzSegment = v; _dzBarChart(_dzGroupsCache); }
+function setDzTimeline(v, el) {
+  dzTimeline = v;
+  document.querySelectorAll('#dz-timeline .dz-seg-btn').forEach(b => b.classList.remove('active'));
+  if (el) el.classList.add('active');
+  _dzBarChart(_dzGroupsCache);
 }
 
 function _dzBarChart(groups) {
   const el = document.getElementById('dz-bar-chart');
   if (!el) return;
-  if (!groups.length) { el.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem">No groups yet</p>'; return; }
-  const maxC = Math.max(...groups.map(g => (g.workers || []).length), 1);
-  const maxH  = 120;
-  const colors = ['#16a34a','#2563eb','#d97706','#dc2626','#7c3aed','#0891b2','#db2777','#16a34a'];
-  el.innerHTML = groups.slice(0, 10).map((g, i) => {
-    const cnt  = (g.workers || []).length;
-    const h    = Math.max(Math.round((cnt / maxC) * maxH), 4);
-    const col  = colors[i % colors.length];
-    const name = (g.name || g.destination || '?').split(' ')[0].substring(0, 8);
-    const isMax = cnt === maxC && cnt > 0;
+  _dzGroupsCache = groups;
+
+  // 1) Flatten workers (tag each with its group name) and apply the timeline filter.
+  let workers = [];
+  groups.forEach(g => (g.workers || []).forEach(w => {
+    if (_withinMonths(w.passport_expiry, dzTimeline)) workers.push({ w, gname: g.name || g.destination || '—' });
+  }));
+
+  // 2) Bucket by the chosen segment.
+  const statusLabel = {
+    'expiry-expired': t('dz_expired'),
+    'expiry-warn':    t('dz_pill_expiring'),
+    'expiry-near':    t('dz_near'),
+    'expiry-ok':      t('dz_valid'),
+    '':               t('dz_valid'),
+  };
+  const buckets = new Map();   // label → count
+  const pickLabel = ({ w, gname }) => {
+    if (dzSegment === 'krcity') return w.kr_city || '—';
+    if (dzSegment === 'lacity') return w.la_city || '—';
+    if (dzSegment === 'status') return statusLabel[expiryClass(w.passport_expiry)] || t('dz_valid');
+    return gname; // 'group'
+  };
+  // Seed group buckets so empty groups still show (only in group mode, timeline=all)
+  if (dzSegment === 'group' && dzTimeline === 'all') {
+    groups.forEach(g => buckets.set(g.name || g.destination || '—', 0));
+  }
+  workers.forEach(item => {
+    const label = pickLabel(item);
+    buckets.set(label, (buckets.get(label) || 0) + 1);
+  });
+
+  const entries = [...buckets.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
+  if (!entries.length) {
+    el.innerHTML = '<div class="dz-bar-empty">' + (t('dz_no_data') || 'No matching workers') + '</div>';
+    return;
+  }
+
+  const maxC = Math.max(...entries.map(e => e[1]), 1);
+  const statusColors = {};
+  statusColors[t('dz_valid')] = '#16a34a';
+  statusColors[t('dz_near')] = '#fbbf24';
+  statusColors[t('dz_pill_expiring')] = '#f59e0b';
+  statusColors[t('dz_expired')] = '#dc2626';
+  const palette = ['#2d6a4f','#2563eb','#d97706','#7c3aed','#0891b2','#db2777','#16a34a','#dc2626','#0d9488','#9333ea'];
+  el.innerHTML = entries.map(([label, cnt], i) => {
+    const pct  = Math.round((cnt / maxC) * 100);
+    const col  = dzSegment === 'status' ? (statusColors[label] || palette[i % palette.length]) : palette[i % palette.length];
+    const isMax = cnt === maxC;
+    const short = String(label).length > 10 ? String(label).slice(0, 9) + '…' : label;
     return '<div class="dz-bar-item">' +
       '<span class="dz-bar-val">' + cnt + '</span>' +
-      '<div class="dz-bar-col' + (isMax ? '' : ' dz-inactive') + '" style="height:' + h + 'px;background:' + col + '"></div>' +
-      '<span class="dz-bar-label" title="' + esc(g.name || '') + '">' + esc(name) + '</span>' +
+      '<div class="dz-bar-track">' +
+        '<div class="dz-bar-col' + (isMax ? '' : ' dz-inactive') + '" title="' + esc(label) + ': ' + cnt + '" ' +
+          'style="height:' + pct + '%;background:' + col + ';animation-delay:' + (i * 0.04).toFixed(2) + 's"></div>' +
+      '</div>' +
+      '<span class="dz-bar-label" title="' + esc(label) + '">' + esc(short) + '</span>' +
     '</div>';
   }).join('');
 }
@@ -795,31 +913,28 @@ function _dzReminders(allWorkers) {
     return c === 'expiry-expired' || c === 'expiry-warn' || c === 'expiry-near';
   }).slice(0, 2);
   if (!expiring.length) {
-    el.innerHTML = '<div class="dz-reminder-item"><div class="dz-reminder-name">All Clear ✓</div><div class="dz-reminder-sub">No upcoming passport expirations.</div></div>';
+    el.innerHTML = '<div class="dz-reminder-item"><div class="dz-reminder-name">' + t('dz_all_clear_title') + '</div><div class="dz-reminder-sub">' + t('dz_no_expirations') + '</div></div>';
     return;
   }
-  const first   = expiring[0];
-  const name    = first.en_name || first.lo_name || '—';
-  const expDate = first.passport_expiry ? new Date(first.passport_expiry).toLocaleDateString() : '—';
   el.innerHTML =
     expiring.map(w => {
       const n = w.en_name || w.lo_name || '—';
       const d = w.passport_expiry ? new Date(w.passport_expiry).toLocaleDateString() : '—';
       return '<div class="dz-reminder-item">' +
         '<div class="dz-reminder-name">' + esc(n) + '</div>' +
-        '<div class="dz-reminder-sub">Passport expires: ' + d + '</div>' +
+        '<div class="dz-reminder-sub">' + t('dz_passport_expires') + ' ' + d + '</div>' +
       '</div>';
     }).join('') +
     '<button class="dz-reminder-btn" onclick="navTo(\'alerts\', document.getElementById(\'nav-alerts\'))">' +
       '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg>' +
-      ' View Alerts' +
+      ' ' + t('dz_view_alerts') +
     '</button>';
 }
 
 function _dzProjects(groups) {
   const el = document.getElementById('dz-projects-list');
   if (!el) return;
-  if (!groups.length) { el.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem">No projects yet</p>'; return; }
+  if (!groups.length) { el.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem">' + t('dz_no_projects') + '</p>'; return; }
   const colors = ['#16a34a','#2563eb','#d97706','#dc2626','#7c3aed','#0891b2'];
   el.innerHTML = groups.slice(0, 6).map((g, i) => {
     const cnt   = (g.workers || []).length;
@@ -829,7 +944,7 @@ function _dzProjects(groups) {
       '<div class="dz-project-ic" style="background:' + col + '22;color:' + col + '">' + esc(short) + '</div>' +
       '<div class="dz-project-info">' +
         '<div class="dz-project-name">' + esc(g.name || g.destination || '—') + '</div>' +
-        '<div class="dz-project-meta">' + cnt + ' workers</div>' +
+        '<div class="dz-project-meta">' + cnt + ' ' + t('dz_workers_suffix') + '</div>' +
       '</div>' +
     '</div>';
   }).join('');
@@ -838,21 +953,21 @@ function _dzProjects(groups) {
 function _dzTeam(allWorkers, groups) {
   const el = document.getElementById('dz-team-list');
   if (!el) return;
-  if (!allWorkers.length) { el.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem">No workers yet</p>'; return; }
+  if (!allWorkers.length) { el.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem">' + t('dz_no_workers') + '</p>'; return; }
   const gMap = {};
   groups.forEach(g => (g.workers || []).forEach(w => { gMap[w.uid] = g.name || g.destination || '—'; }));
   el.innerHTML = allWorkers.slice(0, 5).map(w => {
     const name  = w.en_name || w.lo_name || '—';
     const grp   = gMap[w.uid] || '—';
     const c     = expiryClass(w.passport_expiry);
-    const pill  = c === 'expiry-expired' ? '<span class="dz-status-pill dz-pill-bad">Expired</span>'
-                : c === 'expiry-warn'    ? '<span class="dz-status-pill dz-pill-warn">Expiring</span>'
-                :                          '<span class="dz-status-pill dz-pill-ok">Active</span>';
+    const pill  = c === 'expiry-expired' ? '<span class="dz-status-pill dz-pill-bad">' + t('dz_pill_expired') + '</span>'
+                : c === 'expiry-warn'    ? '<span class="dz-status-pill dz-pill-warn">' + t('dz_pill_expiring') + '</span>'
+                :                          '<span class="dz-status-pill dz-pill-ok">' + t('dz_pill_active') + '</span>';
     return '<div class="dz-team-item" onclick="openView(\'' + esc(w.uid) + '\')">' +
       personPhoto(w, 'avatar-sm') +
       '<div class="dz-team-info">' +
         '<div class="dz-team-name">' + esc(name) + '</div>' +
-        '<div class="dz-team-sub">Working on <b>' + esc(grp) + '</b></div>' +
+        '<div class="dz-team-sub">' + t('dz_working_on') + ' <b>' + esc(grp) + '</b></div>' +
       '</div>' +
       pill +
     '</div>';
@@ -862,7 +977,7 @@ function _dzTeam(allWorkers, groups) {
 function _dzProgress(allWorkers) {
   const el = document.getElementById('dz-progress-wrap');
   if (!el) return;
-  if (!allWorkers.length) { el.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem;text-align:center">No data</p>'; return; }
+  if (!allWorkers.length) { el.innerHTML = '<p style="color:var(--text-muted);font-size:0.82rem;text-align:center">' + t('dz_status_nodata') + '</p>'; return; }
   let expired = 0, warn = 0, near = 0, ok = 0;
   allWorkers.forEach(w => {
     const c = expiryClass(w.passport_expiry);
@@ -875,10 +990,10 @@ function _dzProgress(allWorkers) {
   const okPct   = Math.round((ok / total) * 100);
   const r = 52, cx = 65, cy = 65, stroke = 18;
   const segs = [
-    { v: ok,      color: '#16a34a', label: 'Valid' },
-    { v: near,    color: '#fbbf24', label: 'Near' },
-    { v: warn,    color: '#f59e0b', label: 'Warn' },
-    { v: expired, color: '#dc2626', label: 'Expired' },
+    { v: ok,      color: '#16a34a', label: t('dz_valid') },
+    { v: near,    color: '#fbbf24', label: t('dz_near') },
+    { v: warn,    color: '#f59e0b', label: t('dz_warn') },
+    { v: expired, color: '#dc2626', label: t('dz_expired') },
   ].filter(s => s.v > 0);
   let startA = -Math.PI / 2;
   let paths  = '';
@@ -898,7 +1013,7 @@ function _dzProgress(allWorkers) {
         '</svg>' +
         '<div class="dz-donut-inner">' +
           '<span class="dz-donut-pct">' + okPct + '%</span>' +
-          '<span class="dz-donut-lbl">Valid</span>' +
+          '<span class="dz-donut-lbl">' + t('dz_valid') + '</span>' +
         '</div>' +
       '</div>' +
       '<div class="dz-legend-row">' +
@@ -997,11 +1112,10 @@ function initSidebarResize() {
 }
 
 function initMobileMenu() {
-  const btn     = document.getElementById('mobile-menu-btn');
   const sidebar = document.getElementById('sidebar');
   const backdrop= document.getElementById('sidebar-backdrop');
-
-  if (btn) btn.addEventListener('click', () => sidebar?.classList.toggle('open'));
+  // Note: #mobile-menu-btn already calls toggleMobileMenu() via inline onclick —
+  // adding another listener here would double-toggle (cancel out), so we don't.
   if (backdrop) backdrop.addEventListener('click', () => sidebar?.classList.remove('open'));
 }
 
@@ -1113,7 +1227,7 @@ function switchGroup(id) {
   expandedGroups.add(id);
   highlightedWorkerUid = null;
   document.getElementById('search').value = '';
-  const ts = document.getElementById('th-search-input');
+  const ts = document.getElementById('sidebar-search-input');
   if (ts) ts.value = '';
   document.getElementById('f-employer').value   = '';
   document.getElementById('f-supervisor').value = '';
@@ -1138,14 +1252,20 @@ function openGroup(groupId) {
   switchGroup(groupId);
 }
 
-// ── Sync top-header search ↔ toolbar search ───────────────────────
-function syncSearch(input) {
-  const other = input.id === 'th-search-input'
-    ? document.getElementById('search')
-    : document.getElementById('th-search-input');
-  if (other) other.value = input.value;
+// ── Sidebar search → mirror into toolbar search + filter ──────────
+function sidebarSearch(value) {
+  const s = document.getElementById('search');
+  // If we're on the dashboard, jump into the workers view so results show.
+  const gv = document.getElementById('group-view');
+  if (value && gv && gv.style.display === 'none') {
+    navTo('workers', document.getElementById('nav-workers'));
+  }
+  const s2 = document.getElementById('search');
+  if (s2) s2.value = value;
   applyFilters();
 }
+// Back-compat shim (old top-header handler name)
+function syncSearch(input) { sidebarSearch(input.value); }
 
 // ── STATS ─────────────────────────────────────────────────────────
 function renderStats() {
@@ -1228,6 +1348,7 @@ function applyFilters() {
     }
     return true;
   });
+  slideIndex = 0;
   doSort();
   renderTable();
 }
@@ -1283,8 +1404,9 @@ function renderTable() {
   }
   noData.style.display = 'none';
 
-  // Render BOTH views; applyViewMode() shows the active one
+  // Render all three views; applyViewMode() shows the active one
   renderCards();
+  renderSlide();
   applyViewMode();
 
   tbody.innerHTML = tableFiltered.map(w => {
@@ -1317,47 +1439,67 @@ function renderTable() {
 // ── VIEW MODE (Table / Cards) ─────────────────────────────────────
 // Mobile-first: phones always use the card view (a wide table is unusable
 // on a phone). On larger screens the user's saved preference is respected.
+const VIEW_MODES = ['table', 'idcard', 'slide'];
 function isMobileView() { return window.innerWidth <= 640; }
-function currentView()  { return isMobileView() ? 'cards' : viewMode; }
+// Migrate the old 'cards' preference → 'idcard'
+function _normViewMode(m) { return m === 'cards' ? 'idcard' : (VIEW_MODES.includes(m) ? m : 'table'); }
+function currentView()  { return isMobileView() ? 'idcard' : _normViewMode(viewMode); }
 
 function setViewMode(mode) {
-  viewMode = (mode === 'cards') ? 'cards' : 'table';
+  viewMode = _normViewMode(mode);
   localStorage.setItem('kd_view', viewMode);
   renderTable();
 }
 
 function applyViewMode() {
-  const cardsWrap = document.getElementById('cards-wrap');
+  const view      = currentView();
   const tableWrap = document.querySelector('.table-wrap');
-  const isCards = currentView() === 'cards';
-  if (tableWrap) tableWrap.style.display = isCards ? 'none' : '';
-  if (cardsWrap) cardsWrap.style.display = isCards ? 'block' : 'none';
-  document.getElementById('view-table')?.classList.toggle('active', !isCards);
-  document.getElementById('view-cards')?.classList.toggle('active', isCards);
+  const cardsWrap = document.getElementById('cards-wrap');
+  const slideWrap = document.getElementById('slide-wrap');
+  if (tableWrap) tableWrap.style.display = view === 'table'  ? '' : 'none';
+  if (cardsWrap) cardsWrap.style.display = view === 'idcard' ? 'block' : 'none';
+  if (slideWrap) slideWrap.style.display = view === 'slide'  ? 'flex' : 'none';
+  document.getElementById('view-table')?.classList.toggle('active',  view === 'table');
+  document.getElementById('view-idcard')?.classList.toggle('active', view === 'idcard');
+  document.getElementById('view-slide')?.classList.toggle('active',  view === 'slide');
 }
 
-// ── CARD / ID-CARD RENDER ─────────────────────────────────────────
+// ── ID CARD GRID ──────────────────────────────────────────────────
 function renderCards() {
   const grid = document.getElementById('cards-grid');
   if (!grid) return;
-  grid.innerHTML = tableFiltered.map(w => {
-    const idTxt = w.worker_id || w.passport_no || 'No ID';
-    const tel   = w.tel || '--';
-    return '<div class="wcard" id="card-' + w.uid + '" onclick="openView(\'' + w.uid + '\')">' +
-      '<div class="wcard-photo">' + personPhoto(w, 'avatar-lg') + '</div>' +
-      '<div class="wcard-main">' +
-        '<div class="wcard-name">' + esc(w.en_name || '--') + '</div>' +
-        '<div class="wcard-id"><span class="wcard-idchip">' + esc(idTxt) + '</span>' + empBadge(w.employer_code) + '</div>' +
-        '<div class="wcard-meta">' +
-          '<span class="wcard-tel">&#128222; ' + esc(tel) + '</span>' +
-          statusBadge(w) +
-        '</div>' +
-      '</div>' +
-      '<button class="kebab wcard-kebab" onclick="openRowMenu(\'' + w.uid + '\',event)" title="' + esc(t('col_actions')) + '">' +
-        '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>' +
-      '</button>' +
-    '</div>';
-  }).join('');
+  const g = DB.getGroup(activeGroupId);
+  grid.innerHTML = tableFiltered.map(w =>
+    '<div class="idc-cell" onclick="openView(\'' + esc(w.uid) + '\')">' +
+      _renderBadgeCard(w, g, false, true) +
+    '</div>'
+  ).join('');
+}
+
+// ── SLIDE VIEW (one worker at a time) ─────────────────────────────
+let slideIndex = 0;
+function renderSlide() {
+  const stage   = document.getElementById('slide-stage');
+  const counter = document.getElementById('slide-counter');
+  const prev    = document.getElementById('slide-prev');
+  const next    = document.getElementById('slide-next');
+  if (!stage) return;
+  const n = tableFiltered.length;
+  if (!n) { stage.innerHTML = ''; if (counter) counter.textContent = ''; return; }
+  if (slideIndex >= n) slideIndex = n - 1;
+  if (slideIndex < 0)  slideIndex = 0;
+  const w = tableFiltered[slideIndex];
+  const g = DB.getGroup(activeGroupId);
+  // re-key the element so the entrance animation replays on each step
+  stage.innerHTML = '<div class="slide-card" key="' + slideIndex + '">' + _renderBadgeCard(w, g, false, true) + '</div>';
+  stage.querySelector('.slide-card')?.addEventListener('click', () => openView(w.uid));
+  if (counter) counter.textContent = (slideIndex + 1) + ' / ' + n;
+  if (prev) prev.disabled = slideIndex === 0;
+  if (next) next.disabled = slideIndex === n - 1;
+}
+function slideStep(dir) {
+  slideIndex += dir;
+  renderSlide();
 }
 
 // ── Contextual 3-dot action menu (View / Edit / Delete) ───────────
@@ -1415,11 +1557,14 @@ window.addEventListener('resize', () => {
 });
 
 // ── ID BADGE CARD builder ─────────────────────────────────────────
-function _renderBadgeCard(w, g) {
-  const gradeColors = { A:'#16a34a', B:'#2563eb', C:'#d97706', D:'#dc2626' };
+// `editable` (default = admin in the detail drawer) renders the tap-to-change
+// photo overlay + hidden file input. Pass false for grid/slide views so we
+// don't create duplicate `photo-edit-input` ids across many cards.
+function _renderBadgeCard(w, g, editable, locked) {
+  if (editable === undefined) editable = isAdmin();
   const idSeq = w.worker_id ? '#' + w.worker_id.split('-').pop() : '';
 
-  const photoHtml = isAdmin()
+  const photoHtml = editable
     ? '<div class="idc-photo editable" onclick="_triggerPhotoEdit(\'' + esc(w.uid) + '\')" title="Tap to change photo">' +
         personPhoto(w, 'avatar-xl') +
         '<div class="idc-photo-edit">&#9998;</div>' +
@@ -1427,13 +1572,12 @@ function _renderBadgeCard(w, g) {
       '<input type="file" id="photo-edit-input" accept="image/*" style="display:none" onchange="_handlePhotoEdit(this,\'' + esc(w.uid) + '\')">'
     : '<div class="idc-photo">' + personPhoto(w, 'avatar-xl') + '</div>';
 
+  // Employer & supervisor intentionally omitted from the card (per spec).
   const tags = [];
-  if (w.employer_code) tags.push('<span class="idc-tag">' + esc(w.employer_code) + '</span>');
   if (g && g.name)     tags.push('<span class="idc-tag">' + esc(g.name) + '</span>');
-  if (w.group_supervisor) tags.push('<span class="idc-tag">' + esc(w.group_supervisor) + '</span>');
   if (w.couple === 'yes') tags.push('<span class="idc-tag idc-tag-couple">부부</span>');
 
-  return '<div class="id-badge-card">' +
+  const visual =
     '<div class="idc-visual">' +
       '<svg class="idc-swoosh" viewBox="0 0 300 168" xmlns="http://www.w3.org/2000/svg">' +
         '<path d="M300,0 C258,0 218,24 184,70 C140,130 128,160 68,168 L300,168 Z" fill="#1a2235"/>' +
@@ -1442,7 +1586,47 @@ function _renderBadgeCard(w, g) {
       (w.grade ? '<div class="idc-grade-flag">GRADE ' + esc(w.grade) + '</div>' : '') +
       (idSeq   ? '<div class="idc-seq">' + esc(idSeq) + '</div>' : '') +
       photoHtml +
-    '</div>' +
+    '</div>';
+
+  // ── Locked "paper" format (ID Card + Slide modes) ──
+  // Every slot is always rendered so the card keeps the SAME fixed dimensions
+  // whether or not the field has data. Empty fields show a placeholder dash.
+  if (locked) {
+    const dash = '<span class="idc-f-empty">—</span>';
+    const fv   = v => (v || v === 0) && String(v).trim() !== '' ? esc(v) : dash;
+    const age  = calcAge(w.dob);
+    const ec   = expiryClass(w.passport_expiry);
+    const field = (label, val) =>
+      '<div class="idc-field"><span class="idc-f-label">' + esc(label) + '</span>' +
+      '<span class="idc-f-val">' + val + '</span></div>';
+    const fields =
+      field(t('col_passport'), fv(w.passport_no)) +
+      field(t('col_expiry'),   w.passport_expiry ? '<span class="' + ec + '">' + esc(w.passport_expiry) + '</span>' : dash) +
+      field(t('col_dob'),      fv(w.dob)) +
+      field(t('col_age'),      age ? age : dash) +
+      field(t('col_blood'),    fv(w.blood)) +
+      field(t('col_size'),     fv(w.size)) +
+      field(t('fm_sex'),       fv(w.sex)) +
+      field(t('fm_tel'),       fv(w.tel));
+    return '<div class="id-badge-card locked">' +
+      visual +
+      '<div class="idc-body">' +
+        '<div class="idc-name">' + esc(w.en_name || '--') + '</div>' +
+        '<div class="idc-lo">' + (w.lo_name ? esc(w.lo_name) : '&nbsp;') + '</div>' +
+        '<div class="idc-tags">' + tags.join('') + '</div>' +
+      '</div>' +
+      '<div class="idc-divider"></div>' +
+      '<div class="idc-fields">' + fields + '</div>' +
+      '<div class="idc-foot">' +
+        '<span class="idc-foot-id">' + esc(w.worker_id || '--') + '</span>' +
+        '<div class="idc-foot-logo">KD</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  // ── Compact badge (detail-drawer header) ──
+  return '<div class="id-badge-card">' +
+    visual +
     '<div class="idc-body">' +
       '<div class="idc-name">' + esc(w.en_name || '--') + '</div>' +
       (w.lo_name ? '<div class="idc-lo">' + esc(w.lo_name) + '</div>' : '') +
@@ -1456,6 +1640,120 @@ function _renderBadgeCard(w, g) {
   '</div>';
 }
 
+// ── Detail drawer: inline edit + export + zoom ────────────────────
+let detailEditMode = false;
+
+// Editable value cell: in edit mode → input/select bound to data-ef; else view HTML.
+function _ev(w, field, viewHtml, type, opts) {
+  if (!detailEditMode) return viewHtml;
+  const cur = (w[field] == null) ? '' : w[field];
+  if (type === 'select') {
+    return '<select class="vm-edit-in" data-ef="' + field + '">' +
+      opts.map(o => '<option value="' + esc(o.v) + '"' + (String(cur) === String(o.v) ? ' selected' : '') + '>' + esc(o.t) + '</option>').join('') +
+      '</select>';
+  }
+  return '<input class="vm-edit-in" data-ef="' + field + '" value="' + esc(cur) + '">';
+}
+
+// Builds the Info-pane HTML (two columns). Same fixed set of rows always renders
+// so the popup never changes size with the amount of data.
+function _renderDetailBody(w, g) {
+  const ed  = detailEditMode;
+  const age = calcAge(w.dob);
+  const visaLabels = { not_started:'ຍັງບໍ່ເລີ່ມ', applied:'ຍື່ນຂໍແລ້ວ', approved:'ອະນຸມັດ ✓', rejected:'ຖືກປະຕິເສດ ✗' };
+  const visaColors = { not_started:'#888', applied:'#2563eb', approved:'#16a34a', rejected:'#dc2626' };
+  const warn = !ed && expiryClass(w.passport_expiry) !== 'expiry-ok';
+  const row = (label, sub, val) => '<tr><td>' + label + (sub ? '<span class="sub">' + sub + '</span>' : '') + '</td><td>' + val + '</td></tr>';
+  const sexOpts  = [{v:'',t:'--'},{v:'M',t:t('fm_sex_m')},{v:'F',t:t('fm_sex_f')}];
+  const handOpts = [{v:'',t:'--'},{v:'R',t:'R (Right)'},{v:'L',t:'L (Left)'}];
+  const bloodOpts= [{v:'',t:'--'},{v:'A',t:'A'},{v:'B',t:'B'},{v:'O',t:'O'},{v:'AB',t:'AB'},{v:'B+',t:'B+'},{v:'B-',t:'B-'}];
+  const sizeOpts = [{v:'',t:'--'},{v:'S',t:'S'},{v:'M',t:'M'},{v:'L',t:'L'},{v:'XL',t:'XL'},{v:'XXL',t:'XXL'}];
+  const visaOpts = [{v:'',t:'--'},{v:'not_started',t:visaLabels.not_started},{v:'applied',t:visaLabels.applied},{v:'approved',t:visaLabels.approved},{v:'rejected',t:visaLabels.rejected}];
+
+  const tableHtml =
+    '<div class="vm-detail-section">' +
+      (warn ? '<div class="vm-warn">&#9888; ' + t('vc_passport_warn', { date: w.passport_expiry }) + '</div>' : '') +
+      '<table class="vm-tbl">' +
+        row(t('vc_name'), '/ຊື່', _ev(w,'en_name', esc(w.en_name||'--'), 'text')) +
+        row('ຊື່ ນາມສະກຸນ', '', _ev(w,'lo_name', esc(w.lo_name||'--'), 'text')) +
+        row(t('vc_dob'), 'ວັນເດືອນປີເກີດ', _ev(w,'dob', esc(w.dob||'--'), 'text')) +
+        row(t('vc_age'), 'ອາຍຸ', age ? age + ' yrs' : '--') +
+        row(t('vc_nationality'), 'ສັນຊາດ', _ev(w,'nationality', esc(w.nationality||'--'), 'text')) +
+        row(t('vc_sex'), 'ເພດ', ed ? _ev(w,'sex','','select',sexOpts) : (w.sex==='M'?'♂ '+t('fm_sex_m'):w.sex==='F'?'♀ '+t('fm_sex_f'):'--')) +
+        row(t('vc_village'), 'ບ້ານ', _ev(w,'village', esc(w.village||'--'), 'text')) +
+        row(t('vc_weight_height'), 'Kg ; Cm', ed
+            ? '<div class="split">' + _ev(w,'weight','','text') + _ev(w,'height','','text') + '</div>'
+            : '<div class="split"><span>'+(w.weight?w.weight+'Kg':'--')+'</span><span>'+(w.height?w.height+'Cm':'--')+'</span></div>') +
+        row(t('vc_size'), 'ຂະໜາດເສື້ອ', ed ? _ev(w,'size','','select',sizeOpts) : esc(w.size||'--')) +
+        row(t('vc_hand'), 'ຊ້າຍຫຼືຂວາ', ed ? _ev(w,'hand','','select',handOpts) : (w.hand==='R'?'R (Right)':w.hand==='L'?'L (Left)':'--')) +
+        row(t('vc_blood'), 'ກຸ່ມເລືອດ', ed ? _ev(w,'blood','','select',bloodOpts) : esc(w.blood||'--')) +
+        row(t('vc_passport'), 'ເລກທີ', _ev(w,'passport_no', '<span style="font-family:monospace">'+esc(w.passport_no||'--')+'</span>', 'text')) +
+        row(t('vc_issue'), 'ວັນທີອອກ', _ev(w,'passport_issue', esc(w.passport_issue||'--'), 'text')) +
+        row(t('vc_expiry'), 'ໝົດອາຍຸ', ed ? _ev(w,'passport_expiry','','text') : '<span class="'+expiryClass(w.passport_expiry)+'">'+esc(w.passport_expiry||'--')+'</span>') +
+        row(t('vc_tel'), 'ໂທ / Emergency', ed
+            ? '<div class="split">' + _ev(w,'tel','','text') + _ev(w,'emg_tel','','text') + '</div>'
+            : esc(w.tel||'--')+(w.emg_tel?' &nbsp; '+esc(w.emg_tel):'')) +
+      '</table>' +
+    '</div>';
+
+  return '<div class="vm-info-layout' + (ed ? ' editing' : '') + '">' +
+      '<div class="vm-info-main">' + tableHtml + '</div>' +
+      '<div class="vm-info-side">' + _renderBadgeCard(w, g, isAdmin() && !ed, true) + '</div>' +
+    '</div>';
+}
+
+function _renderDetailTopbar(w, uid) {
+  const el = document.getElementById('vm-topbar-actions'); if (!el) return;
+  let h = '';
+  h += '<button class="vm-action-btn" onclick="zoomCard(\''+esc(uid)+'\')" title="'+esc(t('vd_zoom'))+'">&#10530;</button>';
+  h += '<button class="vm-action-btn" onclick="exportWorkerPDF()">&#11015; PDF</button>';
+  if (isAdmin()) {
+    if (detailEditMode) {
+      h += '<button class="vm-action-btn" onclick="cancelDetailEdit(\''+esc(uid)+'\')">&#10005; '+esc(t('fm_cancel'))+'</button>';
+      h += '<button class="vm-action-btn vm-action-save" onclick="saveDetailEdit(\''+esc(uid)+'\')">&#10003; '+esc(t('vd_save'))+'</button>';
+    } else {
+      h += '<button class="vm-action-btn" onclick="toggleDetailEdit(\''+esc(uid)+'\')">&#9998; '+esc(t('act_edit'))+'</button>';
+    }
+  }
+  el.innerHTML = h;
+}
+
+function toggleDetailEdit(uid) {
+  detailEditMode = !detailEditMode;
+  const g = DB.getGroup(activeGroupId); const w = g && g.workers.find(x => x.uid === uid); if (!w) return;
+  document.getElementById('vm-content').innerHTML = _renderDetailBody(w, g);
+  _renderDetailTopbar(w, uid);
+}
+function cancelDetailEdit(uid) { detailEditMode = false; openView(uid); }
+function saveDetailEdit(uid) {
+  const g = DB.getGroup(activeGroupId); const w = g && g.workers.find(x => x.uid === uid); if (!w) return;
+  const patch = {};
+  document.querySelectorAll('#vm-content [data-ef]').forEach(el => { patch[el.dataset.ef] = (el.value || '').trim(); });
+  DB.updateWorker(activeGroupId, uid, patch);
+  toast(t('vd_saved'), 'ok');
+  detailEditMode = false;
+  openView(uid);
+  rebuildFilters(); applyFilters(); renderSidebar();
+}
+
+// Export the detail window as a PDF via the browser's print dialog (offline-safe)
+function exportWorkerPDF() {
+  if (detailEditMode && _currentViewUid) { detailEditMode = false; openView(_currentViewUid); }
+  switchDetailTab('info', document.querySelector('.detail-tab[data-tab="info"]'));
+  document.body.classList.add('printing-worker');
+  const cleanup = () => { document.body.classList.remove('printing-worker'); window.removeEventListener('afterprint', cleanup); };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(() => window.print(), 60);
+}
+
+// Zoom the ID card to fill the screen
+function zoomCard(uid) {
+  const g = DB.getGroup(activeGroupId); const w = g && g.workers.find(x => x.uid === uid); if (!w) return;
+  const body = document.getElementById('cardzoom-body');
+  if (body) body.innerHTML = _renderBadgeCard(w, g, false, true);
+  openOverlay('cardzoom-overlay');
+}
+
 // ── VIEW CARD ─────────────────────────────────────────────────────
 function openView(uid) {
   const g = DB.getGroup(activeGroupId);
@@ -1463,6 +1761,7 @@ function openView(uid) {
   if (!w) return;
 
   _currentViewUid = uid;
+  detailEditMode = false;
 
   const age   = calcAge(w.dob);
   const idNum = w.worker_id ? w.worker_id.split('-').pop() : '--';
@@ -1479,12 +1778,7 @@ function openView(uid) {
   if (enEl) enEl.textContent = w.en_name || '';
   if (loEl) loEl.innerHTML   = gradeChip + (w.lo_name ? '<span class="vm-topbar-lo-text">' + esc(w.lo_name) + '</span>' : '');
 
-  const actionsEl = document.getElementById('vm-topbar-actions');
-  if (actionsEl) {
-    actionsEl.innerHTML = isAdmin()
-      ? '<button class="vm-action-btn" onclick="openWorkerForm(\'' + esc(uid) + '\')">&#9998; Edit</button>'
-      : '';
-  }
+  _renderDetailTopbar(w, uid);
 
   // Reset tabs to Info
   document.querySelectorAll('.detail-tab').forEach(tb => tb.classList.remove('active'));
@@ -1498,42 +1792,8 @@ function openView(uid) {
   const actContent = document.getElementById('vm-activity-content');
   if (actContent) actContent.innerHTML = '<div class="act-empty">Loading…</div>';
 
-  const visaLabels = { not_started:'ຍັງບໍ່ເລີ່ມ', applied:'ຍື່ນຂໍແລ້ວ', approved:'ອະນຸມັດ ✓', rejected:'ຖືກປະຕິເສດ ✗' };
-  const visaColors = { not_started:'#888', applied:'#2563eb', approved:'#16a34a', rejected:'#dc2626' };
-  const warn = expiryClass(w.passport_expiry) !== 'expiry-ok';
-
-  function row(label, sub, val) {
-    return '<tr><td>' + label + (sub ? '<span class="sub">' + sub + '</span>' : '') + '</td><td>' + val + '</td></tr>';
-  }
-
-  document.getElementById('vm-content').innerHTML =
-    _renderBadgeCard(w, g) +
-    '<div class="vm-detail-section">' +
-      (warn ? '<div class="vm-warn">&#9888; ' + t('vc_passport_warn', { date: w.passport_expiry }) + '</div>' : '') +
-      '<table class="vm-tbl">' +
-        row(t('vc_name'), '/ຊື່', esc(w.en_name)) +
-        row('ຊື່ ນາມສະກຸນ', '', esc(w.lo_name)) +
-        row(t('vc_dob'), 'ວັນເດືອນປີເກີດ', esc(w.dob)) +
-        row(t('vc_age'), 'ອາຍຸ', age ? age + ' yrs' : '--') +
-        (w.nationality ? row(t('vc_nationality'), 'ສັນຊາດ', esc(w.nationality)) : '') +
-        (w.sex ? row(t('vc_sex'), 'ເພດ', w.sex === 'M' ? '♂ ' + t('fm_sex_m') : '♀ ' + t('fm_sex_f')) : '') +
-        row(t('vc_village'), 'ບ້ານ', esc(w.village || '--')) +
-        row(t('vc_weight_height'), 'Kg ; Cm',
-          '<div class="split"><span>' + (w.weight ? w.weight + 'Kg' : '--') + '</span><span>' + (w.height ? w.height + 'Cm' : '--') + '</span></div>') +
-        row(t('vc_size'), 'ຂະໜາດເສື້ອ', esc(w.size || '--')) +
-        row(t('vc_hand'), 'ຊ້າຍຫຼືຂວາ', w.hand === 'R' ? 'R (Right)' : w.hand === 'L' ? 'L (Left)' : '--') +
-        row(t('vc_blood'), 'ກຸ່ມເລືອດ', esc(w.blood || '--')) +
-        row(t('vc_passport'), 'ເລກທີ', '<span style="font-family:monospace">' + esc(w.passport_no) + '</span>') +
-        row(t('vc_issue_expiry'), 'ວັນທີອອກ / ໝົດອາຍຸ',
-          '<div class="split"><span>' + esc(w.passport_issue || '--') + '</span>' +
-          '<span class="' + expiryClass(w.passport_expiry) + '">' + esc(w.passport_expiry || '--') + '</span></div>') +
-        row(t('vc_tel'), 'ໂທ / Emergency', esc(w.tel || '--') + (w.emg_tel ? ' &nbsp; ' + esc(w.emg_tel) : '')) +
-        (w.visa_status ? row('Visa Status', 'ວີຊາ', '<span style="color:' + (visaColors[w.visa_status]||'#888') + ';font-weight:700">' + esc(visaLabels[w.visa_status]||w.visa_status) + '</span>') : '') +
-        (w.education    ? row('Education', 'ການສຶກສາ', esc(w.education)) : '') +
-        (w.work_experience ? row('Experience', 'ປະສົບການ', esc(w.work_experience)) : '') +
-        (w.languages    ? row('Languages', 'ພາສາ', esc(w.languages)) : '') +
-      '</table>' +
-    '</div>';
+  // Info pane = two columns (detail table left, locked ID card right)
+  document.getElementById('vm-content').innerHTML = _renderDetailBody(w, g);
 
   // Docs tab - render placeholder for on-demand load
   document.getElementById('vm-docs-content').innerHTML =
@@ -1552,9 +1812,9 @@ async function _handlePhotoEdit(input, uid) {
   const file = input.files && input.files[0];
   if (!file) return;
   input.value = '';
-  _fileToDataURL(file, 800, async dataUrl => {
+  _fileToDataURL(file, 800, dataUrl => {
     try {
-      await DB.updateEmployee(uid, { photo: dataUrl, _by: currentUser?.username });
+      DB.updateWorker(activeGroupId, uid, { photo: dataUrl });
       const g = DB.getGroup(activeGroupId);
       const w = g && g.workers.find(x => x.uid === uid);
       if (w) w.photo = dataUrl;
@@ -1596,49 +1856,67 @@ async function _loadAndRenderDocs(uid) {
   const html = DOC_CATS.map(cat => {
     const versions = docs[cat.key] || [];
     const current = versions.find(v => v.isCurrent) || versions[0];
-    const history = versions.filter(v => !v.isCurrent);
+    const history = versions.filter(v => v !== current);
+    const hasFile = !!current;
+    const dateRaw = current && (current.uploadedAt || current.date || current.created || current.createdAt);
+    const dateStr = dateRaw ? new Date(dateRaw).toLocaleDateString() : '';
 
-    const preview = current
-      ? '<div class="doc-thumb" onclick="openDocViewById(' + current.id + ',\'' + esc(current.path) + '\',\'' + current.type + '\',\'' + esc(current.name) + '\')">' +
+    // Preview thumbnail (monochrome) or a neutral placeholder
+    const preview = hasFile
+      ? '<div class="docb-preview" onclick="openDocViewById(' + current.id + ',\'' + esc(current.path) + '\',\'' + current.type + '\',\'' + esc(current.name) + '\')">' +
           (current.type === 'pdf'
-            ? '<div class="doc-pdf">PDF</div>'
+            ? '<div class="docb-pdf">PDF</div>'
             : '<img src="' + esc(current.path) + '" alt="">') +
-          '<span class="doc-ver">v' + current.version + '</span>' +
-          (canEdit ? '<button class="doc-del" onclick="deleteDocById(event,' + current.id + ',\'' + uid + '\')">&#x2715;</button>' : '') +
         '</div>'
-      : '';
+      : '<div class="docb-preview docb-preview-empty">' +
+          '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>' +
+        '</div>';
+
+    // Complete details (monochrome rows)
+    const detail = hasFile
+      ? '<div class="docb-row"><span class="docb-k">' + t('doc_file')    + '</span><span class="docb-v" title="' + esc(current.name || '') + '">' + esc(current.name || '—') + '</span></div>' +
+        '<div class="docb-row"><span class="docb-k">' + t('doc_type')    + '</span><span class="docb-v">' + esc((current.type || '').toUpperCase() || '—') + '</span></div>' +
+        '<div class="docb-row"><span class="docb-k">' + t('doc_version') + '</span><span class="docb-v">v' + current.version + (versions.length > 1 ? ' · ' + versions.length + ' ' + t('doc_versions') : '') + '</span></div>' +
+        (dateStr ? '<div class="docb-row"><span class="docb-k">' + t('doc_date') + '</span><span class="docb-v">' + esc(dateStr) + '</span></div>' : '')
+      : '<div class="docb-none">' + t('doc_empty') + '</div>';
 
     const histHtml = history.length
-      ? '<div class="doc-history">' +
+      ? '<div class="docb-history"><span class="docb-hist-label">' + t('doc_history') + ':</span>' +
           history.map(v =>
-            '<span class="doc-hist-item" onclick="openDocViewById(' + v.id + ',\'' + esc(v.path) + '\',\'' + v.type + '\',\'' + esc(v.name) + '\')">' +
-              'v' + v.version +
+            '<span class="docb-hist-item" onclick="openDocViewById(' + v.id + ',\'' + esc(v.path) + '\',\'' + v.type + '\',\'' + esc(v.name) + '\')">v' + v.version +
               (canEdit ? '<button onclick="deleteDocById(event,' + v.id + ',\'' + uid + '\')">&#x2715;</button>' : '') +
             '</span>'
           ).join('') +
         '</div>'
       : '';
 
-    const addBtn = canEdit
-      ? '<label class="doc-add" title="' + esc(t('doc_add')) + '">' +
-          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>' +
-          '<input type="file" accept="image/*,application/pdf" style="display:none" onchange="handleDocUpload(this,\'' + uid + '\',\'' + cat.key + '\')">' +
-        '</label>'
+    const actions = canEdit
+      ? '<div class="docb-actions">' +
+          '<label class="docb-btn">' +
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>' +
+            '<span>' + (hasFile ? t('doc_replace') : t('doc_add')) + '</span>' +
+            '<input type="file" accept="image/*,application/pdf" style="display:none" onchange="handleDocUpload(this,\'' + uid + '\',\'' + cat.key + '\')">' +
+          '</label>' +
+          (hasFile ? '<button class="docb-btn docb-btn-del" onclick="deleteDocById(event,' + current.id + ',\'' + uid + '\')">' +
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>' +
+            '<span>' + t('doc_delete') + '</span></button>' : '') +
+        '</div>'
       : '';
 
-    return '<div class="doc-cat">' +
-      '<div class="doc-cat-head"><span>' + esc(cat.label) + '</span>' +
-        '<span class="doc-count">' + (versions.length || '') + '</span>' +
+    return '<div class="docb ' + (hasFile ? 'docb-has' : 'docb-no') + '">' +
+      preview +
+      '<div class="docb-body">' +
+        '<div class="docb-title">' + esc(cat.label) +
+          '<span class="docb-badge ' + (hasFile ? 'on' : '') + '">' + (hasFile ? t('doc_uploaded') : t('doc_missing')) + '</span>' +
+        '</div>' +
+        '<div class="docb-detail">' + detail + '</div>' +
+        histHtml +
+        actions +
       '</div>' +
-      '<div class="doc-files">' +
-        preview + addBtn +
-        (!current && !canEdit ? '<span class="doc-empty">' + t('doc_empty') + '</span>' : '') +
-      '</div>' +
-      histHtml +
     '</div>';
   }).join('');
 
-  container.innerHTML = '<div class="vm-docs-title">&#128193; ' + t('vc_documents') + '</div>' + (html || '<div class="doc-loading">No documents</div>');
+  container.innerHTML = '<div class="vm-docs-title">&#128193; ' + t('vc_documents') + '</div><div class="docb-grid">' + html + '</div>';
 }
 
 function handleDocUpload(input, uid, cat) {
@@ -2052,6 +2330,8 @@ document.querySelectorAll('.lang-btn').forEach(btn => {
     renderSidebar();
     renderSidebarUser();
     renderStats();
+    // Re-render the dashboard's dynamic content (chart labels, pills, reminders)
+    if (document.getElementById('dashboard-welcome')?.style.display !== 'none') renderDashboard();
     if (document.getElementById('settings-overlay').classList.contains('open')) renderSettings();
   });
 });
@@ -2064,7 +2344,7 @@ function openSettings() {
 }
 
 function switchSettingsTab(tab) {
-  document.querySelectorAll('.set-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.set-nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.getElementById('set-pane-appearance').style.display = tab === 'appearance' ? 'block' : 'none';
   document.getElementById('set-pane-cities').style.display     = tab === 'cities'     ? 'block' : 'none';
   document.getElementById('set-pane-users').style.display      = tab === 'users'      ? 'block' : 'none';

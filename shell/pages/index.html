@@ -58,34 +58,6 @@
 <!-- Toast stack -->
 <div class="toast-stack" id="toast-stack"></div>
 
-<!-- ── TOP HEADER (Donezo-style) ── -->
-<header class="top-header" id="top-header">
-  <button class="th-brand" onclick="navTo('dashboard', document.getElementById('nav-dashboard'))">
-    <div class="th-logo-icon" id="th-logo-icon">KD</div>
-    <div class="th-brand-info">
-      <span class="th-brand-name">KD Employment</span>
-      <span class="th-brand-co">CO., LTD</span>
-    </div>
-  </button>
-  <div class="th-search-wrap">
-    <svg class="th-search-ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-    <input type="text" id="th-search-input" placeholder="Search worker..." autocomplete="off" oninput="syncSearch(this)">
-    <kbd class="th-kbd">⌘ F</kbd>
-  </div>
-  <div class="th-right">
-    <button class="th-icon-btn" onclick="navTo('alerts', document.getElementById('nav-alerts'))" title="Document Alerts">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-    </button>
-    <button class="th-icon-btn" id="th-notif-btn" onclick="navTo('alerts', document.getElementById('nav-alerts'))" title="Notifications" style="position:relative">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-      <span class="th-notif-badge" id="th-notif-badge" style="display:none">0</span>
-    </button>
-    <div class="th-user-chip" id="th-user-chip" onclick="toggleProfileMenu(event)">
-      <!-- filled by renderTopHeader() -->
-    </div>
-  </div>
-</header>
-
 <!-- ── BODY ───────────────────────────────────────────── -->
 <div class="app-body">
 
@@ -95,14 +67,24 @@
 
     <!-- Brand bar — the logo itself toggles the sidebar -->
     <div class="sb-brandbar">
-      <button class="sidebar-brand" id="sidebar-toggle" title="Collapse / expand sidebar">
+      <button class="sidebar-brand" onclick="navTo('dashboard', document.getElementById('nav-dashboard'))" title="Dashboard">
         <span class="sb-logo">KD</span>
         <span class="sb-brand-text">
           <span class="sb-brand-name" data-i18n="app_title">KD Database</span>
           <span class="sb-brand-sub">Management v2.1</span>
         </span>
       </button>
+      <button class="sb-collapse-btn" id="sidebar-toggle" title="Collapse / expand sidebar">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+      </button>
     </div>
+
+    <!-- Search (moved from old top header into the sidebar) -->
+    <label class="sb-search" id="sb-search">
+      <svg class="sb-search-ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="sidebar-search-input" autocomplete="off" data-i18n-ph="search_placeholder" placeholder="Search worker..." oninput="sidebarSearch(this.value)">
+      <kbd class="sb-kbd">⌘K</kbd>
+    </label>
 
     <div class="sidebar-scroll">
       <!-- Primary nav -->
@@ -205,34 +187,34 @@
     <div id="dashboard-welcome" class="dz-dashboard" style="display:none">
       <div class="dz-head-row">
         <div>
-          <h1 class="dz-title">Dashboard</h1>
-          <p class="dz-sub">Plan, prioritize, and manage your workers with ease.</p>
+          <h1 class="dz-title" data-i18n="dz_title">Dashboard</h1>
+          <p class="dz-sub" data-i18n="dz_subtitle">Plan, prioritize, and manage your workers with ease.</p>
         </div>
         <div class="dz-head-actions">
-          <button class="dz-btn-sec admin-only" onclick="openImport()">Import Data</button>
-          <button class="dz-btn-pri admin-only" onclick="openGroupForm(null)">+ Add Group</button>
+          <button class="dz-btn-sec admin-only" onclick="openImport()" data-i18n="dz_import_data">Import Data</button>
+          <button class="dz-btn-pri admin-only" onclick="openGroupForm(null)" data-i18n="dz_add_group">+ Add Group</button>
         </div>
       </div>
 
       <!-- Stats row -->
       <div class="dz-stats-row">
         <div class="dz-stat-card dz-stat-highlight" onclick="navTo('workers', document.getElementById('nav-workers'))" style="cursor:pointer">
-          <div class="dz-stat-top"><span class="dz-stat-label">Total Groups</span><span class="dz-stat-arrow">&#x2197;</span></div>
+          <div class="dz-stat-top"><span class="dz-stat-label" data-i18n="dz_total_groups">Total Groups</span><span class="dz-stat-arrow">&#x2197;</span></div>
           <div class="dz-stat-num" id="dz-total-groups">—</div>
-          <div class="dz-stat-foot" id="dz-groups-foot">Loading…</div>
+          <div class="dz-stat-foot" id="dz-groups-foot" data-i18n="dz_loading">Loading…</div>
         </div>
         <div class="dz-stat-card" onclick="navTo('workers', document.getElementById('nav-workers'))" style="cursor:pointer">
-          <div class="dz-stat-top"><span class="dz-stat-label">Active Groups</span><span class="dz-stat-arrow">&#x2197;</span></div>
+          <div class="dz-stat-top"><span class="dz-stat-label" data-i18n="dz_active_groups">Active Groups</span><span class="dz-stat-arrow">&#x2197;</span></div>
           <div class="dz-stat-num" id="dz-active-groups">—</div>
-          <div class="dz-stat-foot">With workers</div>
+          <div class="dz-stat-foot" data-i18n="dz_with_workers">With workers</div>
         </div>
         <div class="dz-stat-card" onclick="navTo('workers', document.getElementById('nav-workers'))" style="cursor:pointer">
-          <div class="dz-stat-top"><span class="dz-stat-label">Total Workers</span><span class="dz-stat-arrow">&#x2197;</span></div>
+          <div class="dz-stat-top"><span class="dz-stat-label" data-i18n="dz_total_workers">Total Workers</span><span class="dz-stat-arrow">&#x2197;</span></div>
           <div class="dz-stat-num" id="dz-total-workers">—</div>
-          <div class="dz-stat-foot">Across all groups</div>
+          <div class="dz-stat-foot" data-i18n="dz_across_groups">Across all groups</div>
         </div>
         <div class="dz-stat-card" onclick="navTo('alerts', document.getElementById('nav-alerts'))" style="cursor:pointer">
-          <div class="dz-stat-top"><span class="dz-stat-label">Pending Alerts</span><span class="dz-stat-arrow">&#x2197;</span></div>
+          <div class="dz-stat-top"><span class="dz-stat-label" data-i18n="dz_pending_alerts">Pending Alerts</span><span class="dz-stat-arrow">&#x2197;</span></div>
           <div class="dz-stat-num" id="dz-alerts-num">—</div>
           <div class="dz-stat-foot" id="dz-alerts-foot">—</div>
         </div>
@@ -241,17 +223,33 @@
       <!-- Mid row -->
       <div class="dz-mid-row">
         <div class="dz-card dz-card-span2">
-          <div class="dz-card-head"><span class="dz-card-title">Group Analytics</span></div>
+          <div class="dz-card-head">
+            <span class="dz-card-title" data-i18n="dz_group_analytics">Group Analytics</span>
+            <div class="dz-chart-tools">
+              <select class="dz-select" id="dz-segment" onchange="setDzSegment(this.value)">
+                <option value="group" data-i18n="dz_seg_group">By Group</option>
+                <option value="krcity" data-i18n="dz_seg_krcity">By Korean City</option>
+                <option value="lacity" data-i18n="dz_seg_lacity">By Lao City</option>
+                <option value="status" data-i18n="dz_seg_status">By Passport Status</option>
+              </select>
+              <div class="dz-seg" id="dz-timeline">
+                <button class="dz-seg-btn active" data-tl="all" onclick="setDzTimeline('all',this)" data-i18n="dz_tl_all">All</button>
+                <button class="dz-seg-btn" data-tl="3" onclick="setDzTimeline('3',this)">3M</button>
+                <button class="dz-seg-btn" data-tl="6" onclick="setDzTimeline('6',this)">6M</button>
+                <button class="dz-seg-btn" data-tl="12" onclick="setDzTimeline('12',this)">1Y</button>
+              </div>
+            </div>
+          </div>
           <div class="dz-bar-wrap" id="dz-bar-chart"></div>
         </div>
         <div class="dz-card">
-          <div class="dz-card-head"><span class="dz-card-title">Reminders</span></div>
+          <div class="dz-card-head"><span class="dz-card-title" data-i18n="dz_reminders">Reminders</span></div>
           <div id="dz-reminders"></div>
         </div>
         <div class="dz-card">
           <div class="dz-card-head">
-            <span class="dz-card-title">Projects</span>
-            <button class="dz-card-new-btn admin-only" onclick="openGroupForm(null)">+ New</button>
+            <span class="dz-card-title" data-i18n="dz_projects">Projects</span>
+            <button class="dz-card-new-btn admin-only" onclick="openGroupForm(null)" data-i18n="dz_new">+ New</button>
           </div>
           <div id="dz-projects-list"></div>
         </div>
@@ -261,14 +259,29 @@
       <div class="dz-bot-row">
         <div class="dz-card dz-card-span2">
           <div class="dz-card-head">
-            <span class="dz-card-title">Team Collaboration</span>
-            <button class="dz-card-new-btn admin-only" onclick="openWorkerForm(null)">+ Add Member</button>
+            <span class="dz-card-title" data-i18n="dz_team">Team Collaboration</span>
+            <button class="dz-card-new-btn admin-only" onclick="openWorkerForm(null)" data-i18n="dz_add_member">+ Add Member</button>
           </div>
           <div id="dz-team-list"></div>
         </div>
         <div class="dz-card">
-          <div class="dz-card-head"><span class="dz-card-title">Passport Status</span></div>
+          <div class="dz-card-head"><span class="dz-card-title" data-i18n="dz_passport_status">Passport Status</span></div>
           <div id="dz-progress-wrap"></div>
+        </div>
+      </div>
+
+      <!-- Group comparison row -->
+      <div class="dz-compare-row">
+        <div class="dz-card">
+          <div class="dz-card-head">
+            <span class="dz-card-title" data-i18n="dz_compare">Group Comparison</span>
+            <div class="dz-chart-tools">
+              <select class="dz-select" id="dz-cmp-a" onchange="renderDashboard()"></select>
+              <span class="dz-cmp-vs">vs</span>
+              <select class="dz-select" id="dz-cmp-b" onchange="renderDashboard()"></select>
+            </div>
+          </div>
+          <div id="dz-compare-chart"></div>
         </div>
       </div>
     </div>
@@ -367,13 +380,16 @@
         <option value="B-">B-</option>
       </select>
 
-      <!-- View mode toggle: Table / Cards -->
+      <!-- View mode toggle: Excel Table / ID Card / Slide -->
       <div class="view-toggle" id="view-toggle">
-        <button class="view-btn active" id="view-table" onclick="setViewMode('table')" title="Table view">
+        <button class="view-btn active" id="view-table" onclick="setViewMode('table')" data-i18n-title="view_table" title="Excel table">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
         </button>
-        <button class="view-btn" id="view-cards" onclick="setViewMode('cards')" title="Card view">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        <button class="view-btn" id="view-idcard" onclick="setViewMode('idcard')" data-i18n-title="view_idcard" title="ID Card">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="11" r="2"/><path d="M14 9h4M14 13h4M5 16h6"/></svg>
+        </button>
+        <button class="view-btn" id="view-slide" onclick="setViewMode('slide')" data-i18n-title="view_slide" title="Slide">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>
         </button>
       </div>
     </div>
@@ -408,9 +424,17 @@
       </div>
     </div>
 
-    <!-- Card / ID-card view -->
+    <!-- ID Card grid view -->
     <div class="cards-wrap" id="cards-wrap" style="display:none">
-      <div class="cards-grid" id="cards-grid"></div>
+      <div class="idcards-grid" id="cards-grid"></div>
+    </div>
+
+    <!-- Slide view (one worker at a time) -->
+    <div class="slide-wrap" id="slide-wrap" style="display:none">
+      <button class="slide-nav slide-prev" id="slide-prev" onclick="slideStep(-1)" title="Previous">&#8249;</button>
+      <div class="slide-stage" id="slide-stage"></div>
+      <button class="slide-nav slide-next" id="slide-next" onclick="slideStep(1)" title="Next">&#8250;</button>
+      <div class="slide-counter" id="slide-counter"></div>
     </div>
 
     </div><!-- /data-panel -->
@@ -437,13 +461,13 @@
     <!-- Tabs -->
     <div class="detail-tabs">
       <button class="detail-tab active" data-tab="info" onclick="switchDetailTab('info',this)">
-        <span>Info</span>
+        <span data-i18n="vc_info">Info</span>
       </button>
       <button class="detail-tab" data-tab="docs" onclick="switchDetailTab('docs',this)">
         <span data-i18n="vc_documents">Documents</span>
       </button>
       <button class="detail-tab" data-tab="activity" onclick="switchDetailTab('activity',this)">
-        <span>Activity</span>
+        <span data-i18n="vc_activity">Activity</span>
       </button>
     </div>
     <!-- Pane: Info -->
@@ -469,6 +493,14 @@
   <div class="docview-modal" onclick="event.stopPropagation()">
     <button class="fm-close" onclick="closeOverlay('docview-overlay')">&#x2715;</button>
     <div id="docview-body"></div>
+  </div>
+</div>
+
+<!-- ID card zoom (fills the screen) -->
+<div class="overlay" id="cardzoom-overlay">
+  <button class="cardzoom-close" onclick="closeOverlay('cardzoom-overlay')" title="Close">&#x2715;</button>
+  <div class="cardzoom-stage" onclick="event.stopPropagation()">
+    <div id="cardzoom-body"></div>
   </div>
 </div>
 
@@ -841,20 +873,27 @@
   </div>
 </div>
 
-<!-- SETTINGS (Admin only) -->
+<!-- SETTINGS (Admin only) — Claude.ai-style: left nav + right content -->
 <div class="overlay" id="settings-overlay">
   <div class="settings-modal" onclick="event.stopPropagation()">
-    <div class="form-header">
-      <h2 data-i18n="set_title">System Settings</h2>
-      <button class="fm-close" onclick="closeOverlay('settings-overlay')">&#x2715;</button>
-    </div>
-    <div class="set-tabs" id="set-tabs">
-      <button class="set-tab active" data-tab="appearance" onclick="switchSettingsTab('appearance')" data-i18n="set_tab_appearance">Appearance</button>
-      <button class="set-tab admin-only" data-tab="cities" onclick="switchSettingsTab('cities')" data-i18n="set_tab_cities">City Dictionary</button>
-      <button class="set-tab admin-only" data-tab="users" onclick="switchSettingsTab('users')" data-i18n="set_tab_users">User Accounts</button>
-    </div>
+    <button class="settings-close" onclick="closeOverlay('settings-overlay')" title="Close">&#x2715;</button>
+    <aside class="settings-nav" id="set-tabs">
+      <div class="settings-nav-title" data-i18n="set_title">Settings</div>
+      <button class="set-nav-item active" data-tab="appearance" onclick="switchSettingsTab('appearance')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+        <span data-i18n="set_tab_appearance">Appearance</span>
+      </button>
+      <button class="set-nav-item admin-only" data-tab="cities" onclick="switchSettingsTab('cities')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        <span data-i18n="set_tab_cities">City Dictionary</span>
+      </button>
+      <button class="set-nav-item admin-only" data-tab="users" onclick="switchSettingsTab('users')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span data-i18n="set_tab_users">User Accounts</span>
+      </button>
+    </aside>
 
-    <div class="set-body">
+    <div class="set-body settings-content">
       <!-- Appearance pane -->
       <div class="set-pane" id="set-pane-appearance">
         <div class="app-section-title" data-i18n="set_theme">Theme</div>
