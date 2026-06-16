@@ -2216,6 +2216,41 @@ body[data-role="viewer"] .fab { display: none !important; }
 .id-badge-card.locked .idc-f-val .expiry-expired { color: #b91c1c; }
 .idc-cell { display: flex; justify-content: center; }
 
+/* ══ KD original-form card (brown layout — 4th view mode) ══ */
+.cards-grid.kd-grid { grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); }
+.kd-grid .idc-cell { display: block; }
+.kd-card {
+  background: var(--bg-card); border-radius: var(--r-md); overflow: hidden;
+  box-shadow: var(--shadow-sm); font-size: 0.78rem;
+  transition: box-shadow 0.18s var(--ease), transform 0.18s var(--ease);
+  animation: dzCardIn 0.4s var(--ease) both;
+}
+.kd-grid .idc-cell:hover .kd-card { box-shadow: var(--shadow-lg); transform: translateY(-3px); }
+.kd-top { display: flex; align-items: center; justify-content: space-between; padding: 5px 12px; border-bottom: 1px solid var(--line); }
+.kd-code { font-weight: 700; font-size: 0.76rem; color: var(--text); }
+.kd-bloods { display: flex; gap: 10px; }
+.kd-blood { font-size: 0.72rem; color: var(--text-faint); font-weight: 600; }
+.kd-blood.on { color: var(--green); border-bottom: 2px solid var(--green); }
+.kd-head { display: flex; align-items: center; justify-content: space-between; padding: 9px 14px; background: #6b6a2f; color: #fff; }
+.kd-head span:first-child { font-size: 1.05rem; font-weight: 700; }
+.kd-head span:last-child  { font-size: 0.95rem; font-weight: 600; }
+.kd-body { display: grid; grid-template-columns: 1.1fr 1fr; }
+.kd-tbl { display: grid; grid-template-columns: 42% 58%; border-right: 1px solid var(--line); align-content: start; }
+.kd-l { padding: 5px 9px; background: var(--th-bg); border-bottom: 1px solid var(--line); color: var(--text-muted); font-size: 0.72rem; line-height: 1.15; }
+.kd-l i { display: block; font-size: 0.6rem; color: var(--text-faint); font-style: normal; }
+.kd-v { padding: 5px 9px; border-bottom: 1px solid var(--line); font-weight: 600; text-align: center; color: var(--text); display: flex; align-items: center; justify-content: center; }
+.kd-right { display: flex; flex-direction: column; }
+.kd-photo { position: relative; flex: 1; min-height: 150px; background: var(--field-bg); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.kd-photo img { width: 100%; height: 100%; object-fit: cover; }
+.kd-noimg { font-size: 1.6rem; font-weight: 800; color: var(--text-faint); }
+.kd-couple { position: absolute; top: 8px; right: 8px; background: #6b6a2f; color: #fff; font-size: 0.74rem; font-weight: 600; padding: 3px 12px; border-radius: 5px; }
+.kd-sum { border-top: 1px solid var(--line); }
+.kd-sum-h { background: #6b6a2f; color: #fff; text-align: center; font-weight: 600; padding: 4px; font-size: 0.74rem; }
+.kd-sum-r { display: flex; align-items: center; justify-content: space-between; padding: 5px 12px; border-bottom: 1px solid var(--line); font-size: 0.74rem; color: var(--text-muted); }
+.kd-sum-r:last-child { border-bottom: none; }
+.kd-sum-r b { color: var(--text); font-weight: 700; }
+@media (max-width: 560px) { .cards-grid.kd-grid { grid-template-columns: 1fr; } }
+
 /* ══ Worker detail — Info pane: two columns (table left, ID card right) ══ */
 .vm-info-layout {
   display: flex; gap: var(--sp-5); align-items: flex-start;

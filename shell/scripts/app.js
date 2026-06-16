@@ -1439,7 +1439,7 @@ function renderTable() {
 // ── VIEW MODE (Table / Cards) ─────────────────────────────────────
 // Mobile-first: phones always use the card view (a wide table is unusable
 // on a phone). On larger screens the user's saved preference is respected.
-const VIEW_MODES = ['table', 'idcard', 'slide'];
+const VIEW_MODES = ['table', 'idcard', 'kdcard', 'slide'];
 function isMobileView() { return window.innerWidth <= 640; }
 // Migrate the old 'cards' preference → 'idcard'
 function _normViewMode(m) { return m === 'cards' ? 'idcard' : (VIEW_MODES.includes(m) ? m : 'table'); }
@@ -1453,27 +1453,83 @@ function setViewMode(mode) {
 
 function applyViewMode() {
   const view      = currentView();
+  const cardish   = view === 'idcard' || view === 'kdcard';
   const tableWrap = document.querySelector('.table-wrap');
   const cardsWrap = document.getElementById('cards-wrap');
   const slideWrap = document.getElementById('slide-wrap');
   if (tableWrap) tableWrap.style.display = view === 'table'  ? '' : 'none';
-  if (cardsWrap) cardsWrap.style.display = view === 'idcard' ? 'block' : 'none';
+  if (cardsWrap) cardsWrap.style.display = cardish ? 'block' : 'none';
   if (slideWrap) slideWrap.style.display = view === 'slide'  ? 'flex' : 'none';
   document.getElementById('view-table')?.classList.toggle('active',  view === 'table');
   document.getElementById('view-idcard')?.classList.toggle('active', view === 'idcard');
+  document.getElementById('view-kdcard')?.classList.toggle('active', view === 'kdcard');
   document.getElementById('view-slide')?.classList.toggle('active',  view === 'slide');
 }
 
-// ── ID CARD GRID ──────────────────────────────────────────────────
+// ── ID CARD / KD FORM GRID ────────────────────────────────────────
 function renderCards() {
   const grid = document.getElementById('cards-grid');
   if (!grid) return;
-  const g = DB.getGroup(activeGroupId);
+  const g  = DB.getGroup(activeGroupId);
+  const kd = currentView() === 'kdcard';
+  grid.className = 'cards-grid' + (kd ? ' kd-grid' : '');
   grid.innerHTML = tableFiltered.map(w =>
     '<div class="idc-cell" onclick="openView(\'' + esc(w.uid) + '\')">' +
-      _renderBadgeCard(w, g, false, true) +
+      (kd ? _renderKdCard(w, g) : _renderBadgeCard(w, g, false, true)) +
     '</div>'
   ).join('');
+}
+
+// ── KD original-form card (brown layout) ──────────────────────────
+function _kdGenderCounts(g) {
+  let f = 0, m = 0;
+  ((g && g.workers) || []).forEach(w => { if (w.sex === 'F') f++; else if (w.sex === 'M') m++; });
+  return { f, m };
+}
+function _renderKdCard(w, g) {
+  const seq    = w.worker_id ? w.worker_id.split('-').pop() : '';
+  const bloods = ['A', 'B', 'O', 'AB'];
+  const bloodRow = bloods.map(b => '<span class="kd-blood' + (w.blood === b ? ' on' : '') + '">' + b + '</span>').join('');
+  const gc = _kdGenderCounts(g);
+  const assigned = (g && g.assigned != null && g.assigned !== '') ? g.assigned : 0;
+  const arrivals = (g && g.arrivals != null && g.arrivals !== '') ? g.arrivals : 0;
+  const cell = (label, sub, val) =>
+    '<div class="kd-l"><span>' + label + '</span>' + (sub ? '<i>' + sub + '</i>' : '') + '</div>' +
+    '<div class="kd-v">' + val + '</div>';
+  const photo = w.photo
+    ? '<img src="' + esc(w.photo) + '" alt="">'
+    : '<span class="kd-noimg">' + esc(avatarInitials(w.en_name || '?')) + '</span>';
+  return '<div class="kd-card">' +
+    '<div class="kd-top">' +
+      '<span class="kd-code">' + esc(w.worker_id || w.employer_code || '—') + '</span>' +
+      '<span class="kd-bloods">' + bloodRow + '</span>' +
+    '</div>' +
+    '<div class="kd-head"><span>' + esc(w.group_supervisor || '—') + '</span><span>' + esc(seq || '') + '</span></div>' +
+    '<div class="kd-body">' +
+      '<div class="kd-tbl">' +
+        cell('Name', 'ຊື່', esc(w.en_name || '--')) +
+        cell('ຊື່ ນາມສະກຸນ', '', esc(w.lo_name || '--')) +
+        cell('Date of birth', 'ວັນເດືອນປີເກີດ', esc(w.dob || '--')) +
+        cell('Village', 'ບ້ານ', esc(w.village || '--')) +
+        cell('Weight ; Height', 'Kg ; Cm', (w.weight ? w.weight + 'Kg' : '--') + ' ; ' + (w.height ? w.height + 'Cm' : '--')) +
+        cell('Size', 'ຂະໜາດ', esc(w.size || '--')) +
+        cell('Blood', 'ກຸ່ມເລືອດ', esc(w.blood || '--')) +
+        cell('Passport No', 'ເລກໜັງສື', '<span style="font-family:monospace">' + esc(w.passport_no || '--') + '</span>') +
+        cell('Date of expiry', 'ໝົດອາຍຸ', '<span class="' + expiryClass(w.passport_expiry) + '">' + esc(w.passport_expiry || '--') + '</span>') +
+        cell('Tel', 'ໂທ', esc(w.tel || '--')) +
+      '</div>' +
+      '<div class="kd-right">' +
+        '<div class="kd-photo">' + photo + (w.couple === 'yes' ? '<span class="kd-couple">부부</span>' : '') + '</div>' +
+        '<div class="kd-sum">' +
+          '<div class="kd-sum-h">' + esc(t('kd_summary')) + '</div>' +
+          '<div class="kd-sum-r"><span>여성 (ຍ)</span><b>' + gc.f + '</b></div>' +
+          '<div class="kd-sum-r"><span>남성 (ຊ)</span><b>' + gc.m + '</b></div>' +
+          '<div class="kd-sum-r"><span>배정 · ' + esc(t('kd_assigned')) + '</span><b>' + assigned + '</b></div>' +
+          '<div class="kd-sum-r"><span>입국 · ' + esc(t('kd_arrivals')) + '</span><b>' + arrivals + '</b></div>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
 }
 
 // ── SLIDE VIEW (one worker at a time) ─────────────────────────────
@@ -2193,9 +2249,11 @@ function openGroupForm(gid, event) {
   if (event) event.stopPropagation();
   if (!isAdmin()) return;
   editGroupId = gid || null;
-  document.getElementById('gf-name').value  = '';
-  document.getElementById('gf-date').value  = '';
-  document.getElementById('gf-route').value = '';
+  document.getElementById('gf-name').value     = '';
+  document.getElementById('gf-date').value     = '';
+  document.getElementById('gf-route').value    = '';
+  document.getElementById('gf-assigned').value = '';
+  document.getElementById('gf-arrivals').value = '';
   document.getElementById('gm-title').textContent = editGroupId ? t('gm_edit_group') : t('gm_new_group');
   document.getElementById('gm-btn').textContent   = editGroupId ? t('gm_save') : t('gm_create');
 
@@ -2205,6 +2263,8 @@ function openGroupForm(gid, event) {
       document.getElementById('gf-name').value      = g.name || '';
       document.getElementById('gf-date').value      = g.departure || '';
       document.getElementById('gf-route').value     = g.route || '';
+      document.getElementById('gf-assigned').value  = (g.assigned != null ? g.assigned : '');
+      document.getElementById('gf-arrivals').value  = (g.arrivals != null ? g.arrivals : '');
     }
   }
   openOverlay('group-overlay');
@@ -2214,20 +2274,18 @@ function saveGroup() {
   if (!isAdmin()) return;
   const name = document.getElementById('gf-name').value.trim();
   if (!name) { alert(t('gm_group_name') + ' is required'); return; }
-
+  const num = id => { const v = document.getElementById(id).value.trim(); return v === '' ? '' : Math.max(0, parseInt(v, 10) || 0); };
+  const data = {
+    name: name,
+    departure: document.getElementById('gf-date').value.trim(),
+    route: document.getElementById('gf-route').value.trim(),
+    assigned: num('gf-assigned'),
+    arrivals: num('gf-arrivals')
+  };
   if (editGroupId) {
-    DB.updateGroup(editGroupId, {
-      name: name,
-      departure: document.getElementById('gf-date').value.trim(),
-      route: document.getElementById('gf-route').value.trim()
-    });
+    DB.updateGroup(editGroupId, data);
   } else {
-    const id = DB.createGroup({
-      name: name,
-      departure: document.getElementById('gf-date').value.trim(),
-      route: document.getElementById('gf-route').value.trim()
-    });
-    activeGroupId = id;
+    activeGroupId = DB.createGroup(data);
   }
   closeOverlay('group-overlay');
   refreshAll();

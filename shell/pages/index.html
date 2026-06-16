@@ -388,6 +388,9 @@
         <button class="view-btn" id="view-idcard" onclick="setViewMode('idcard')" data-i18n-title="view_idcard" title="ID Card">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="11" r="2"/><path d="M14 9h4M14 13h4M5 16h6"/></svg>
         </button>
+        <button class="view-btn" id="view-kdcard" onclick="setViewMode('kdcard')" data-i18n-title="view_kdcard" title="KD Form">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 8h18"/><path d="M13 8v13"/><path d="M6 12h4M6 15h4"/></svg>
+        </button>
         <button class="view-btn" id="view-slide" onclick="setViewMode('slide')" data-i18n-title="view_slide" title="Slide">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>
         </button>
@@ -753,6 +756,16 @@
       <div class="form-group">
         <label><span data-i18n="gm_route">Route</span></label>
         <input id="gf-route" placeholder="e.g. VTE → ICN">
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label><span data-i18n="gm_assigned">Assigned (배정인원)</span></label>
+          <input id="gf-assigned" type="number" min="0" placeholder="0">
+        </div>
+        <div class="form-group">
+          <label><span data-i18n="gm_arrivals">Arrivals (입국자수)</span></label>
+          <input id="gf-arrivals" type="number" min="0" placeholder="0">
+        </div>
       </div>
     </div>
     <div class="gm-footer">
