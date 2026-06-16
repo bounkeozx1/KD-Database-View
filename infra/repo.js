@@ -17,6 +17,30 @@ const EMP_COLS = ['worker_id','employer_code','group_supervisor','en_name','lo_n
 const d = () => dbmod.db;
 const uid = () => 'w' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex');
 
+/* ── Password hashing (scrypt) ──
+ * Stored format: "scrypt$<saltHex>$<hashHex>". Legacy plaintext rows are still
+ * accepted at login and transparently upgraded to a hash on first success. */
+function _hashPw(plain) {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(String(plain == null ? '' : plain), salt, 64);
+  return 'scrypt$' + salt.toString('hex') + '$' + hash.toString('hex');
+}
+function _isHashed(s) { return typeof s === 'string' && s.startsWith('scrypt$'); }
+function _verifyPw(plain, stored) {
+  if (stored == null) return false;
+  if (_isHashed(stored)) {
+    const parts = stored.split('$');
+    if (parts.length !== 3) return false;
+    const salt     = Buffer.from(parts[1], 'hex');
+    const expected = Buffer.from(parts[2], 'hex');
+    let actual;
+    try { actual = crypto.scryptSync(String(plain == null ? '' : plain), salt, expected.length); }
+    catch (e) { return false; }
+    return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+  }
+  return String(stored) === String(plain == null ? '' : plain); // legacy plaintext
+}
+
 /* ── Read: assemble the flat worker object ── */
 function employeeToWorker(row) {
   const p = d().prepare('SELECT passport_no, issue_date, expiry_date FROM passports WHERE employee_uid=?').get(row.uid) || {};
@@ -182,7 +206,10 @@ function deleteCity(country, code) { d().prepare('DELETE FROM cities WHERE count
 
 /* ── Users ── */
 function addUser(u) {
-  try { d().prepare('INSERT INTO users (username,password,role,name) VALUES (?,?,?,?)').run(u.username, u.password, u.role === 'admin' ? 'admin' : 'viewer', u.name || u.username); return 'ok'; }
+  // Already-hashed passwords (e.g. re-importing a backup) are stored as-is;
+  // plaintext is hashed before storage.
+  const pw = _isHashed(u.password) ? u.password : _hashPw(u.password);
+  try { d().prepare('INSERT INTO users (username,password,role,name) VALUES (?,?,?,?)').run(u.username, pw, u.role === 'admin' ? 'admin' : 'viewer', u.name || u.username); return 'ok'; }
   catch (e) { return 'dup'; }
 }
 function deleteUser(username) {
@@ -192,8 +219,13 @@ function deleteUser(username) {
   d().prepare('DELETE FROM users WHERE username=?').run(username); return 'ok';
 }
 function login(username, password) {
-  const u = d().prepare('SELECT username, role, name FROM users WHERE username=? AND password=?').get(username, password);
-  return u || null;
+  const u = d().prepare('SELECT username, role, name, password FROM users WHERE username=?').get(username);
+  if (!u || !_verifyPw(password, u.password)) return null;
+  // Transparently upgrade a legacy plaintext row to a hash on first valid login.
+  if (!_isHashed(u.password)) {
+    try { d().prepare('UPDATE users SET password=? WHERE username=?').run(_hashPw(password), username); } catch (e) {}
+  }
+  return { username: u.username, role: u.role, name: u.name };
 }
 
 /* ── Bulk import (auto-migration from the browser's localStorage) ── */

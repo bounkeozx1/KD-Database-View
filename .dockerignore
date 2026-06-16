@@ -1,0 +1,7 @@
+# flyctl launch added from .gitignore
+**/node_modules
+**/data
+**/*.log
+**/.DS_Store
+**/.claude/settings.local.json
+fly.toml

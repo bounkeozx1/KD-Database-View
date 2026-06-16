@@ -1,0 +1,17 @@
+# Render Blueprint — KD Database (online 24/7, persistent data)
+# Render reads this on "New → Blueprint". It builds from the Dockerfile and
+# mounts a persistent 5GB disk at /app/data (SQLite + uploaded files survive
+# restarts/redeploys). Starter plan + disk ≈ $8/month, Singapore region.
+services:
+  - type: web
+    name: kd-database
+    runtime: docker
+    region: singapore
+    plan: starter
+    branch: main
+    healthCheckPath: /
+    autoDeploy: true
+    disk:
+      name: kd-data
+      mountPath: /app/data
+      sizeGB: 5
