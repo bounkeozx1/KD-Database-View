@@ -559,7 +559,7 @@ tr:last-child td { border-bottom: none; }
   backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
 }
 .detail-drawer {
-  width: 100%; max-width: min(90vw, 1400px); height: 95dvh; max-height: 95dvh;
+  width: 100%; max-width: min(72vw, 1080px); height: 88dvh; max-height: 88dvh;
   background: var(--bg-card); overflow: hidden; position: relative;
   display: flex; flex-direction: column;
   border-radius: 22px;
@@ -1943,7 +1943,7 @@ body[data-role="viewer"] .fab { display: none !important; }
 }
 /* KD card shown when viewing a worker (detail Info tab) */
 .vm-kd-view { padding: var(--sp-5) var(--sp-6); display: flex; justify-content: center; cursor: zoom-in; }
-.vm-kd-view .kd-card { width: 100%; max-width: 920px; cursor: default; }
+.vm-kd-view .kd-card { width: 100%; max-width: 620px; cursor: default; }
 /* NOTE: the card never stacks/reflows — it keeps the identical 16:10 layout on
    every screen size and simply scales (cqw units). Only the grid wrapper goes
    single-column on phones (handled above). */
