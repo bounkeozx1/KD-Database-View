@@ -1715,9 +1715,8 @@ function _renderDetailBody(w, g) {
         row(t('vc_passport'), 'ເລກທີ', _ev(w,'passport_no', '<span style="font-family:monospace">'+esc(w.passport_no||'--')+'</span>', 'text')) +
         row(t('vc_issue'), 'ວັນທີອອກ', _ev(w,'passport_issue', esc(w.passport_issue||'--'), 'text')) +
         row(t('vc_expiry'), 'ໝົດອາຍຸ', ed ? _ev(w,'passport_expiry','','text') : '<span class="'+expiryClass(w.passport_expiry)+'">'+esc(w.passport_expiry||'--')+'</span>') +
-        row(t('vc_tel'), 'ໂທ / Emergency', ed
-            ? '<div class="split">' + _ev(w,'tel','','text') + _ev(w,'emg_tel','','text') + '</div>'
-            : esc(w.tel||'--')+(w.emg_tel?' &nbsp; '+esc(w.emg_tel):'')) +
+        row(t('vc_tel'), 'ໂທຫຼັກ', _ev(w,'tel', esc(w.tel||'--'), 'text')) +
+        row('Emergency', 'ໂທສຸກເສີນ', _ev(w,'emg_tel', esc(w.emg_tel||'--'), 'text')) +
       '</table>' +
     '</div>';
 
@@ -1725,10 +1724,7 @@ function _renderDetailBody(w, g) {
     return '<div class="vm-info-layout editing"><div class="vm-info-main">' + tableHtml + '</div></div>';
   }
 
-  // View mode → split layout: left = data table, right = large photo + group summary
-  const gc       = _kdGenderCounts(g);
-  const assigned = (g && g.assigned != null && g.assigned !== '') ? g.assigned : 0;
-  const arrivals = (g && g.arrivals != null && g.arrivals !== '') ? g.arrivals : 0;
+  // View mode → split layout: left = data table, right = large photo
   const photoSrc = w.photo
     ? '<img src="' + esc(w.photo) + '" alt="">'
     : '<span class="vsv-initials">' + esc(avatarInitials(w.en_name || '?')) + '</span>';
@@ -1741,12 +1737,6 @@ function _renderDetailBody(w, g) {
     '<div class="vsv-left">' + tableHtml + '</div>' +
     '<div class="vsv-right">' +
       '<div class="vsv-photo' + editCls + '"' + photoAttr + '>' + photoSrc + editHint + '</div>' +
-      '<div class="vsv-info">' +
-        '<div class="vsv-info-row"><span>여성 (ຍ)</span><b>' + gc.f + '</b></div>' +
-        '<div class="vsv-info-row"><span>남성 (ຊ)</span><b>' + gc.m + '</b></div>' +
-        '<div class="vsv-info-row"><span>배정 · ' + esc(t('kd_assigned')) + '</span><b>' + assigned + '</b></div>' +
-        '<div class="vsv-info-row"><span>입국 · ' + esc(t('kd_arrivals')) + '</span><b>' + arrivals + '</b></div>' +
-      '</div>' +
     '</div>' +
   '</div>';
 }

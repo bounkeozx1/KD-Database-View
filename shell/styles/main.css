@@ -2061,9 +2061,10 @@ body[data-role="viewer"] .fab { display: none !important; }
     page-break-inside: avoid !important; break-inside: avoid !important;
   }
   body.printing-worker .vsv-left { overflow: visible !important; padding: 8px 16px !important; }
-  body.printing-worker .vsv-right { flex: 0 0 220px !important; }
-  body.printing-worker .vsv-photo { min-height: 160mm !important; }
+  body.printing-worker .vsv-right { flex: 0 0 220px !important; display: flex !important; flex-direction: column !important; }
+  body.printing-worker .vsv-photo { flex: 1 1 auto !important; min-height: 0 !important; }
   body.printing-worker .vsv-edit-hint { display: none !important; }
+  body.printing-worker .vsv-info { display: none !important; }
   body.printing-worker .vsv-photo img { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   body.printing-worker .vm-tbl tr { page-break-inside: avoid !important; }
 }
