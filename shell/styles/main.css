@@ -1965,14 +1965,28 @@ body[data-role="viewer"] .fab { display: none !important; }
 .vm-info-layout.editing .split { display: flex; gap: 8px; }
 
 /* ── Card zoom overlay (fills the screen) ── */
-#cardzoom-overlay { flex-direction: column; }
+#cardzoom-overlay { flex-direction: column; padding: 0; }
 .cardzoom-stage {
   display: flex; align-items: center; justify-content: center;
-  max-height: 92vh;
+  width: 100%; max-width: 100vw; max-height: 100vh; overflow: auto; padding: 24px;
 }
-.cardzoom-stage .id-badge-card.locked {
-  max-width: min(48vh, 92vw);
+/* Full KD form at 100% (1:1). Scroll inside the overlay if larger than the screen. */
+.cardzoom-stage .kd-card {
+  width: 1000px; max-width: none; flex-shrink: 0;
+  box-shadow: var(--shadow-xl);
   animation: modalPopIn 0.3s var(--ease-spring);
+}
+/* KD card shown when viewing a worker (detail Info tab) */
+.vm-kd-view { padding: var(--sp-5) var(--sp-6); display: flex; justify-content: center; cursor: zoom-in; }
+.vm-kd-view .kd-card { width: 100%; max-width: 920px; }
+/* Slide view = KD card */
+.slide-card.slide-kd { width: 100%; max-width: 760px; }
+.slide-stage:has(.slide-kd) { max-width: 760px; }
+/* KD card stacks on small screens so it stays readable */
+@media (max-width: 600px) {
+  .kd-body { grid-template-columns: 1fr !important; }
+  .kd-tbl { border-right: none; border-bottom: 1px solid var(--line); }
+  .cardzoom-stage .kd-card { width: 100%; }
 }
 .cardzoom-close {
   position: fixed; top: 18px; right: 18px; z-index: 10;

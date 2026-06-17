@@ -1439,11 +1439,11 @@ function renderTable() {
 // ── VIEW MODE (Table / Cards) ─────────────────────────────────────
 // Mobile-first: phones always use the card view (a wide table is unusable
 // on a phone). On larger screens the user's saved preference is respected.
-const VIEW_MODES = ['table', 'idcard', 'kdcard', 'slide'];
+const VIEW_MODES = ['table', 'kdcard', 'slide'];
 function isMobileView() { return window.innerWidth <= 640; }
-// Migrate the old 'cards' preference → 'idcard'
-function _normViewMode(m) { return m === 'cards' ? 'idcard' : (VIEW_MODES.includes(m) ? m : 'table'); }
-function currentView()  { return isMobileView() ? 'idcard' : _normViewMode(viewMode); }
+// Migrate old 'cards'/'idcard' (lime ID card, removed) → 'kdcard'
+function _normViewMode(m) { return (m === 'cards' || m === 'idcard') ? 'kdcard' : (VIEW_MODES.includes(m) ? m : 'table'); }
+function currentView()  { return isMobileView() ? 'kdcard' : _normViewMode(viewMode); }
 
 function setViewMode(mode) {
   viewMode = _normViewMode(mode);
@@ -1453,29 +1453,26 @@ function setViewMode(mode) {
 
 function applyViewMode() {
   const view      = currentView();
-  const cardish   = view === 'idcard' || view === 'kdcard';
   const tableWrap = document.querySelector('.table-wrap');
   const cardsWrap = document.getElementById('cards-wrap');
   const slideWrap = document.getElementById('slide-wrap');
   if (tableWrap) tableWrap.style.display = view === 'table'  ? '' : 'none';
-  if (cardsWrap) cardsWrap.style.display = cardish ? 'block' : 'none';
+  if (cardsWrap) cardsWrap.style.display = view === 'kdcard' ? 'block' : 'none';
   if (slideWrap) slideWrap.style.display = view === 'slide'  ? 'flex' : 'none';
   document.getElementById('view-table')?.classList.toggle('active',  view === 'table');
-  document.getElementById('view-idcard')?.classList.toggle('active', view === 'idcard');
   document.getElementById('view-kdcard')?.classList.toggle('active', view === 'kdcard');
   document.getElementById('view-slide')?.classList.toggle('active',  view === 'slide');
 }
 
-// ── ID CARD / KD FORM GRID ────────────────────────────────────────
+// ── KD FORM GRID ──────────────────────────────────────────────────
 function renderCards() {
   const grid = document.getElementById('cards-grid');
   if (!grid) return;
-  const g  = DB.getGroup(activeGroupId);
-  const kd = currentView() === 'kdcard';
-  grid.className = 'cards-grid' + (kd ? ' kd-grid' : '');
+  const g = DB.getGroup(activeGroupId);
+  grid.className = 'cards-grid kd-grid';
   grid.innerHTML = tableFiltered.map(w =>
     '<div class="idc-cell" onclick="openView(\'' + esc(w.uid) + '\')">' +
-      (kd ? _renderKdCard(w, g) : _renderBadgeCard(w, g, false, true)) +
+      _renderKdCard(w, g) +
     '</div>'
   ).join('');
 }
@@ -1547,7 +1544,7 @@ function renderSlide() {
   const w = tableFiltered[slideIndex];
   const g = DB.getGroup(activeGroupId);
   // re-key the element so the entrance animation replays on each step
-  stage.innerHTML = '<div class="slide-card" key="' + slideIndex + '">' + _renderBadgeCard(w, g, false, true) + '</div>';
+  stage.innerHTML = '<div class="slide-card slide-kd" key="' + slideIndex + '">' + _renderKdCard(w, g) + '</div>';
   stage.querySelector('.slide-card')?.addEventListener('click', () => openView(w.uid));
   if (counter) counter.textContent = (slideIndex + 1) + ' / ' + n;
   if (prev) prev.disabled = slideIndex === 0;
@@ -1752,9 +1749,13 @@ function _renderDetailBody(w, g) {
       '</table>' +
     '</div>';
 
-  return '<div class="vm-info-layout' + (ed ? ' editing' : '') + '">' +
-      '<div class="vm-info-main">' + tableHtml + '</div>' +
-      '<div class="vm-info-side">' + _renderBadgeCard(w, g, isAdmin() && !ed, true) + '</div>' +
+  // View mode → show the KD form card (the official layout). Edit mode → the
+  // inline-editable table.
+  if (ed) {
+    return '<div class="vm-info-layout editing"><div class="vm-info-main">' + tableHtml + '</div></div>';
+  }
+  return '<div class="vm-kd-view" onclick="zoomCard(\'' + esc(w.uid) + '\')" title="' + esc(t('vd_zoom')) + '">' +
+      _renderKdCard(w, g) +
     '</div>';
 }
 
@@ -1806,7 +1807,7 @@ function exportWorkerPDF() {
 function zoomCard(uid) {
   const g = DB.getGroup(activeGroupId); const w = g && g.workers.find(x => x.uid === uid); if (!w) return;
   const body = document.getElementById('cardzoom-body');
-  if (body) body.innerHTML = _renderBadgeCard(w, g, false, true);
+  if (body) body.innerHTML = _renderKdCard(w, g);   // full KD form at 100%
   openOverlay('cardzoom-overlay');
 }
 
