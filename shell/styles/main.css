@@ -478,43 +478,8 @@ tr:last-child td { border-bottom: none; }
 }
 .idc-cell:hover { transform: translateY(-4px); }
 .idc-cell:hover .id-badge-card { box-shadow: var(--shadow-xl); }
-/* Neutralise the drawer margins when laid out in a grid/slide */
-.idc-cell .id-badge-card,
-.slide-card .id-badge-card { margin: 0; }
-
-/* ── Slide view (one worker at a time) ── */
-.slide-wrap {
-  display: none; align-items: center; justify-content: center;
-  gap: var(--sp-4); position: relative;
-  padding: var(--sp-8) var(--sp-5) var(--sp-12);
-  min-height: 420px;
-}
-.slide-stage { width: 100%; max-width: 360px; }
-.slide-card {
-  animation: slideCardIn 0.4s var(--ease-spring) both;
-  cursor: pointer;
-}
-.slide-card .id-badge-card { box-shadow: var(--shadow-xl); }
-@keyframes slideCardIn { from { opacity: 0; transform: translateY(16px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
-.slide-nav {
-  width: 48px; height: 48px; flex-shrink: 0; border-radius: 50%;
-  background: var(--bg-card); color: var(--text); border: none;
-  box-shadow: var(--shadow-md); cursor: pointer;
-  font-size: 1.6rem; line-height: 1; display: flex; align-items: center; justify-content: center;
-  transition: transform 0.18s var(--ease-spring), box-shadow 0.18s var(--ease), opacity 0.18s;
-}
-.slide-nav:hover:not(:disabled) { transform: scale(1.12); box-shadow: var(--shadow-lg); color: var(--green); }
-.slide-nav:disabled { opacity: 0.32; cursor: default; }
-.slide-counter {
-  position: absolute; bottom: var(--sp-6); left: 50%; transform: translateX(-50%);
-  font-size: 0.82rem; font-weight: 600; color: var(--text-muted);
-  background: var(--field-bg); padding: 5px 14px; border-radius: var(--r-pill);
-  box-shadow: var(--shadow-xs);
-}
-@media (max-width: 640px) {
-  .slide-nav { width: 40px; height: 40px; font-size: 1.3rem; }
-  .slide-wrap { gap: 6px; padding: var(--sp-5) 6px var(--sp-10); }
-}
+/* Neutralise the drawer margins when laid out in a grid */
+.idc-cell .id-badge-card { margin: 0; }
 
 /* Status badge */
 .status-badge { font-size: 0.66rem; font-weight: 800; padding: 2px 8px; border-radius: 999px; white-space: nowrap; letter-spacing: 0.2px; }
@@ -594,7 +559,7 @@ tr:last-child td { border-bottom: none; }
   backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
 }
 .detail-drawer {
-  width: 100%; max-width: 1080px; height: 95dvh; max-height: 95dvh;
+  width: 100%; max-width: min(90vw, 1400px); height: 95dvh; max-height: 95dvh;
   background: var(--bg-card); overflow: hidden; position: relative;
   display: flex; flex-direction: column;
   border-radius: 22px;
@@ -1979,9 +1944,6 @@ body[data-role="viewer"] .fab { display: none !important; }
 /* KD card shown when viewing a worker (detail Info tab) */
 .vm-kd-view { padding: var(--sp-5) var(--sp-6); display: flex; justify-content: center; cursor: zoom-in; }
 .vm-kd-view .kd-card { width: 100%; max-width: 920px; cursor: default; }
-/* Slide view = KD card */
-.slide-card.slide-kd { width: 100%; max-width: 760px; }
-.slide-stage:has(.slide-kd) { max-width: 760px; }
 /* NOTE: the card never stacks/reflows — it keeps the identical 16:10 layout on
    every screen size and simply scales (cqw units). Only the grid wrapper goes
    single-column on phones (handled above). */
@@ -2031,10 +1993,6 @@ body[data-role="viewer"] .fab { display: none !important; }
   @page { size: A4 landscape; margin: 8mm; }
   body.printing-worker { background: #fff !important; }
   body.printing-worker > *:not(#view-overlay) { display: none !important; }
-  body.printing-worker .mobile-fab-menu,
-  body.printing-worker .save-bar,
-  body.printing-worker .fab,
-  body.printing-worker .bottom-nav { display: none !important; }
   body.printing-worker #view-overlay {
     position: static !important; display: block !important;
     background: none !important; backdrop-filter: none !important; padding: 0 !important;
@@ -2046,34 +2004,51 @@ body[data-role="viewer"] .fab { display: none !important; }
     overflow: visible !important; transform: none !important; opacity: 1 !important; animation: none !important;
     display: block !important;
   }
+  body.printing-worker .vm-topbar,
   body.printing-worker .vm-topbar-actions,
   body.printing-worker .vm-close,
   body.printing-worker .detail-tabs { display: none !important; }
-  body.printing-worker .detail-pane { display: none !important; overflow: visible !important; }
-  body.printing-worker #detail-pane-info { display: block !important; overflow: visible !important; height: auto !important; }
-  body.printing-worker .vm-info-side { position: static !important; }
-  /* keep the lime card colours when printing */
-  body.printing-worker .id-badge-card,
-  body.printing-worker .idc-visual,
-  body.printing-worker .idc-body,
-  body.printing-worker .idc-fields,
-  body.printing-worker .idc-foot { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-  /* Force a single page: two columns side-by-side (override the ≤860px
-     stacking rule, which otherwise triggers in portrait print width). */
-  body.printing-worker .vm-info-layout {
-    display: flex !important; flex-direction: row !important;
-    gap: 18px !important; padding: 0 !important; height: auto !important;
-    align-items: flex-start !important; page-break-inside: avoid !important; break-inside: avoid !important;
+  body.printing-worker .detail-pane { display: none !important; }
+  body.printing-worker #detail-pane-info {
+    display: block !important; overflow: visible !important; height: auto !important;
   }
-  body.printing-worker .vm-info-main { flex: 1 1 auto !important; }
-  body.printing-worker .vm-info-side { flex: 0 0 260px !important; width: 260px !important; }
-  body.printing-worker .vm-info-side .id-badge-card.locked { max-width: 260px !important; }
-  body.printing-worker .detail-pane.active { flex: none !important; }
-  body.printing-worker .vm-tbl,
-  body.printing-worker .vm-tbl tr,
-  body.printing-worker .id-badge-card,
-  body.printing-worker .vm-detail-section { page-break-inside: avoid !important; break-inside: avoid !important; }
+  /* KD card fills the whole A4 landscape page */
+  body.printing-worker .vm-kd-view {
+    padding: 0 !important; cursor: default !important;
+    display: block !important;
+  }
+  body.printing-worker .vm-kd-view .kd-card {
+    width: 100% !important; max-width: 100% !important;
+    box-shadow: none !important; animation: none !important;
+    page-break-inside: avoid !important; break-inside: avoid !important;
+  }
+  /* Preserve background colors */
+  body.printing-worker .kd-head,
+  body.printing-worker .kd-sum-h,
+  body.printing-worker .kd-l,
+  body.printing-worker .kd-blood.on { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 }
+
+/* ── Group PDF export (all workers, one KD card per page) ── */
+@media print {
+  body.printing-group { background: #fff !important; }
+  body.printing-group > *:not(#print-group-container) { display: none !important; }
+  body.printing-group #print-group-container { display: block !important; }
+  .print-group-page {
+    width: 100%; page-break-after: always; break-after: page;
+  }
+  .print-group-page:last-child { page-break-after: auto; break-after: auto; }
+  .print-group-page .kd-card {
+    width: 100% !important; max-width: 100% !important;
+    box-shadow: none !important; animation: none !important;
+    page-break-inside: avoid !important; break-inside: avoid !important;
+  }
+  .print-group-page .kd-head,
+  .print-group-page .kd-sum-h,
+  .print-group-page .kd-l,
+  .print-group-page .kd-blood.on { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}
+
 .vm-couple-chip {
   display: inline-flex; align-items: center; padding: 2px 8px;
   background: #fef3c7; color: #92400e; border-radius: 99px;
@@ -2279,6 +2254,10 @@ body[data-role="viewer"] .fab { display: none !important; }
 .kd-grid .idc-cell:hover .kd-card { box-shadow: var(--shadow-lg); transform: translateY(-3px); }
 .kd-top { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0.55cqw 1.3cqw; border-bottom: 1px solid var(--line); }
 .kd-code { font-weight: 700; font-size: 1.35cqw; color: var(--text); }
+.kd-top-mid { display: flex; align-items: center; gap: 1cqw; }
+.kd-gender { font-size: 1.3cqw; font-weight: 800; padding: 0.15cqw 0.8cqw; border-radius: 99cqw; line-height: 1.4; }
+.kd-gender-m { background: #dbeafe; color: #1d4ed8; }
+.kd-gender-f { background: #fce7f3; color: #be185d; }
 .kd-bloods { display: flex; gap: 1cqw; }
 .kd-blood { font-size: 1.25cqw; color: var(--text-faint); font-weight: 600; }
 .kd-blood.on { color: var(--green); border-bottom: 0.2cqw solid var(--green); }

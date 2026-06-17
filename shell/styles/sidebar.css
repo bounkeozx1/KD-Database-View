@@ -3,8 +3,19 @@
    No user resize. No header offset (header removed).
    ════════════════════════════════════════════════════ */
 
-/* ── Dark sidebar tokens (always, regardless of page theme) ── */
+/* ── Sidebar tokens: follow page theme (light = white-ish, dark = charcoal) ── */
 .sidebar {
+  --sb-bg:       #f8f9f8;
+  --sb-bg2:      #f0f2f0;
+  --sb-hover:    rgba(0,0,0,0.05);
+  --sb-active:   rgba(45,106,79,0.10);
+  --sb-border:   rgba(0,0,0,0.08);
+  --sb-text:     #1a1f1a;
+  --sb-muted:    #6b7280;
+  --sb-faint:    #9aa3a0;
+  --sb-green:    #2d6a4f;
+}
+[data-theme="dark"] .sidebar {
   --sb-bg:       #171717;
   --sb-bg2:      #1e1e1e;
   --sb-hover:    rgba(255,255,255,0.07);

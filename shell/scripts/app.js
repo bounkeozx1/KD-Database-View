@@ -16,7 +16,7 @@ let confirmCallback = null;
 let currentUser = null;             // {username, role, name} or null
 let appInited   = false;            // one-time listeners guard
 let quickFilter = '';               // '' | 'alerts' (sidebar nav view)
-let viewMode = localStorage.getItem('kd_view') || 'table'; // 'table' | 'cards' | 'idcard' | 'slide'
+let viewMode = localStorage.getItem('kd_view') || 'table'; // 'table' | 'kdcard'
 let dzSegment  = 'group';           // dashboard chart segment: group|krcity|lacity|status
 let dzTimeline = 'all';             // dashboard chart timeline: all|3|6|12 (months to passport expiry)
 let _dzGroupsCache = [];            // last groups passed to renderDashboard (for re-render on filter change)
@@ -1348,7 +1348,6 @@ function applyFilters() {
     }
     return true;
   });
-  slideIndex = 0;
   doSort();
   renderTable();
 }
@@ -1404,9 +1403,7 @@ function renderTable() {
   }
   noData.style.display = 'none';
 
-  // Render all three views; applyViewMode() shows the active one
   renderCards();
-  renderSlide();
   applyViewMode();
 
   tbody.innerHTML = tableFiltered.map(w => {
@@ -1437,13 +1434,9 @@ function renderTable() {
 }
 
 // ── VIEW MODE (Table / Cards) ─────────────────────────────────────
-// Mobile-first: phones always use the card view (a wide table is unusable
-// on a phone). On larger screens the user's saved preference is respected.
-const VIEW_MODES = ['table', 'kdcard', 'slide'];
-function isMobileView() { return window.innerWidth <= 640; }
-// Migrate old 'cards'/'idcard' (lime ID card, removed) → 'kdcard'
-function _normViewMode(m) { return (m === 'cards' || m === 'idcard') ? 'kdcard' : (VIEW_MODES.includes(m) ? m : 'table'); }
-function currentView()  { return isMobileView() ? 'kdcard' : _normViewMode(viewMode); }
+const VIEW_MODES = ['table', 'kdcard'];
+function _normViewMode(m) { return (m === 'cards' || m === 'idcard' || m === 'slide') ? 'kdcard' : (VIEW_MODES.includes(m) ? m : 'table'); }
+function currentView()  { return _normViewMode(viewMode); }
 
 function setViewMode(mode) {
   viewMode = _normViewMode(mode);
@@ -1455,13 +1448,10 @@ function applyViewMode() {
   const view      = currentView();
   const tableWrap = document.querySelector('.table-wrap');
   const cardsWrap = document.getElementById('cards-wrap');
-  const slideWrap = document.getElementById('slide-wrap');
   if (tableWrap) tableWrap.style.display = view === 'table'  ? '' : 'none';
   if (cardsWrap) cardsWrap.style.display = view === 'kdcard' ? 'block' : 'none';
-  if (slideWrap) slideWrap.style.display = view === 'slide'  ? 'flex' : 'none';
   document.getElementById('view-table')?.classList.toggle('active',  view === 'table');
   document.getElementById('view-kdcard')?.classList.toggle('active', view === 'kdcard');
-  document.getElementById('view-slide')?.classList.toggle('active',  view === 'slide');
 }
 
 // ── KD FORM GRID ──────────────────────────────────────────────────
@@ -1505,10 +1495,15 @@ function _renderKdCard(w, g, editable) {
   const photoClick = editable
     ? ' onclick="event.stopPropagation(); openPhotoEditor(\'' + esc(w.uid) + '\')" title="' + esc(t('photo_edit') || 'แก้ไขรูป') + '"'
     : '';
+  const genderBadge = w.sex === 'M'
+    ? '<span class="kd-gender kd-gender-m">&#9794;</span>'
+    : w.sex === 'F'
+      ? '<span class="kd-gender kd-gender-f">&#9792;</span>'
+      : '';
   return '<div class="kd-card">' +
     '<div class="kd-top">' +
       '<span class="kd-code">' + esc(w.worker_id || w.employer_code || '—') + '</span>' +
-      '<span class="kd-bloods">' + bloodRow + '</span>' +
+      '<div class="kd-top-mid">' + genderBadge + '<span class="kd-bloods">' + bloodRow + '</span></div>' +
     '</div>' +
     '<div class="kd-head"><span>' + esc(w.group_supervisor || '—') + '</span><span>' + esc(seq || '') + '</span></div>' +
     '<div class="kd-body">' +
@@ -1536,32 +1531,6 @@ function _renderKdCard(w, g, editable) {
       '</div>' +
     '</div>' +
   '</div>';
-}
-
-// ── SLIDE VIEW (one worker at a time) ─────────────────────────────
-let slideIndex = 0;
-function renderSlide() {
-  const stage   = document.getElementById('slide-stage');
-  const counter = document.getElementById('slide-counter');
-  const prev    = document.getElementById('slide-prev');
-  const next    = document.getElementById('slide-next');
-  if (!stage) return;
-  const n = tableFiltered.length;
-  if (!n) { stage.innerHTML = ''; if (counter) counter.textContent = ''; return; }
-  if (slideIndex >= n) slideIndex = n - 1;
-  if (slideIndex < 0)  slideIndex = 0;
-  const w = tableFiltered[slideIndex];
-  const g = DB.getGroup(activeGroupId);
-  // re-key the element so the entrance animation replays on each step
-  stage.innerHTML = '<div class="slide-card slide-kd" key="' + slideIndex + '">' + _renderKdCard(w, g) + '</div>';
-  stage.querySelector('.slide-card')?.addEventListener('click', () => openView(w.uid));
-  if (counter) counter.textContent = (slideIndex + 1) + ' / ' + n;
-  if (prev) prev.disabled = slideIndex === 0;
-  if (next) next.disabled = slideIndex === n - 1;
-}
-function slideStep(dir) {
-  slideIndex += dir;
-  renderSlide();
 }
 
 // ── Contextual 3-dot action menu (View / Edit / Delete) ───────────
@@ -1611,12 +1580,6 @@ document.addEventListener('click', e => {
 });
 window.addEventListener('resize', closeRowMenu);
 
-// Re-apply the view when crossing the mobile/desktop breakpoint
-let _wasMobile = isMobileView();
-window.addEventListener('resize', () => {
-  const m = isMobileView();
-  if (m !== _wasMobile) { _wasMobile = m; if (document.body.classList.contains('authed')) renderTable(); }
-});
 
 // ── ID BADGE CARD builder ─────────────────────────────────────────
 // `editable` (default = admin in the detail drawer) renders the tap-to-change
@@ -1810,6 +1773,25 @@ function exportWorkerPDF() {
   const cleanup = () => { document.body.classList.remove('printing-worker'); window.removeEventListener('afterprint', cleanup); };
   window.addEventListener('afterprint', cleanup);
   setTimeout(() => window.print(), 60);
+}
+
+function exportGroupPDF() {
+  const g  = DB.getGroup(activeGroupId);
+  const ws = tableFiltered.length ? tableFiltered : DB.getWorkers(activeGroupId);
+  if (!ws.length) { toast(t('no_data_title') || 'No workers', 'warn'); return; }
+  const container = document.getElementById('print-group-container');
+  if (!container) return;
+  container.innerHTML = ws.map(w =>
+    '<div class="print-group-page">' + _renderKdCard(w, g) + '</div>'
+  ).join('');
+  document.body.classList.add('printing-group');
+  const cleanup = () => {
+    document.body.classList.remove('printing-group');
+    container.innerHTML = '';
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(() => window.print(), 80);
 }
 
 // Zoom the ID card to fill the screen
