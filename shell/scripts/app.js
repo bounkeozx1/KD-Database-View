@@ -1724,21 +1724,26 @@ function _renderDetailBody(w, g) {
     return '<div class="vm-info-layout editing"><div class="vm-info-main">' + tableHtml + '</div></div>';
   }
 
-  // View mode → split layout: left = data table, right = large photo
-  const photoSrc = w.photo
-    ? '<img src="' + esc(w.photo) + '" alt="">'
-    : '<span class="vsv-initials">' + esc(avatarInitials(w.en_name || '?')) + '</span>';
+  // View mode → single column: photo header at top, full-width data table below
   const photoAttr = isAdmin() ? ' onclick="event.stopPropagation();openPhotoEditor(\'' + esc(w.uid) + '\')"' : '';
-  const editCls   = isAdmin() ? ' vsv-photo-editable' : '';
+  const editCls   = isAdmin() ? ' vph-editable' : '';
   const editHint  = isAdmin()
-    ? '<div class="vsv-edit-hint">&#9998; ' + esc(t('photo_edit') || 'แก้ไขรูป') + '</div>' : '';
+    ? '<div class="vph-edit-hint">&#9998; ' + esc(t('photo_edit') || 'แก้ไขรูป') + '</div>' : '';
+  const photoImg  = w.photo
+    ? '<img src="' + esc(w.photo) + '" alt="">'
+    : '<span class="vph-initials">' + esc(avatarInitials(w.en_name || '?')) + '</span>';
 
-  return '<div class="vm-split-view">' +
-    '<div class="vsv-left">' + tableHtml + '</div>' +
-    '<div class="vsv-right">' +
-      '<div class="vsv-photo' + editCls + '"' + photoAttr + '>' + photoSrc + editHint + '</div>' +
-    '</div>' +
-  '</div>';
+  const photoHeader =
+    '<div class="vm-profile-header">' +
+      '<div class="vph-photo' + editCls + '"' + photoAttr + '>' + photoImg + editHint + '</div>' +
+      '<div class="vph-names">' +
+        '<div class="vph-name-en">' + esc(w.en_name || '—') + '</div>' +
+        '<div class="vph-name-lo">' + esc(w.lo_name || '') + '</div>' +
+        (w.worker_id ? '<div class="vph-id">' + esc(w.worker_id) + '</div>' : '') +
+      '</div>' +
+    '</div>';
+
+  return '<div class="vm-single-view">' + photoHeader + tableHtml + '</div>';
 }
 
 function _renderDetailTopbar(w, uid) {

@@ -1947,46 +1947,53 @@ body[data-role="viewer"] .fab { display: none !important; }
 .vm-kd-view { padding: var(--sp-5) var(--sp-6); display: flex; justify-content: center; cursor: zoom-in; }
 .vm-kd-view .kd-card { width: 100%; max-width: 620px; cursor: default; }
 
-/* ── Split detail view: left = data table, right = photo + summary ── */
-.vm-split-view {
-  display: flex; flex: 1 1 auto; min-height: 0; overflow: hidden;
+/* ── Single-column detail view ── */
+.vm-single-view {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  padding: 0 0 24px;
 }
-.vsv-left {
-  flex: 1 1 auto; overflow-y: auto; padding: 18px 24px 24px; min-width: 0;
+
+/* Profile header: photo left, names right */
+.vm-profile-header {
+  display: flex; align-items: center; gap: 18px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
 }
-.vsv-right {
-  flex: 0 0 300px; display: flex; flex-direction: column;
-  border-left: 1px solid var(--line);
-}
-.vsv-photo {
-  flex: 1 1 auto; overflow: hidden; min-height: 0;
+.vph-photo {
+  flex: 0 0 100px; width: 100px; height: 100px;
+  border-radius: 10px; overflow: hidden;
   background: var(--field-bg); position: relative; cursor: default;
+  border: 2px solid var(--border);
 }
-.vsv-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.vsv-initials {
+.vph-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vph-initials {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
-  font-size: 3.2rem; font-weight: 900; color: var(--text-faint);
+  font-size: 2rem; font-weight: 900; color: var(--text-faint);
 }
-.vsv-photo-editable { cursor: pointer; }
-.vsv-edit-hint {
+.vph-editable { cursor: pointer; }
+.vph-edit-hint {
   position: absolute; bottom: 0; left: 0; right: 0;
-  background: linear-gradient(transparent, rgba(0,0,0,0.62));
-  color: #fff; font-size: 0.84rem; font-weight: 600; text-align: center;
-  padding: 20px 0 8px; opacity: 0; transition: opacity 0.15s;
+  background: linear-gradient(transparent, rgba(0,0,0,0.65));
+  color: #fff; font-size: 0.72rem; font-weight: 600; text-align: center;
+  padding: 14px 0 5px; opacity: 0; transition: opacity 0.15s;
   pointer-events: none;
 }
-.vsv-photo-editable:hover .vsv-edit-hint { opacity: 1; }
-.vsv-info {
-  flex: 0 0 auto; padding: 10px 14px; border-top: 1px solid var(--line);
-  background: var(--th-bg);
+.vph-editable:hover .vph-edit-hint { opacity: 1; }
+.vph-names { flex: 1; min-width: 0; }
+.vph-name-en {
+  font-size: 1.05rem; font-weight: 700; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.vsv-info-row {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 5px 0; font-size: 0.78rem; color: var(--text-muted);
-  border-bottom: 1px solid var(--line);
+.vph-name-lo {
+  font-size: 0.88rem; color: var(--text-muted); margin-top: 2px;
 }
-.vsv-info-row:last-child { border-bottom: none; }
-.vsv-info-row b { color: var(--text); font-weight: 700; }
+.vph-id {
+  display: inline-block; margin-top: 6px;
+  font-size: 0.72rem; font-weight: 700; font-family: monospace;
+  background: var(--th-bg); color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 1px 6px;
+}
 
 /* NOTE: the card never stacks/reflows — it keeps the identical 16:10 layout on
    every screen size and simply scales (cqw units). Only the grid wrapper goes
@@ -2056,17 +2063,13 @@ body[data-role="viewer"] .fab { display: none !important; }
   body.printing-worker #detail-pane-info {
     display: block !important; overflow: visible !important; height: auto !important;
   }
-  /* Split view fills A4 landscape: left=data, right=photo */
-  body.printing-worker .vm-split-view {
-    display: flex !important; height: auto !important; overflow: visible !important;
-    page-break-inside: avoid !important; break-inside: avoid !important;
-  }
-  body.printing-worker .vsv-left { overflow: visible !important; padding: 8px 16px !important; }
-  body.printing-worker .vsv-right { flex: 0 0 220px !important; display: flex !important; flex-direction: column !important; }
-  body.printing-worker .vsv-photo { flex: 1 1 auto !important; min-height: 0 !important; }
-  body.printing-worker .vsv-edit-hint { display: none !important; }
-  body.printing-worker .vsv-info { display: none !important; }
-  body.printing-worker .vsv-photo img { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  /* Single-column view: profile header + full-width table */
+  body.printing-worker .vm-single-view { overflow: visible !important; padding: 0 !important; }
+  body.printing-worker .vm-profile-header { padding: 10px 16px 10px !important; }
+  body.printing-worker .vph-photo { width: 80px !important; height: 80px !important; flex: 0 0 80px !important; }
+  body.printing-worker .vph-photo img { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  body.printing-worker .vph-edit-hint { display: none !important; }
+  body.printing-worker .vm-detail-section { padding: 4px 16px 12px !important; }
   body.printing-worker .vm-tbl tr { page-break-inside: avoid !important; }
 }
 
@@ -2403,7 +2406,7 @@ body[data-role="viewer"] .fab { display: none !important; }
 .docb-btn span { line-height: 1; }
 
 /* Info section below badge card */
-.vm-detail-section { padding: 4px 20px 24px; }
+.vm-detail-section { padding: 8px 24px 24px; }
 .vm-detail-section .vm-warn { margin-bottom: 12px; }
 
 @media (max-width: 768px) {
