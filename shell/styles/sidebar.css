@@ -263,8 +263,8 @@
 /* ── Profile menu (popup above footer) ── */
 .sb-profile-menu {
   position: absolute; left: 8px; right: 8px; bottom: 64px;
-  background: #1e1e1e; border: 1px solid var(--sb-border); border-radius: 14px;
-  box-shadow: 0 16px 40px -12px rgba(0,0,0,0.7); padding: 6px; z-index: 300;
+  background: var(--sb-bg2); border: 1px solid var(--sb-border); border-radius: 14px;
+  box-shadow: 0 16px 40px -12px rgba(0,0,0,0.3); padding: 6px; z-index: 300;
   opacity: 0; visibility: hidden; pointer-events: none;
   transform: scale(0.96) translateY(6px);
   transform-origin: bottom center;
@@ -287,7 +287,7 @@
   overflow: hidden; min-width: 0;
 }
 .pm-uhd-name {
-  font-size: 0.93rem; font-weight: 700; color: #fff;
+  font-size: 0.93rem; font-weight: 700; color: var(--sb-text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
