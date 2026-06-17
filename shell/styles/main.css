@@ -568,17 +568,9 @@ tr:last-child td { border-bottom: none; }
   transform: scale(0.8) translateY(40px);
   transform-origin: center;
 }
-/* Topbar + tabs stay fixed; the active pane fills the rest. Info is locked
-   (no scroll); Documents & Activity may scroll internally. */
-.detail-drawer .vm-topbar,
-.detail-drawer .detail-tabs { flex-shrink: 0; }
-.detail-drawer .detail-pane.active { flex: 1 1 auto; min-height: 0; }
-#detail-pane-info { overflow: hidden; display: flex; flex-direction: column; }
-#vm-content { flex: 1 1 auto; min-height: 0; }
-#detail-pane-docs,
-#detail-pane-activity { overflow-y: auto; }
-/* Safety: on very short screens let Info scroll instead of clipping data */
-@media (max-height: 720px) { #detail-pane-info { overflow-y: auto; } }
+/* Topbar fixed; single body area scrolls */
+.detail-drawer .vm-topbar { flex-shrink: 0; }
+.detail-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .drawer-overlay.open .detail-drawer {
   animation: drawerPop 0.5s var(--ease-spring) forwards;
 }
@@ -1606,8 +1598,8 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 }
 
 /* Documents grid (detail drawer) */
-.vm-docs { margin-top: 4px; padding: 4px 2px 8px; }
-.vm-docs-title { font-size: 0.78rem; font-weight: 800; color: var(--green); letter-spacing: 0.3px; margin: 10px 4px 8px; }
+.vm-docs { margin-top: 0; padding: 4px 2px 24px; border-top: 2px solid var(--border); }
+.vm-docs-title { font-size: 0.78rem; font-weight: 800; color: var(--green); letter-spacing: 0.3px; margin: 16px 4px 8px; }
 .doc-cat { margin: 0 4px 12px; }
 .doc-cat-head { display: flex; align-items: center; gap: 6px; font-size: 0.74rem; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; }
 .doc-count { background: var(--chip-bg); color: var(--text-muted); border-radius: 999px; padding: 0 6px; font-size: 0.64rem; font-weight: 800; }
@@ -1949,7 +1941,6 @@ body[data-role="viewer"] .fab { display: none !important; }
 
 /* ── Single-column detail view ── */
 .vm-single-view {
-  flex: 1 1 auto; min-height: 0; overflow-y: auto;
   padding: 0 0 24px;
 }
 
@@ -2058,14 +2049,12 @@ body[data-role="viewer"] .fab { display: none !important; }
   body.printing-worker .vm-topbar,
   body.printing-worker .vm-topbar-actions,
   body.printing-worker .vm-close,
-  body.printing-worker .detail-tabs { display: none !important; }
-  body.printing-worker .detail-pane { display: none !important; }
-  body.printing-worker #detail-pane-info {
-    display: block !important; overflow: visible !important; height: auto !important;
-  }
-  /* Single-column view: profile header + full-width table */
-  body.printing-worker .vm-single-view { overflow: visible !important; padding: 0 !important; }
-  body.printing-worker .vm-profile-header { padding: 10px 16px 10px !important; }
+  /* Single scroll body: show info, hide docs */
+  body.printing-worker .detail-body { overflow: visible !important; height: auto !important; }
+  body.printing-worker #vm-docs-content { display: none !important; }
+  /* Profile header + table */
+  body.printing-worker .vm-single-view { padding: 0 !important; }
+  body.printing-worker .vm-profile-header { padding: 10px 16px !important; }
   body.printing-worker .vph-photo { width: 80px !important; height: 80px !important; flex: 0 0 80px !important; }
   body.printing-worker .vph-photo img { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   body.printing-worker .vph-edit-hint { display: none !important; }

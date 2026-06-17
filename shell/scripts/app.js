@@ -1783,7 +1783,6 @@ function saveDetailEdit(uid) {
 // Export the detail window as a PDF via the browser's print dialog (offline-safe)
 function exportWorkerPDF() {
   if (detailEditMode && _currentViewUid) { detailEditMode = false; openView(_currentViewUid); }
-  switchDetailTab('info', document.querySelector('.detail-tab[data-tab="info"]'));
   document.body.classList.add('printing-worker');
   const cleanup = () => { document.body.classList.remove('printing-worker'); window.removeEventListener('afterprint', cleanup); };
   window.addEventListener('afterprint', cleanup);
@@ -1858,10 +1857,11 @@ function openView(uid) {
   // Info pane = two columns (detail table left, locked ID card right)
   document.getElementById('vm-content').innerHTML = _renderDetailBody(w, g);
 
-  // Docs tab - render placeholder for on-demand load
+  // Load docs immediately (no tab, single scroll page)
   document.getElementById('vm-docs-content').innerHTML =
     '<div class="vm-docs-title">&#128193; ' + t('vc_documents') + '</div>' +
     '<div class="doc-loading">&#8203;</div>';
+  _loadAndRenderDocs(uid);
 
   openOverlay('view-overlay');
 }

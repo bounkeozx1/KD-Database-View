@@ -456,29 +456,10 @@
       </div>
       <div class="vm-topbar-actions" id="vm-topbar-actions"></div>
     </div>
-    <!-- Tabs -->
-    <div class="detail-tabs">
-      <button class="detail-tab active" data-tab="info" onclick="switchDetailTab('info',this)">
-        <span data-i18n="vc_info">Info</span>
-      </button>
-      <button class="detail-tab" data-tab="docs" onclick="switchDetailTab('docs',this)">
-        <span data-i18n="vc_documents">Documents</span>
-      </button>
-      <button class="detail-tab" data-tab="activity" onclick="switchDetailTab('activity',this)">
-        <span data-i18n="vc_activity">Activity</span>
-      </button>
-    </div>
-    <!-- Pane: Info -->
-    <div class="detail-pane active" id="detail-pane-info">
+    <!-- Single scroll body: info then docs -->
+    <div class="detail-body">
       <div id="vm-content"></div>
-    </div>
-    <!-- Pane: Documents -->
-    <div class="detail-pane" id="detail-pane-docs">
       <div id="vm-docs-content"></div>
-    </div>
-    <!-- Pane: Activity log -->
-    <div class="detail-pane" id="detail-pane-activity">
-      <div id="vm-activity-content" class="activity-list"><div class="act-empty">Loading…</div></div>
     </div>
   </div>
 </div>
