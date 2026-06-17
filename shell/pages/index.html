@@ -504,6 +504,29 @@
   </div>
 </div>
 
+<!-- PHOTO EDITOR (upload + rotate, opens from the KD card photo) -->
+<div class="overlay" id="photo-editor-overlay">
+  <div class="pe-modal" onclick="event.stopPropagation()">
+    <div class="pe-head">
+      <span data-i18n="photo_editor_title">แก้ไขรูปโปรไฟล์</span>
+      <button class="fm-close" onclick="closeOverlay('photo-editor-overlay')">&#x2715;</button>
+    </div>
+    <div class="pe-stage" id="pe-stage"></div>
+    <div class="pe-tools">
+      <button class="pe-tool" id="pe-rot-l" onclick="peRotate(-1)" title="หมุนซ้าย">&#8634;</button>
+      <label class="pe-tool pe-pick">
+        &#128247; <span data-i18n="photo_choose">เลือกรูป</span>
+        <input type="file" accept="image/*" style="display:none" onchange="pePickFile(this)">
+      </label>
+      <button class="pe-tool" id="pe-rot-r" onclick="peRotate(1)" title="หมุนขวา">&#8635;</button>
+    </div>
+    <div class="pe-foot">
+      <button class="btn btn-ghost" onclick="closeOverlay('photo-editor-overlay')" data-i18n="fm_cancel">ยกเลิก</button>
+      <button class="btn btn-primary" id="pe-save" onclick="peSave()" data-i18n="vd_save">บันทึก</button>
+    </div>
+  </div>
+</div>
+
 <!-- WORKER FORM -->
 <div class="overlay" id="form-overlay">
   <div class="form-modal" onclick="event.stopPropagation()">

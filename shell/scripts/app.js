@@ -1483,7 +1483,7 @@ function _kdGenderCounts(g) {
   ((g && g.workers) || []).forEach(w => { if (w.sex === 'F') f++; else if (w.sex === 'M') m++; });
   return { f, m };
 }
-function _renderKdCard(w, g) {
+function _renderKdCard(w, g, editable) {
   const seq    = w.worker_id ? w.worker_id.split('-').pop() : '';
   const bloods = ['A', 'B', 'O', 'AB'];
   const bloodRow = bloods.map(b => '<span class="kd-blood' + (w.blood === b ? ' on' : '') + '">' + b + '</span>').join('');
@@ -1496,6 +1496,15 @@ function _renderKdCard(w, g) {
   const photo = w.photo
     ? '<img src="' + esc(w.photo) + '" alt="">'
     : '<span class="kd-noimg">' + esc(avatarInitials(w.en_name || '?')) + '</span>';
+  // In the worker detail view (admin) the photo box is tap-to-edit: opens an
+  // inline editor with upload + rotate, no need to switch to the Excel form.
+  const photoCls  = 'kd-photo' + (editable ? ' editable' : '');
+  const photoEdit = editable
+    ? '<div class="kd-photo-edit">&#9998; ' + esc(t('photo_edit') || 'แก้ไขรูป') + '</div>'
+    : '';
+  const photoClick = editable
+    ? ' onclick="event.stopPropagation(); openPhotoEditor(\'' + esc(w.uid) + '\')" title="' + esc(t('photo_edit') || 'แก้ไขรูป') + '"'
+    : '';
   return '<div class="kd-card">' +
     '<div class="kd-top">' +
       '<span class="kd-code">' + esc(w.worker_id || w.employer_code || '—') + '</span>' +
@@ -1516,7 +1525,7 @@ function _renderKdCard(w, g) {
         cell('Tel', 'ໂທ', esc(w.tel || '--')) +
       '</div>' +
       '<div class="kd-right">' +
-        '<div class="kd-photo">' + photo + (w.couple === 'yes' ? '<span class="kd-couple">부부</span>' : '') + '</div>' +
+        '<div class="' + photoCls + '"' + photoClick + '>' + photo + (w.couple === 'yes' ? '<span class="kd-couple">부부</span>' : '') + photoEdit + '</div>' +
         '<div class="kd-sum">' +
           '<div class="kd-sum-h">' + esc(t('kd_summary')) + '</div>' +
           '<div class="kd-sum-r"><span>여성 (ຍ)</span><b>' + gc.f + '</b></div>' +
@@ -1755,7 +1764,7 @@ function _renderDetailBody(w, g) {
     return '<div class="vm-info-layout editing"><div class="vm-info-main">' + tableHtml + '</div></div>';
   }
   return '<div class="vm-kd-view" onclick="zoomCard(\'' + esc(w.uid) + '\')" title="' + esc(t('vd_zoom')) + '">' +
-      _renderKdCard(w, g) +
+      _renderKdCard(w, g, isAdmin()) +
     '</div>';
 }
 
@@ -1887,6 +1896,95 @@ async function _handlePhotoEdit(input, uid) {
       toast('Photo upload failed', 'err');
     }
   });
+}
+
+// ── In-profile photo editor (upload + rotate, no Excel form needed) ──
+// Opens from the KD card photo box in the worker detail view. Landscape photos
+// can be rotated; the result is baked into the saved image and the card crops it
+// to its fixed box (object-fit: cover), so layout never shifts.
+let _pe = null;   // { uid, src (un-rotated dataURL), rot (0/90/180/270), out (baked) }
+
+function openPhotoEditor(uid) {
+  if (!isAdmin()) return;
+  const g = DB.getGroup(activeGroupId);
+  const w = g && g.workers.find(x => x.uid === uid);
+  if (!w) return;
+  _pe = { uid, src: w.photo || '', rot: 0, out: w.photo || '' };
+  _renderPhotoEditor();
+  openOverlay('photo-editor-overlay');
+}
+
+// Bake current src+rotation onto a canvas → JPEG data URL (also used for preview)
+function _peCompose(cb) {
+  if (!_pe || !_pe.src) { cb(''); return; }
+  const img = new Image();
+  img.onload = () => {
+    const rot  = ((_pe.rot % 360) + 360) % 360;
+    const swap = rot === 90 || rot === 270;
+    const maxDim = 1000;
+    let iw = img.width, ih = img.height;
+    const scale = Math.min(1, maxDim / Math.max(iw, ih));
+    iw = Math.round(iw * scale); ih = Math.round(ih * scale);
+    const c = document.createElement('canvas');
+    c.width  = swap ? ih : iw;
+    c.height = swap ? iw : ih;
+    const ctx = c.getContext('2d');
+    ctx.translate(c.width / 2, c.height / 2);
+    ctx.rotate(rot * Math.PI / 180);
+    ctx.drawImage(img, -iw / 2, -ih / 2, iw, ih);
+    cb(c.toDataURL('image/jpeg', 0.85));
+  };
+  img.onerror = () => cb(_pe.src);
+  img.src = _pe.src;
+}
+
+function _renderPhotoEditor() {
+  const stage   = document.getElementById('pe-stage');
+  const saveBtn = document.getElementById('pe-save');
+  const rotL    = document.getElementById('pe-rot-l');
+  const rotR    = document.getElementById('pe-rot-r');
+  const has = !!(_pe && _pe.src);
+  if (rotL) rotL.disabled = !has;
+  if (rotR) rotR.disabled = !has;
+  if (!has) {
+    if (stage)   stage.innerHTML = '<div class="pe-empty">' + esc(t('photo_pick_hint') || 'เลือกรูปเพื่ออัปโหลด') + '</div>';
+    if (saveBtn) saveBtn.disabled = true;
+    return;
+  }
+  _peCompose(out => {
+    _pe.out = out;
+    if (stage)   stage.innerHTML = '<img src="' + out + '" alt="">';
+    if (saveBtn) saveBtn.disabled = false;
+  });
+}
+
+function pePickFile(input) {
+  const file = input.files && input.files[0];
+  if (!file || !_pe) return;
+  input.value = '';
+  _fileToDataURL(file, 1200, dataUrl => { _pe.src = dataUrl; _pe.rot = 0; _renderPhotoEditor(); });
+}
+
+function peRotate(dir) {
+  if (!_pe || !_pe.src) return;
+  _pe.rot = (((_pe.rot + dir * 90) % 360) + 360) % 360;
+  _renderPhotoEditor();
+}
+
+function peSave() {
+  if (!_pe) return closeOverlay('photo-editor-overlay');
+  const uid = _pe.uid, out = _pe.out || '';
+  try {
+    DB.updateWorker(activeGroupId, uid, { photo: out });
+    const g = DB.getGroup(activeGroupId);
+    const w = g && g.workers.find(x => x.uid === uid);
+    if (w) w.photo = out;
+    closeOverlay('photo-editor-overlay');
+    if (_currentViewUid === uid) openView(uid);   // refresh the KD card in place
+    toast(t('photo_saved') || 'อัปเดตรูปแล้ว', 'ok');
+  } catch (e) {
+    toast(t('photo_save_err') || 'บันทึกรูปไม่สำเร็จ', 'err');
+  }
 }
 
 // ── DOCUMENTS (inside the detail drawer, versioned) ───────────────
@@ -2373,7 +2471,7 @@ function closeOverlay(id) {
 }
 
 // Click outside to close
-['view-overlay','form-overlay','group-overlay','confirm-overlay','settings-overlay','import-overlay','scan-overlay','docview-overlay'].forEach(id => {
+['view-overlay','form-overlay','group-overlay','confirm-overlay','settings-overlay','import-overlay','scan-overlay','docview-overlay','photo-editor-overlay'].forEach(id => {
   document.getElementById(id).addEventListener('click', e => {
     if (e.target.id === id) closeOverlay(id);
   });
