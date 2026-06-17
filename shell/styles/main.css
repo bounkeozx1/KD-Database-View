@@ -559,10 +559,10 @@ tr:last-child td { border-bottom: none; }
   backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
 }
 .detail-drawer {
-  width: 100%; max-width: min(72vw, 1080px); height: 88dvh; max-height: 88dvh;
+  width: 100%; max-width: min(82vw, 1280px); height: 90dvh; max-height: 90dvh;
   background: var(--bg-card); overflow: hidden; position: relative;
   display: flex; flex-direction: column;
-  border-radius: 22px;
+  border-radius: 8px;
   box-shadow: var(--shadow-xl);
   opacity: 0;
   transform: scale(0.8) translateY(40px);
@@ -1944,6 +1944,48 @@ body[data-role="viewer"] .fab { display: none !important; }
 /* KD card shown when viewing a worker (detail Info tab) */
 .vm-kd-view { padding: var(--sp-5) var(--sp-6); display: flex; justify-content: center; cursor: zoom-in; }
 .vm-kd-view .kd-card { width: 100%; max-width: 620px; cursor: default; }
+
+/* ── Split detail view: left = data table, right = photo + summary ── */
+.vm-split-view {
+  display: flex; height: 100%; overflow: hidden;
+}
+.vsv-left {
+  flex: 1 1 auto; overflow-y: auto; padding: 18px 24px 24px; min-width: 0;
+}
+.vsv-right {
+  flex: 0 0 300px; display: flex; flex-direction: column;
+  border-left: 1px solid var(--line);
+}
+.vsv-photo {
+  flex: 1 1 auto; overflow: hidden; min-height: 0;
+  background: var(--field-bg); position: relative; cursor: default;
+}
+.vsv-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vsv-initials {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  font-size: 3.2rem; font-weight: 900; color: var(--text-faint);
+}
+.vsv-photo-editable { cursor: pointer; }
+.vsv-edit-hint {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: linear-gradient(transparent, rgba(0,0,0,0.62));
+  color: #fff; font-size: 0.84rem; font-weight: 600; text-align: center;
+  padding: 20px 0 8px; opacity: 0; transition: opacity 0.15s;
+  pointer-events: none;
+}
+.vsv-photo-editable:hover .vsv-edit-hint { opacity: 1; }
+.vsv-info {
+  flex: 0 0 auto; padding: 10px 14px; border-top: 1px solid var(--line);
+  background: var(--th-bg);
+}
+.vsv-info-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 5px 0; font-size: 0.78rem; color: var(--text-muted);
+  border-bottom: 1px solid var(--line);
+}
+.vsv-info-row:last-child { border-bottom: none; }
+.vsv-info-row b { color: var(--text); font-weight: 700; }
+
 /* NOTE: the card never stacks/reflows — it keeps the identical 16:10 layout on
    every screen size and simply scales (cqw units). Only the grid wrapper goes
    single-column on phones (handled above). */
@@ -2012,21 +2054,17 @@ body[data-role="viewer"] .fab { display: none !important; }
   body.printing-worker #detail-pane-info {
     display: block !important; overflow: visible !important; height: auto !important;
   }
-  /* KD card fills the whole A4 landscape page */
-  body.printing-worker .vm-kd-view {
-    padding: 0 !important; cursor: default !important;
-    display: block !important;
-  }
-  body.printing-worker .vm-kd-view .kd-card {
-    width: 100% !important; max-width: 100% !important;
-    box-shadow: none !important; animation: none !important;
+  /* Split view fills A4 landscape: left=data, right=photo */
+  body.printing-worker .vm-split-view {
+    display: flex !important; height: auto !important; overflow: visible !important;
     page-break-inside: avoid !important; break-inside: avoid !important;
   }
-  /* Preserve background colors */
-  body.printing-worker .kd-head,
-  body.printing-worker .kd-sum-h,
-  body.printing-worker .kd-l,
-  body.printing-worker .kd-blood.on { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  body.printing-worker .vsv-left { overflow: visible !important; padding: 8px 16px !important; }
+  body.printing-worker .vsv-right { flex: 0 0 220px !important; }
+  body.printing-worker .vsv-photo { min-height: 160mm !important; }
+  body.printing-worker .vsv-edit-hint { display: none !important; }
+  body.printing-worker .vsv-photo img { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  body.printing-worker .vm-tbl tr { page-break-inside: avoid !important; }
 }
 
 /* ── Group PDF export (all workers, one KD card per page) ── */

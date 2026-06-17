@@ -1721,14 +1721,34 @@ function _renderDetailBody(w, g) {
       '</table>' +
     '</div>';
 
-  // View mode → show the KD form card (the official layout). Edit mode → the
-  // inline-editable table.
   if (ed) {
     return '<div class="vm-info-layout editing"><div class="vm-info-main">' + tableHtml + '</div></div>';
   }
-  return '<div class="vm-kd-view" onclick="zoomCard(\'' + esc(w.uid) + '\')" title="' + esc(t('vd_zoom')) + '">' +
-      _renderKdCard(w, g, isAdmin()) +
-    '</div>';
+
+  // View mode → split layout: left = data table, right = large photo + group summary
+  const gc       = _kdGenderCounts(g);
+  const assigned = (g && g.assigned != null && g.assigned !== '') ? g.assigned : 0;
+  const arrivals = (g && g.arrivals != null && g.arrivals !== '') ? g.arrivals : 0;
+  const photoSrc = w.photo
+    ? '<img src="' + esc(w.photo) + '" alt="">'
+    : '<span class="vsv-initials">' + esc(avatarInitials(w.en_name || '?')) + '</span>';
+  const photoAttr = isAdmin() ? ' onclick="event.stopPropagation();openPhotoEditor(\'' + esc(w.uid) + '\')"' : '';
+  const editCls   = isAdmin() ? ' vsv-photo-editable' : '';
+  const editHint  = isAdmin()
+    ? '<div class="vsv-edit-hint">&#9998; ' + esc(t('photo_edit') || 'แก้ไขรูป') + '</div>' : '';
+
+  return '<div class="vm-split-view">' +
+    '<div class="vsv-left">' + tableHtml + '</div>' +
+    '<div class="vsv-right">' +
+      '<div class="vsv-photo' + editCls + '"' + photoAttr + '>' + photoSrc + editHint + '</div>' +
+      '<div class="vsv-info">' +
+        '<div class="vsv-info-row"><span>여성 (ຍ)</span><b>' + gc.f + '</b></div>' +
+        '<div class="vsv-info-row"><span>남성 (ຊ)</span><b>' + gc.m + '</b></div>' +
+        '<div class="vsv-info-row"><span>배정 · ' + esc(t('kd_assigned')) + '</span><b>' + assigned + '</b></div>' +
+        '<div class="vsv-info-row"><span>입국 · ' + esc(t('kd_arrivals')) + '</span><b>' + arrivals + '</b></div>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
 }
 
 function _renderDetailTopbar(w, uid) {
