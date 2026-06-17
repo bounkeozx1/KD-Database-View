@@ -1684,25 +1684,25 @@ function _ev(w, field, viewHtml, type, opts) {
 // so the popup never changes size with the amount of data.
 function _renderDetailBody(w, g) {
   const ed  = detailEditMode;
-  const age = calcAge(w.dob);
+  // Age: use manually stored value if present, else calculate from DOB
+  const age = (w.age != null && w.age !== '') ? w.age : calcAge(w.dob);
   const visaLabels = { not_started:'ຍັງບໍ່ເລີ່ມ', applied:'ຍື່ນຂໍແລ້ວ', approved:'ອະນຸມັດ ✓', rejected:'ຖືກປະຕິເສດ ✗' };
-  const visaColors = { not_started:'#888', applied:'#2563eb', approved:'#16a34a', rejected:'#dc2626' };
   const warn = !ed && expiryClass(w.passport_expiry) !== 'expiry-ok';
   const row = (label, sub, val) => '<tr><td>' + label + (sub ? '<span class="sub">' + sub + '</span>' : '') + '</td><td>' + val + '</td></tr>';
   const sexOpts  = [{v:'',t:'--'},{v:'M',t:t('fm_sex_m')},{v:'F',t:t('fm_sex_f')}];
   const handOpts = [{v:'',t:'--'},{v:'R',t:'R (Right)'},{v:'L',t:'L (Left)'}];
   const bloodOpts= [{v:'',t:'--'},{v:'A',t:'A'},{v:'B',t:'B'},{v:'O',t:'O'},{v:'AB',t:'AB'},{v:'B+',t:'B+'},{v:'B-',t:'B-'}];
   const sizeOpts = [{v:'',t:'--'},{v:'S',t:'S'},{v:'M',t:'M'},{v:'L',t:'L'},{v:'XL',t:'XL'},{v:'XXL',t:'XXL'}];
-  const visaOpts = [{v:'',t:'--'},{v:'not_started',t:visaLabels.not_started},{v:'applied',t:visaLabels.applied},{v:'approved',t:visaLabels.approved},{v:'rejected',t:visaLabels.rejected}];
 
   const tableHtml =
     '<div class="vm-detail-section">' +
       (warn ? '<div class="vm-warn">&#9888; ' + t('vc_passport_warn', { date: w.passport_expiry }) + '</div>' : '') +
       '<table class="vm-tbl">' +
+        row('Worker ID', 'ລະຫັດ', _ev(w,'worker_id', esc(w.worker_id||'--'), 'text')) +
         row(t('vc_name'), '/ຊື່', _ev(w,'en_name', esc(w.en_name||'--'), 'text')) +
         row('ຊື່ ນາມສະກຸນ', '', _ev(w,'lo_name', esc(w.lo_name||'--'), 'text')) +
         row(t('vc_dob'), 'ວັນເດືອນປີເກີດ', _ev(w,'dob', esc(w.dob||'--'), 'text')) +
-        row(t('vc_age'), 'ອາຍຸ', age ? age + ' yrs' : '--') +
+        row(t('vc_age'), 'ອາຍຸ', _ev(w,'age', age ? age + ' yrs' : '--', 'text')) +
         row(t('vc_nationality'), 'ສັນຊາດ', _ev(w,'nationality', esc(w.nationality||'--'), 'text')) +
         row(t('vc_sex'), 'ເພດ', ed ? _ev(w,'sex','','select',sexOpts) : (w.sex==='M'?'♂ '+t('fm_sex_m'):w.sex==='F'?'♀ '+t('fm_sex_f'):'--')) +
         row(t('vc_village'), 'ບ້ານ', _ev(w,'village', esc(w.village||'--'), 'text')) +
