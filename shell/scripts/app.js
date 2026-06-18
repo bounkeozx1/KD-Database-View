@@ -2114,7 +2114,8 @@ function openWorkerForm(editUid) {
     document.getElementById('f-edit-uid').value        = editUid;
     document.getElementById('f-photo').value           = w.photo || '';
     renderFormPhoto();
-    document.getElementById('f-kr-city').value         = w.kr_city || '';
+    const krCityLoad = document.getElementById('f-kr-city');
+    if (krCityLoad) krCityLoad.value = w.kr_city || '';
     document.getElementById('f-la-city').value         = w.la_city || '';
     document.getElementById('f-worker-id').value       = w.worker_id || '';
     document.getElementById('f-employer-code').value   = w.employer_code || '';
@@ -2154,53 +2155,24 @@ function populateCityDropdowns() {
   const cities = DB.getCities();
   const opt = c => '<option value="' + esc(c.code) + '">' + esc(c.name) + ' (' + esc(c.code) + ')</option>';
   const sel = '<option value="">' + t('fm_select') + '</option>';
-  document.getElementById('f-kr-city').innerHTML = sel + (cities.kr || []).map(opt).join('');
+  const krEl = document.getElementById('f-kr-city');
+  if (krEl) krEl.innerHTML = sel + (cities.kr || []).map(opt).join('');
   document.getElementById('f-la-city').innerHTML = sel + (cities.la || []).map(opt).join('');
 }
 
-// Live preview of the auto-generated ID for NEW workers.
-// While editing an existing worker the ID is frozen (use Regenerate to change).
-function updateIdPreview() {
-  const editing = !!document.getElementById('f-edit-uid').value;
-  const idEl = document.getElementById('f-worker-id');
-  const hint = document.getElementById('f-id-hint');
-  if (editing) { hint.textContent = t('fm_id_hint'); return; }
-  const kr = document.getElementById('f-kr-city').value;
-  const la = document.getElementById('f-la-city').value;
-  if (kr && la) {
-    idEl.value = DB.nextContactId(kr, la, DB.todayCode());
-    hint.textContent = t('fm_id_hint');
-  } else {
-    idEl.value = '';
-    hint.textContent = t('fm_id_need_cities');
-  }
-}
-
-function regenerateId() {
-  if (!isAdmin()) return;
-  const kr = document.getElementById('f-kr-city').value;
-  const la = document.getElementById('f-la-city').value;
-  const hint = document.getElementById('f-id-hint');
-  if (!(kr && la)) { hint.textContent = t('fm_id_need_cities'); return; }
-  document.getElementById('f-worker-id').value = DB.nextContactId(kr, la, DB.todayCode());
-  hint.textContent = t('fm_id_hint');
-}
+function updateIdPreview() {}
+function regenerateId() {}
 
 function saveWorker() {
   if (!isAdmin()) return;
   const enName = document.getElementById('f-en-name').value.trim();
   const passNo = document.getElementById('f-passport-no').value.trim();
-  if (!enName) { alert('Name (EN) is required'); return; }
-  if (!passNo) { alert('Passport No. is required'); return; }
 
-  const editUid = document.getElementById('f-edit-uid').value;
-  const krCity  = document.getElementById('f-kr-city').value;
-  const laCity  = document.getElementById('f-la-city').value;
-  let   workerId = document.getElementById('f-worker-id').value.trim();
-  // New worker: auto-generate the Contact ID from the city pair + today's date.
-  if (!editUid && !workerId && krCity && laCity) {
-    workerId = DB.nextContactId(krCity, laCity, DB.todayCode());
-  }
+  const editUid  = document.getElementById('f-edit-uid').value;
+  const krCityEl = document.getElementById('f-kr-city');
+  const krCity   = krCityEl ? krCityEl.value : '';
+  const laCity   = document.getElementById('f-la-city').value;
+  const workerId = document.getElementById('f-worker-id').value.trim();
 
   const data = {
     worker_id:      workerId,

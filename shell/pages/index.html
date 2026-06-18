@@ -536,20 +536,12 @@
         <div class="form-sec-title" data-i18n="fm_sec_identity">Worker Identity</div>
         <div class="form-grid">
           <div class="form-group">
-            <label><span data-i18n="fm_kr_city">Korean City (destination)</span></label>
-            <select id="f-kr-city" onchange="updateIdPreview()"></select>
+            <label><span data-i18n="fm_la_city">Lao City (origin)</span></label>
+            <select id="f-la-city"></select>
           </div>
           <div class="form-group">
-            <label><span data-i18n="fm_la_city">Lao City (origin)</span></label>
-            <select id="f-la-city" onchange="updateIdPreview()"></select>
-          </div>
-          <div class="form-group full">
             <label><span data-i18n="fm_worker_id">Worker ID</span></label>
-            <div class="id-gen-row">
-              <input id="f-worker-id" readonly placeholder="—">
-              <button type="button" class="btn btn-ghost btn-sm" onclick="regenerateId()" data-i18n="fm_gen_id">Regenerate</button>
-            </div>
-            <div class="id-hint" id="f-id-hint" data-i18n="fm_id_hint">Auto-generated on save</div>
+            <input id="f-worker-id" placeholder="e.g. 001, VK-001">
           </div>
           <div class="form-group">
             <label><span data-i18n="fm_employer_code">Employer Code</span></label>
@@ -570,7 +562,7 @@
         <div class="form-sec-title" data-i18n="fm_sec_personal">Personal Information</div>
         <div class="form-grid">
           <div class="form-group">
-            <label><span data-i18n="fm_name_en">Name (EN)</span> <span class="req">*</span></label>
+            <label><span data-i18n="fm_name_en">Name (EN)</span></label>
             <input id="f-en-name" placeholder="FIRSTNAME LASTNAME">
           </div>
           <div class="form-group">
@@ -578,7 +570,7 @@
             <input id="f-lo-name" placeholder="ທ້າວ / ນາງ ...">
           </div>
           <div class="form-group">
-            <label><span data-i18n="fm_dob">Date of Birth</span> <span class="req">*</span></label>
+            <label><span data-i18n="fm_dob">Date of Birth</span></label>
             <input type="date" id="f-dob" min="1900-01-01" max="2099-12-31">
           </div>
           <div class="form-group">
@@ -698,7 +690,7 @@
         <div class="form-sec-title" data-i18n="fm_sec_passport">Passport Information</div>
         <div class="form-grid col3">
           <div class="form-group">
-            <label><span data-i18n="fm_passport_no">Passport No.</span> <span class="req">*</span></label>
+            <label><span data-i18n="fm_passport_no">Passport No.</span></label>
             <input id="f-passport-no" placeholder="P1234567">
           </div>
           <div class="form-group">
