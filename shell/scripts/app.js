@@ -260,31 +260,67 @@ function statusBadge(w) {
 }
 
 // ── Date-picker helpers ────────────────────────────────────────────
-// Worker form now uses native <input type="date"> (id = f-dob, f-issue, f-expiry).
-// DB stores DD/MM/YYYY; browser stores YYYY-MM-DD — helpers convert between them.
+// Each picker: dp-{id} contains .dp-d / .dp-m / .dp-y; hidden input #f-{id}
+function initDatePickers() {
+  ['dp-dob','dp-issue','dp-expiry'].forEach(dpId => {
+    const wrap = document.getElementById(dpId);
+    if (!wrap) return;
+    const [dEl, , mEl, , yEl] = wrap.children; // d / sep / m / sep / y
+    const hidden = document.getElementById(dpId.replace('dp-','f-'));
 
-function initDatePickers() {} // no-op: native date inputs need no initialisation
+    function sync() {
+      const d = String(dEl.value).padStart(2,'0');
+      const m = String(mEl.value).padStart(2,'0');
+      const y = yEl.value;
+      hidden.value = (dEl.value && mEl.value && yEl.value) ? d+'/'+m+'/'+y : '';
+    }
 
-// Load: DD/MM/YYYY  →  YYYY-MM-DD  (for input[type=date])
+    dEl.addEventListener('input', () => {
+      if (dEl.value > 31) dEl.value = 31;
+      if (dEl.value < 0) dEl.value = '';
+      if (String(dEl.value).length >= 2) mEl.focus();
+      sync();
+    });
+    mEl.addEventListener('input', () => {
+      if (mEl.value > 12) mEl.value = 12;
+      if (mEl.value < 0) mEl.value = '';
+      if (String(mEl.value).length >= 2) yEl.focus();
+      sync();
+    });
+    yEl.addEventListener('input', () => {
+      if (yEl.value > 2099) yEl.value = 2099;
+      if (yEl.value < 0) yEl.value = '';
+      sync();
+    });
+    [dEl, mEl, yEl].forEach(el => {
+      el.addEventListener('keydown', e => {
+        if (!['0','1','2','3','4','5','6','7','8','9',
+              'Backspace','Delete','Tab','ArrowLeft','ArrowRight',
+              'ArrowUp','ArrowDown'].includes(e.key)) {
+          e.preventDefault();
+        }
+      });
+    });
+  });
+}
+
 function setDatePicker(dpId, value) {
-  const el = document.getElementById(dpId.replace('dp-','f-'));
-  if (!el) return;
-  if (!value) { el.value = ''; return; }
+  const wrap = document.getElementById(dpId);
+  if (!wrap) return;
+  const [dEl, , mEl, , yEl] = wrap.children;
+  const hidden = document.getElementById(dpId.replace('dp-','f-'));
+  if (!value) { dEl.value = ''; mEl.value = ''; yEl.value = ''; hidden.value = ''; return; }
   const p = value.replace(/-/g,'/').split('/');
   if (p.length === 3) {
-    const d = String(p[0]).padStart(2,'0');
-    const m = String(p[1]).padStart(2,'0');
-    const y = String(p[2]).padStart(4,'0');
-    el.value = y + '-' + m + '-' + d;
+    dEl.value = parseInt(p[0],10) || '';
+    mEl.value = parseInt(p[1],10) || '';
+    yEl.value = p[2] || '';
+    hidden.value = value;
   }
 }
 
-// Save: YYYY-MM-DD  →  DD/MM/YYYY  (for DB)
 function _dateInputVal(id) {
-  const v = (document.getElementById(id)||{}).value || '';
-  if (!v) return '';
-  const p = v.split('-'); // YYYY-MM-DD
-  return p.length === 3 ? p[2]+'/'+p[1]+'/'+p[0] : v;
+  return (document.getElementById(id)||{}).value || '';
 }
 
 // ── Block Date Picker (for Group departure date) ──────────────────

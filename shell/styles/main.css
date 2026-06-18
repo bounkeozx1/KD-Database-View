@@ -824,16 +824,37 @@ tr:last-child td { border-bottom: none; }
 .avatar-lg { width: 80px; height: 80px; font-size: 1.5rem; font-weight: 900; }
 .name-cell { display: flex; align-items: center; gap: 8px; }
 
-/* ── Date picker (native input[type=date]) ── */
-.form-group input[type="date"] {
-  cursor: pointer;
-  font-family: inherit;
+/* ── Date picker ── */
+.date-picker {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--field-bg);
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.form-group input[type="date"]::-webkit-calendar-picker-indicator {
-  opacity: 0.5;
-  cursor: pointer;
+.date-picker:focus-within { border-color: var(--green); box-shadow: 0 0 0 3px rgba(45,106,79,0.12); }
+.date-picker input {
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 8px 4px !important;
+  text-align: center;
+  background: transparent;
+  font-size: 0.85rem;
+  font-family: monospace;
+  -moz-appearance: textfield;
 }
-.form-group input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+.date-picker input::-webkit-inner-spin-button,
+.date-picker input::-webkit-outer-spin-button { -webkit-appearance: none; }
+.date-picker .dp-d { width: 42px; }
+.date-picker .dp-m { width: 42px; }
+.date-picker .dp-y { width: 56px; }
+.date-picker .dp-sep {
+  color: #bbb; font-weight: 700; font-size: 0.9rem;
+  padding: 0 1px; pointer-events: none; user-select: none;
+}
 
 /* ════════════════════════════════════════════════════
    AUTH — role visibility (login lives on login.html)
