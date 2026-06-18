@@ -9,7 +9,7 @@ services:
     region: singapore
     plan: starter
     branch: main
-    healthCheckPath: /
+    healthCheckPath: /api/health
     autoDeploy: true
     disk:
       name: kd-data

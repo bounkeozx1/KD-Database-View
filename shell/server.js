@@ -67,6 +67,10 @@ async function handleApi(req, res, pathname) {
   const body = (method === 'POST' || method === 'PATCH' || method === 'PUT') ? await readBody(req) : {};
 
   try {
+    // GET /api/health  (used by Render health check — tests DB is alive)
+    if (method === 'GET' && seg[0] === 'health')
+      return json(res, 200, { ok: true, db: !!dbmod.db, ts: Date.now() });
+
     // GET /api/bootstrap
     if (method === 'GET' && seg[0] === 'bootstrap')
       return json(res, 200, { ok: true, empty: repo.countEmployees() === 0, data: repo.getBootstrap() });
