@@ -260,65 +260,31 @@ function statusBadge(w) {
 }
 
 // ── Date-picker helpers ────────────────────────────────────────────
-// Each picker: dp-{id} contains .dp-d / .dp-m / .dp-y; hidden input #f-{id}
-function initDatePickers() {
-  ['dp-dob','dp-issue','dp-expiry'].forEach(dpId => {
-    const wrap = document.getElementById(dpId);
-    if (!wrap) return;
-    const [dEl, , mEl, , yEl] = wrap.children; // d / sep / m / sep / y
-    const hidden = document.getElementById(dpId.replace('dp-','f-'));
+// Worker form now uses native <input type="date"> (id = f-dob, f-issue, f-expiry).
+// DB stores DD/MM/YYYY; browser stores YYYY-MM-DD — helpers convert between them.
 
-    function sync() {
-      const d = String(dEl.value).padStart(2,'0');
-      const m = String(mEl.value).padStart(2,'0');
-      const y = yEl.value;
-      hidden.value = (dEl.value && mEl.value && yEl.value) ? d+'/'+m+'/'+y : '';
-    }
+function initDatePickers() {} // no-op: native date inputs need no initialisation
 
-    // Auto-advance: DD→MM→YYYY, clamp values
-    dEl.addEventListener('input', () => {
-      if (dEl.value > 31) dEl.value = 31;
-      if (dEl.value < 0) dEl.value = '';
-      if (String(dEl.value).length >= 2) mEl.focus();
-      sync();
-    });
-    mEl.addEventListener('input', () => {
-      if (mEl.value > 12) mEl.value = 12;
-      if (mEl.value < 0) mEl.value = '';
-      if (String(mEl.value).length >= 2) yEl.focus();
-      sync();
-    });
-    yEl.addEventListener('input', () => {
-      if (yEl.value > 2099) yEl.value = 2099;
-      if (yEl.value < 0) yEl.value = '';
-      sync();
-    });
-    // Block non-numeric keystrokes (allow: 0-9, backspace, tab, arrows)
-    [dEl, mEl, yEl].forEach(el => {
-      el.addEventListener('keydown', e => {
-        if (!['0','1','2','3','4','5','6','7','8','9',
-              'Backspace','Delete','Tab','ArrowLeft','ArrowRight',
-              'ArrowUp','ArrowDown'].includes(e.key)) {
-          e.preventDefault();
-        }
-      });
-    });
-  });
-}
-
+// Load: DD/MM/YYYY  →  YYYY-MM-DD  (for input[type=date])
 function setDatePicker(dpId, value) {
-  const wrap = document.getElementById(dpId);
-  if (!wrap) return;
-  const [dEl, , mEl, , yEl] = wrap.children;
-  const hidden = document.getElementById(dpId.replace('dp-','f-'));
-  if (!value) { dEl.value = ''; mEl.value = ''; yEl.value = ''; hidden.value = ''; return; }
+  const el = document.getElementById(dpId.replace('dp-','f-'));
+  if (!el) return;
+  if (!value) { el.value = ''; return; }
   const p = value.replace(/-/g,'/').split('/');
   if (p.length === 3) {
-    dEl.value = parseInt(p[0],10) || '';
-    mEl.value = parseInt(p[1],10) || '';
-    yEl.value = p[2] || '';
-    hidden.value = value;
+    const d = String(p[0]).padStart(2,'0');
+    const m = String(p[1]).padStart(2,'0');
+    const y = String(p[2]).padStart(4,'0');
+    el.value = y + '-' + m + '-' + d;
   }
+}
+
+// Save: YYYY-MM-DD  →  DD/MM/YYYY  (for DB)
+function _dateInputVal(id) {
+  const v = (document.getElementById(id)||{}).value || '';
+  if (!v) return '';
+  const p = v.split('-'); // YYYY-MM-DD
+  return p.length === 3 ? p[2]+'/'+p[1]+'/'+p[0] : v;
 }
 
 // ── Block Date Picker (for Group departure date) ──────────────────
@@ -2244,7 +2210,7 @@ function saveWorker() {
     group_supervisor: document.getElementById('f-supervisor').value.trim(),
     en_name:        enName.toUpperCase(),
     lo_name:        document.getElementById('f-lo-name').value.trim(),
-    dob:            document.getElementById('f-dob').value.trim(),
+    dob:            _dateInputVal('f-dob'),
     province:       document.getElementById('f-province').value.trim(),
     district:       document.getElementById('f-district').value.trim(),
     village:        document.getElementById('f-village').value.trim(),
@@ -2259,8 +2225,8 @@ function saveWorker() {
     tel:            document.getElementById('f-tel').value.trim(),
     emg_tel:        document.getElementById('f-emg-tel').value.trim(),
     passport_no:    passNo.toUpperCase(),
-    passport_issue: document.getElementById('f-issue').value.trim(),
-    passport_expiry:document.getElementById('f-expiry').value.trim(),
+    passport_issue: _dateInputVal('f-issue'),
+    passport_expiry:_dateInputVal('f-expiry'),
     photo:          document.getElementById('f-photo').value || '',
     grade:          document.getElementById('f-grade').value,
     visa_status:    document.getElementById('f-visa-status').value,

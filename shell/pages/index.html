@@ -579,14 +579,7 @@
           </div>
           <div class="form-group">
             <label><span data-i18n="fm_dob">Date of Birth</span> <span class="req">*</span></label>
-            <div class="date-picker" id="dp-dob">
-              <input type="number" class="dp-d" placeholder="DD" min="1" max="31">
-              <span class="dp-sep">/</span>
-              <input type="number" class="dp-m" placeholder="MM" min="1" max="12">
-              <span class="dp-sep">/</span>
-              <input type="number" class="dp-y" placeholder="YYYY" min="1900" max="2099">
-            </div>
-            <input type="hidden" id="f-dob">
+            <input type="date" id="f-dob" min="1900-01-01" max="2099-12-31">
           </div>
           <div class="form-group">
             <label><span data-i18n="fm_province">Province</span></label>
@@ -710,25 +703,11 @@
           </div>
           <div class="form-group">
             <label><span data-i18n="fm_issue">Issue Date</span></label>
-            <div class="date-picker" id="dp-issue">
-              <input type="number" class="dp-d" placeholder="DD" min="1" max="31">
-              <span class="dp-sep">/</span>
-              <input type="number" class="dp-m" placeholder="MM" min="1" max="12">
-              <span class="dp-sep">/</span>
-              <input type="number" class="dp-y" placeholder="YYYY" min="1900" max="2099">
-            </div>
-            <input type="hidden" id="f-issue">
+            <input type="date" id="f-issue" min="1900-01-01" max="2099-12-31">
           </div>
           <div class="form-group">
             <label><span data-i18n="fm_expiry">Expiry Date</span></label>
-            <div class="date-picker" id="dp-expiry">
-              <input type="number" class="dp-d" placeholder="DD" min="1" max="31">
-              <span class="dp-sep">/</span>
-              <input type="number" class="dp-m" placeholder="MM" min="1" max="12">
-              <span class="dp-sep">/</span>
-              <input type="number" class="dp-y" placeholder="YYYY" min="1900" max="2099">
-            </div>
-            <input type="hidden" id="f-expiry">
+            <input type="date" id="f-expiry" min="1900-01-01" max="2099-12-31">
           </div>
         </div>
       </div>
