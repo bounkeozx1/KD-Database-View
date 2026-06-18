@@ -131,6 +131,8 @@ function migrate() {
   if (!empCols.includes('education'))       db.exec("ALTER TABLE employees ADD COLUMN education TEXT DEFAULT ''");
   if (!empCols.includes('work_experience')) db.exec("ALTER TABLE employees ADD COLUMN work_experience TEXT DEFAULT ''");
   if (!empCols.includes('languages'))       db.exec("ALTER TABLE employees ADD COLUMN languages TEXT DEFAULT ''");
+  if (!empCols.includes('province'))         db.exec("ALTER TABLE employees ADD COLUMN province TEXT DEFAULT ''");
+  if (!empCols.includes('district'))         db.exec("ALTER TABLE employees ADD COLUMN district TEXT DEFAULT ''");
 
   db.exec(`CREATE TABLE IF NOT EXISTS activity_log (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,

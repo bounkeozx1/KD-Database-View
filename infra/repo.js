@@ -12,7 +12,8 @@ const { saveDataUrl, saveDocFile, deleteStored, isStoredPath } = require('./file
 const EMP_COLS = ['worker_id','employer_code','group_supervisor','en_name','lo_name','dob',
   'village','nationality','sex','blood','hand','weight','height','size','couple',
   'tel','emg_tel','kr_city','la_city',
-  'grade','visa_status','education','work_experience','languages'];
+  'grade','visa_status','education','work_experience','languages',
+  'province','district'];
 
 const d = () => dbmod.db;
 const uid = () => 'w' + Date.now().toString(36) + crypto.randomBytes(2).toString('hex');
@@ -53,7 +54,8 @@ function employeeToWorker(row) {
     uid: row.uid,
     worker_id: row.worker_id || '', employer_code: row.employer_code || '',
     group_supervisor: row.group_supervisor || '', en_name: row.en_name || '', lo_name: row.lo_name || '',
-    dob: row.dob || '', village: row.village || '', nationality: row.nationality || '', sex: row.sex || '',
+    dob: row.dob || '', province: row.province || '', district: row.district || '', village: row.village || '',
+    nationality: row.nationality || '', sex: row.sex || '',
     blood: row.blood || '', hand: row.hand || '', weight: row.weight || '', height: row.height || '',
     size: row.size || '', couple: row.couple || '', tel: row.tel || '', emg_tel: row.emg_tel || '',
     kr_city: row.kr_city || '', la_city: row.la_city || '',

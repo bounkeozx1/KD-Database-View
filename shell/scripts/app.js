@@ -1705,6 +1705,8 @@ function _renderDetailBody(w, g) {
         row(t('vc_age'), 'ອາຍຸ', _ev(w,'age', age ? age + ' yrs' : '--', 'text')) +
         row(t('vc_nationality'), 'ສັນຊາດ', _ev(w,'nationality', esc(w.nationality||'--'), 'text')) +
         row(t('vc_sex'), 'ເພດ', ed ? _ev(w,'sex','','select',sexOpts) : (w.sex==='M'?'♂ '+t('fm_sex_m'):w.sex==='F'?'♀ '+t('fm_sex_f'):'--')) +
+        row(t('vc_province'), 'ແຂວງ', _ev(w,'province', esc(w.province||'--'), 'text')) +
+        row(t('vc_district'), 'ເມືອງ', _ev(w,'district', esc(w.district||'--'), 'text')) +
         row(t('vc_village'), 'ບ້ານ', _ev(w,'village', esc(w.village||'--'), 'text')) +
         row(t('vc_weight_height'), 'Kg ; Cm', ed
             ? '<div class="split">' + _ev(w,'weight','','text') + _ev(w,'height','','text') + '</div>'
@@ -2125,7 +2127,7 @@ function openWorkerForm(editUid) {
   if (!isAdmin()) return;
   populateCityDropdowns();
   const fids = ['worker-id','employer-code','supervisor','en-name','lo-name',
-                'village','nationality','sex','blood','hand','weight','height','size','couple',
+                'province','district','village','nationality','sex','blood','hand','weight','height','size','couple',
                 'tel','emg-tel','passport-no','kr-city','la-city',
                 'grade','visa-status','education','work-experience','languages'];
   fids.forEach(f => { const el = document.getElementById('f-' + f); if (el) el.value = ''; });
@@ -2154,6 +2156,8 @@ function openWorkerForm(editUid) {
     document.getElementById('f-en-name').value         = w.en_name || '';
     document.getElementById('f-lo-name').value         = w.lo_name || '';
     setDatePicker('dp-dob', w.dob || '');
+    document.getElementById('f-province').value        = w.province || '';
+    document.getElementById('f-district').value        = w.district || '';
     document.getElementById('f-village').value         = w.village || '';
     document.getElementById('f-nationality').value     = w.nationality || '';
     document.getElementById('f-sex').value              = w.sex || '';
@@ -2241,6 +2245,8 @@ function saveWorker() {
     en_name:        enName.toUpperCase(),
     lo_name:        document.getElementById('f-lo-name').value.trim(),
     dob:            document.getElementById('f-dob').value.trim(),
+    province:       document.getElementById('f-province').value.trim(),
+    district:       document.getElementById('f-district').value.trim(),
     village:        document.getElementById('f-village').value.trim(),
     nationality:    document.getElementById('f-nationality').value.trim().toUpperCase(),
     sex:            document.getElementById('f-sex').value,
