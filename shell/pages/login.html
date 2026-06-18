@@ -273,14 +273,8 @@ body {
   <div class="diag" id="diag"></div>
 </div>
 
-<script>
-  /* Cache-busting loader (works on http and file://) */
-  (function () {
-    var bust = (location.protocol === 'file:') ? '' : '?t=' + Date.now();
-    document.write('<scr' + 'ipt src="../scripts/db.js' + bust + '"><\/scr' + 'ipt>');
-    document.write('<scr' + 'ipt src="../scripts/i18n.js' + bust + '"><\/scr' + 'ipt>');
-  })();
-</script>
+<script src="../scripts/db.js"></script>
+<script src="../scripts/i18n.js"></script>
 <script>
   function showDiag() {
     var dbOk = (typeof DB !== 'undefined' && typeof DB.login === 'function');
@@ -300,7 +294,7 @@ body {
       var errEl = document.getElementById('error');
       if (errEl) {
         errEl.style.color = '#b45309';
-        errEl.innerHTML = '⚠ Server ไม่ตอบสนอง &mdash; รัน <code style="font-size:0.78rem;background:#fef3c7;padding:1px 5px;border-radius:4px;">npm start</code> แล้ว refresh';
+        errEl.innerHTML = '⚠ ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ &mdash; กรุณา refresh หน้านี้อีกครั้ง';
       }
       var btn = document.querySelector('.signin-btn');
       if (btn) { btn.disabled = true; btn.style.opacity = '0.45'; btn.style.cursor = 'not-allowed'; }

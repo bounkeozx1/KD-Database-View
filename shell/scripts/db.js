@@ -14,13 +14,22 @@ const DB = (() => {
 
   /* ── API helper ── */
   async function _api(method, path, body) {
-    const res = await fetch('/api' + path, {
-      method,
-      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-    if (!res.ok) throw new Error('API ' + res.status);
-    return res.json();
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 20000);
+    try {
+      const res = await fetch('/api' + path, {
+        method,
+        signal: ctrl.signal,
+        headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error('API ' + res.status);
+      return res.json();
+    } catch (e) {
+      clearTimeout(timer);
+      throw e;
+    }
   }
 
   /* ── Durable write queue ──────────────────────────────────────────
