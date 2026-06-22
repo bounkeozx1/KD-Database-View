@@ -128,6 +128,7 @@ async function handleApi(req, res, pathname) {
     // Users
     if (seg[0] === 'users') {
       if (method === 'POST')   return json(res, 200, { ok: true, status: repo.addUser(body) });
+      if (method === 'PATCH'  && seg[1]) return json(res, 200, { ok: true, status: repo.updateUser(seg[1], body) });
       if (method === 'DELETE' && seg[1]) return json(res, 200, { ok: true, status: repo.deleteUser(seg[1]) });
     }
 
@@ -153,6 +154,8 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log('KD Database server  →  http://0.0.0.0:' + PORT);
+  // Bind to 0.0.0.0 (all interfaces — needed by Render), but tell the user to
+  // open localhost: browsers can't connect to 0.0.0.0 (ERR_ADDRESS_INVALID on Windows).
+  console.log('KD Database server  →  http://localhost:' + PORT);
   console.log('SQLite file         →  ' + dbmod.DB_PATH);
 });

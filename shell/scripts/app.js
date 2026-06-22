@@ -143,6 +143,7 @@ function startApp(user) {
     initSidebarResize();
     initMobileMenu();
     initDatePickers();
+    initProvinceCombobox();
     initSaveStatusUI();
     appInited = true;
   }
@@ -198,13 +199,18 @@ function calcAge(dob) {
   if (!d) return '';
   return Math.floor((Date.now() - d) / (365.25 * 864e5));
 }
+// Passport-expiry alert thresholds (configurable in Settings → Notifications).
+// Stored in months; default 12 (urgent/red) and 24 (upcoming/yellow).
+function expiryWarnMonths() { return Math.max(1, parseInt(localStorage.getItem('kd_warn_months'), 10) || 12); }
+function expiryNearMonths() { return Math.max(expiryWarnMonths(), parseInt(localStorage.getItem('kd_near_months'), 10) || 24); }
 function expiryClass(s) {
   const d = parseDate(s);
   if (!d) return '';
   const ms = d - Date.now();
-  if (ms < 0)               return 'expiry-expired';
-  if (ms < 365 * 864e5)    return 'expiry-warn';
-  if (ms < 2 * 365 * 864e5) return 'expiry-near';
+  const month = 30.4375 * 864e5;
+  if (ms < 0)                          return 'expiry-expired';
+  if (ms < expiryWarnMonths() * month) return 'expiry-warn';
+  if (ms < expiryNearMonths() * month) return 'expiry-near';
   return 'expiry-ok';
 }
 function empBadge(code) {
@@ -257,6 +263,148 @@ function passportStatus(w) {
 function statusBadge(w) {
   const s = passportStatus(w);
   return '<span class="status-badge ' + s.cls + '">' + esc(s.label) + '</span>';
+}
+
+// ── Province combobox ─────────────────────────────────────────────
+const LA_PROVINCES = [
+  { lo: 'ນະຄອນຫຼວງວຽງຈັນ', en: 'Vientiane Pref.' },
+  { lo: 'ຜົ້ງສາລີ',         en: 'Phongsaly' },
+  { lo: 'ຫຼວງນ້ຳທາ',        en: 'Luangnamtha' },
+  { lo: 'ອຸດົມໄຊ',          en: 'Oudomxay' },
+  { lo: 'ບໍ່ແກ້ວ',           en: 'Bokeo' },
+  { lo: 'ຫຼວງພະບາງ',        en: 'Luangprabang' },
+  { lo: 'ຫົວພັນ',            en: 'Houaphanh' },
+  { lo: 'ໄຊຍະບູລີ',         en: 'Xayaboury' },
+  { lo: 'ຊຽງຂວາງ',          en: 'Xiengkhuang' },
+  { lo: 'ວຽງຈັນ',            en: 'Vientiane Province' },
+  { lo: 'ບໍລິຄຳໄຊ',         en: 'Bolikhamxay' },
+  { lo: 'ຄຳມ່ວນ',            en: 'Khammouane' },
+  { lo: 'ສະຫວັນນະເຂດ',      en: 'Savannakhet' },
+  { lo: 'ສາລະວັນ',           en: 'Salavan' },
+  { lo: 'ເຊກອງ',             en: 'Sekong' },
+  { lo: 'ຈຳປາສັກ',           en: 'Champasak' },
+  { lo: 'ອັດຕະປື',           en: 'Attapeu' },
+  { lo: 'ໄຊສົມບູນ',          en: 'Xaisomboun' },
+];
+
+const LA_DISTRICTS = {
+  'ນະຄອນຫຼວງວຽງຈັນ': ['Chanthabuly','Sikhottabong','Xaysetha','Sisattanak','Naxaithong','Xaythany','Hadxayfong','Sangthong','Pakngum'],
+  'ຜົ້ງສາລີ':        ['Phongsaly','Mai','Khoua','Samphanh','Bounneua','Yotou','Bountai'],
+  'ຫຼວງນ້ຳທາ':       ['Namtha','Sing','Long','Viengphoukha','Nale'],
+  'ອຸດົມໄຊ':         ['Xai','La','Namo','Nga','Beng','Houn','Pakbeng'],
+  'ບໍ່ແກ້ວ':          ['Houayxay','Tonpheng','Meung','Phaoudom','Paktha'],
+  'ຫຼວງພະບາງ':       ['Luangprabang','Xiengngeun','Nane','Pakou','Nambak','Ngoi','Pakxeng','Phonxai','Chomphet','Viengkham','Phoukhoune','Phonthong'],
+  'ຫົວພັນ':           ['Xamneua','Xiengkhor','Hiam','Viengxai','Houameuang','Xamtai','Sopbao','Et','Kuan','Xon'],
+  'ໄຊຍະບູລີ':        ['Xayaboury','Khop','Hongsa','Ngeun','Xienghone','Phiang','Paklay','Kenthao','Botene','Thongmyxay','Xaisathan'],
+  'ຊຽງຂວາງ':         ['Pek','Kham','Nonghed','Khoune','Morkmay','Phookood','Phaxay'],
+  'ວຽງຈັນ':           ['Phonhong','Thoulakhom','Keoudom','Kasi','Vangvieng','Feuang','Xanakham','Mad','Hinhurp','Viengkham','Meun'],
+  'ບໍລິຄຳໄຊ':        ['Paksan','Thaphabat','Pakkading','Borikhan','Khamkeut','Viengthong','Xaychamphone'],
+  'ຄຳມ່ວນ':           ['Thakhek','Mahaxay','Nongbok','Hineboune','Yommalath','Boualapha','Nakai','Xebangfai','Xaibouathong','Khounkham'],
+  'ສະຫວັນນະເຂດ':     ['Kayson Phomvihan','Outhoumphone','Atsaphangthong','Phine','Sepone','Nong','Thapangthong','Songkhone','Champhone','Xonbouly','Xaybouly','Vilabouly','Atsaphone','Xayphouthong','Phalanhxay'],
+  'ສາລະວັນ':          ['Salavan','Taouay','Tumlan','Lakhonepheng','Vapi','Khongxedone','Laongam','Samouay'],
+  'ເຊກອງ':            ['Lamam','Kaleum','Dakcheung','Thateng'],
+  'ຈຳປາສັກ':          ['Pakse','Sanasomboon','Bachiangchaleunsook','Paksong','Pathoomphone','Phonthong','Champasak','Soukhouma','Mounlapamok','Khong'],
+  'ອັດຕະປື':          ['Xaysetha','Samakkhixay','Sanamxay','Sanxay','Phouvong'],
+  'ໄຊສົມບູນ':         ['Anouvong','Longchaan','Thathom','Longcheng','Hom'],
+};
+
+function _collectAddrField(field) {
+  const seen = new Set();
+  DB.getGroups().forEach(g => (g.workers || []).forEach(w => {
+    const v = (w[field] || '').trim();
+    if (v) seen.add(v);
+  }));
+  return [...seen].sort((a, b) => a.localeCompare(b, 'lo'));
+}
+
+function initAddrCombobox(inputId, listId, getItems) {
+  const input = document.getElementById(inputId);
+  const list  = document.getElementById(listId);
+  if (!input || !list) return;
+
+  let focusIdx = -1;
+
+  // item can be a string  OR  { value, label } — label shown, value stored
+  function _val(item)   { return typeof item === 'string' ? item : (item.value || ''); }
+  function _label(item) { return typeof item === 'string' ? item : (item.label || item.value || ''); }
+  function _matches(item, q) {
+    if (!q) return true;
+    const ql = q.toLowerCase();
+    const v  = _val(item).toLowerCase();
+    const l  = _label(item).toLowerCase();
+    return v.includes(ql) || l.includes(ql);
+  }
+
+  function renderList(q) {
+    const all   = getItems();
+    const items = q ? all.filter(p => _matches(p, q)) : all;
+    if (!items.length) { list.style.display = 'none'; return; }
+    focusIdx = -1;
+    list.innerHTML = items.map((p, i) =>
+      '<div class="addr-combo-item" data-val="' + esc(_val(p)) + '" data-i="' + i + '">' + esc(_label(p)) + '</div>'
+    ).join('');
+    list.style.display = 'block';
+  }
+
+  function closeList() { list.style.display = 'none'; focusIdx = -1; }
+  function pick(val) { input.value = val; closeList(); input.focus(); }
+
+  list.addEventListener('mousedown', e => {
+    const item = e.target.closest('.addr-combo-item');
+    if (item) { e.preventDefault(); pick(item.dataset.val); }
+  });
+
+  input.addEventListener('focus', () => renderList(input.value.trim()));
+  input.addEventListener('input', () => renderList(input.value.trim()));
+  input.addEventListener('blur',  () => setTimeout(closeList, 160));
+
+  input.addEventListener('keydown', e => {
+    if (list.style.display === 'none') return;
+    const items = list.querySelectorAll('.addr-combo-item');
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!items.length) return;
+      if (focusIdx >= 0) items[focusIdx].classList.remove('focused');
+      if (e.key === 'ArrowDown') {
+        focusIdx = focusIdx < items.length - 1 ? focusIdx + 1 : items.length - 1;
+      } else {
+        focusIdx = focusIdx > 0 ? focusIdx - 1 : 0;
+      }
+      items[focusIdx].classList.add('focused');
+      items[focusIdx].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      if (focusIdx >= 0 && items.length) {
+        e.preventDefault();
+        e.stopPropagation();
+        pick(items[focusIdx].dataset.val);
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeList();
+    }
+  });
+}
+
+function initProvinceCombobox() {
+  // Province: store Lao name, show "ລາວ — English"
+  initAddrCombobox('f-province', 'addr-combo-list-province',
+    () => LA_PROVINCES.map(p => ({ value: p.lo, label: p.lo + ' — ' + p.en }))
+  );
+
+  // District: cascade from selected province; fallback = all districts; merge with DB entries
+  initAddrCombobox('f-district', 'addr-combo-list-district', () => {
+    const prov  = (document.getElementById('f-province') || {}).value || '';
+    const predefined = (prov && LA_DISTRICTS[prov]) ? LA_DISTRICTS[prov]
+                     : Object.values(LA_DISTRICTS).flat();
+    const dynamic = _collectAddrField('district');
+    return [...new Set([...predefined, ...dynamic])].sort((a, b) => a.localeCompare(b));
+  });
+
+  // Village: dynamic from DB only
+  initAddrCombobox('f-village', 'addr-combo-list-village',
+    () => _collectAddrField('village')
+  );
 }
 
 // ── Date-picker helpers ────────────────────────────────────────────
@@ -582,42 +730,51 @@ function groupMenuAct(action) {
 
 // ── Sidebar nav (views) ───────────────────────────────────────────
 function navTo(view, el) {
+  // Projects: just expand the sidebar's group list, no main-view change
+  if (view === 'projects') {
+    document.getElementById('sb-groups-section')?.classList.remove('collapsed');
+    document.getElementById('sidebar').classList.remove('open');
+    return;
+  }
+
   document.querySelectorAll('.sb-nav-item').forEach(b => b.classList.remove('active'));
   if (el) el.classList.add('active');
 
   const dashWelcome = document.getElementById('dashboard-welcome');
   const groupView   = document.getElementById('group-view');
+  const groupsOv    = document.getElementById('groups-overview');
+
+  // Hide every main view first, then show the one we want
+  if (dashWelcome) dashWelcome.style.display = 'none';
+  if (groupView)   groupView.style.display   = 'none';
+  if (groupsOv)    groupsOv.style.display    = 'none';
+
+  const clearSearch = () => {
+    const s = document.getElementById('search'); if (s) s.value = '';
+    const ts = document.getElementById('sidebar-search-input'); if (ts) ts.value = '';
+    ['f-employer','f-supervisor','f-blood'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+  };
 
   if (view === 'dashboard') {
     quickFilter = '';
-    const s = document.getElementById('search');
-    const ts = document.getElementById('sidebar-search-input');
-    if (s)  s.value  = '';
-    if (ts) ts.value = '';
-    document.getElementById('f-employer').value   = '';
-    document.getElementById('f-supervisor').value = '';
-    document.getElementById('f-blood').value      = '';
+    clearSearch();
     if (dashWelcome) dashWelcome.style.display = '';
-    if (groupView)   groupView.style.display   = 'none';
     renderDashboard();
-  } else {
-    if (dashWelcome) dashWelcome.style.display = 'none';
-    if (groupView)   groupView.style.display   = '';
-    if (view === 'alerts') {
-      quickFilter = 'alerts';
-    } else if (view === 'workers') {
-      quickFilter = '';
-      if (!activeGroupId) {
-        const groups = DB.getGroups();
-        if (groups.length) { activeGroupId = groups[0].id; renderSidebar(); renderStats(); }
-      }
-    } else if (view === 'projects') {
-      document.getElementById('sb-groups-section')?.classList.remove('collapsed');
-      document.getElementById('sidebar').classList.remove('open');
-      return;
-    }
-    applyFilters();
-    renderTable();
+  } else if (view === 'workers') {
+    // Landing = group overview. Pick a group to see its members.
+    quickFilter = '';
+    activeGroupId = '';
+    clearSearch();
+    if (groupsOv) groupsOv.style.display = '';
+    renderGroupsOverview();
+  } else if (view === 'alerts') {
+    // Expiring passports across ALL groups
+    quickFilter = 'alerts';
+    activeGroupId = '';
+    if (groupView) groupView.style.display = '';
+    const t1 = document.getElementById('page-title-group'); if (t1) t1.textContent = '⚠ ' + t('passport_alert');
+    const t2 = document.getElementById('page-sub');         if (t2) t2.textContent = (t('all_groups') || 'All groups');
+    rebuildFilters(); applyFilters();
   }
   document.querySelector('.main-content')?.scrollTo({ top: 0, behavior: 'smooth' });
   document.getElementById('sidebar').classList.remove('open');
@@ -1043,17 +1200,12 @@ function renderSidebarUser() {
       '<svg class="sb-user-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>' +
     '</button>';
 
-  // Profile head — Claude.ai style: avatar + name + role
+  // Profile menu identity line (name + @username · role)
   const head = document.getElementById('pm-profile-head');
   if (head) {
     head.innerHTML =
-      '<div class="pm-uhd">' +
-        profileAvatarHtml(currentUser.username, name, 'avatar-lg', true) +
-        '<div class="pm-uhd-info">' +
-          '<div class="pm-uhd-name">' + esc(name) + '</div>' +
-          '<span class="role-badge ' + roleCls + '">' + esc(roleTxt) + '</span>' +
-        '</div>' +
-      '</div>';
+      '<div class="pm-id-name">' + esc(name) + '</div>' +
+      '<div class="pm-id-sub">@' + esc(currentUser.username) + ' · ' + esc(roleTxt) + '</div>';
   }
 
   // Top header user chip
@@ -1234,10 +1386,12 @@ function switchGroup(id) {
   document.getElementById('f-employer').value   = '';
   document.getElementById('f-supervisor').value = '';
   document.getElementById('f-blood').value      = '';
-  // Show group view, hide dashboard
+  // Show group view, hide dashboard + groups overview
   const dw = document.getElementById('dashboard-welcome');
   const gv = document.getElementById('group-view');
+  const go = document.getElementById('groups-overview');
   if (dw) dw.style.display = 'none';
+  if (go) go.style.display = 'none';
   if (gv) gv.style.display = '';
   document.querySelectorAll('.sb-nav-item').forEach(b => b.classList.remove('active'));
   document.getElementById('nav-workers')?.classList.add('active');
@@ -1249,22 +1403,84 @@ function switchGroup(id) {
   document.getElementById('sidebar').classList.remove('open');
 }
 
-// ── Navigate to a specific group (from dashboard cards) ───────────
+// ── Navigate to a specific group (from dashboard cards / overview) ─
 function openGroup(groupId) {
   switchGroup(groupId);
+}
+
+// All workers across every group (used when no single group is active)
+function _allWorkersFlat() { return DB.getGroups().flatMap(g => g.workers || []); }
+
+// Make sure activeGroupId points at the group that owns `uid` (for global
+// search / overview where no single group is selected yet).
+function _ensureGroupFor(uid) {
+  const cur = DB.getGroup(activeGroupId);
+  if (cur && (cur.workers || []).some(w => w.uid === uid)) return;
+  for (const g of DB.getGroups()) {
+    if ((g.workers || []).some(w => w.uid === uid)) { activeGroupId = g.id; break; }
+  }
+}
+
+// ── GROUPS OVERVIEW (the "ກຸ່ມ" landing — pick a group, then see members) ──
+function renderGroupsOverview() {
+  const el = document.getElementById('go-grid');
+  if (!el) return;
+  const groups = DB.getGroups();
+  if (!groups.length) {
+    el.innerHTML = '<div class="go-empty">' + (t('dz_no_projects') || 'ຍັງບໍ່ມີກຸ່ມ') + '</div>';
+    return;
+  }
+  el.innerHTML = groups.map(g => {
+    const ws    = g.workers || [];
+    const cnt   = ws.length;
+    let expiring = 0;
+    ws.forEach(w => { const c = expiryClass(w.passport_expiry); if (c === 'expiry-expired' || c === 'expiry-warn' || c === 'expiry-near') expiring++; });
+    const short = ((g.name || '?').replace(/[^A-Za-z0-9]/g, '').substring(0, 2).toUpperCase()) || 'KD';
+    const route = g.route || g.departure || '';
+    return '<div class="go-card" onclick="openGroup(\'' + esc(g.id) + '\')">' +
+      '<div class="go-card-top">' +
+        '<div class="go-ic">' + esc(short) + '</div>' +
+        '<div style="min-width:0">' +
+          '<div class="go-name">' + esc(g.name || '—') + '</div>' +
+          (route ? '<div class="go-route">' + esc(route) + '</div>' : '') +
+        '</div>' +
+        '<svg class="go-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>' +
+      '</div>' +
+      '<div class="go-stats">' +
+        '<div class="go-stat"><span class="n">' + cnt + '</span><span class="l">' + (t('dz_workers_suffix') || 'ຄົນ') + '</span></div>' +
+        '<div class="go-stat' + (expiring ? ' go-alert' : '') + '"><span class="n">' + expiring + '</span><span class="l">' + (t('dz_near') || 'ໃກ້ໝົດ') + '</span></div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
 }
 
 // ── Sidebar search → mirror into toolbar search + filter ──────────
 function sidebarSearch(value) {
   const s = document.getElementById('search');
-  // If we're on the dashboard, jump into the workers view so results show.
+  if (s) s.value = value;
+
+  // Searching inside an already-open group → just filter it
+  if (activeGroupId) { applyFilters(); return; }
+
   const gv = document.getElementById('group-view');
-  if (value && gv && gv.style.display === 'none') {
+  const go = document.getElementById('groups-overview');
+  const dw = document.getElementById('dashboard-welcome');
+
+  if (value) {
+    // Global worker search across ALL groups → show the member table
+    ['f-employer','f-supervisor','f-blood'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
+    quickFilter = '';
+    if (dw) dw.style.display = 'none';
+    if (go) go.style.display = 'none';
+    if (gv) gv.style.display = '';
+    const t1 = document.getElementById('page-title-group'); if (t1) t1.textContent = '🔍 ' + value;
+    const t2 = document.getElementById('page-sub');         if (t2) t2.textContent = (t('all_groups') || 'All groups');
+    rebuildFilters();
+    applyFilters();
+  } else {
+    // Cleared while in global search → back to the group overview
     navTo('workers', document.getElementById('nav-workers'));
   }
-  const s2 = document.getElementById('search');
-  if (s2) s2.value = value;
-  applyFilters();
 }
 // Back-compat shim (old top-header handler name)
 function syncSearch(input) { sidebarSearch(input.value); }
@@ -1317,7 +1533,7 @@ function renderStats() {
 
 // ── TABLE FILTERS ─────────────────────────────────────────────────
 function rebuildFilters() {
-  const ws = DB.getWorkers(activeGroupId);
+  const ws = activeGroupId ? DB.getWorkers(activeGroupId) : _allWorkersFlat();
   const emps = [...new Set(ws.map(w => w.employer_code).filter(Boolean))].sort();
   const sups = [...new Set(ws.map(w => w.group_supervisor).filter(Boolean))].sort();
 
@@ -1332,7 +1548,7 @@ function rebuildFilters() {
 }
 
 function applyFilters() {
-  const ws = DB.getWorkers(activeGroupId);
+  const ws = activeGroupId ? DB.getWorkers(activeGroupId) : _allWorkersFlat();
   const q  = document.getElementById('search').value.toLowerCase();
   const fe = document.getElementById('f-employer').value;
   const fs = document.getElementById('f-supervisor').value;
@@ -1380,7 +1596,7 @@ function doSort() {
 function renderTable() {
   const tbody  = document.getElementById('tbl-body');
   const noData = document.getElementById('no-data');
-  const ws     = DB.getWorkers(activeGroupId);
+  const ws     = activeGroupId ? DB.getWorkers(activeGroupId) : _allWorkersFlat();
   const g      = DB.getGroup(activeGroupId);
 
   // Count bar — just the result count (group name/route already in the page header)
@@ -1539,6 +1755,7 @@ function _renderKdCard(w, g, editable) {
 let rowMenuUid = null;
 function openRowMenu(uid, ev) {
   if (ev) ev.stopPropagation();
+  _ensureGroupFor(uid);   // resolve owning group (global search / overview)
   rowMenuUid = uid;
   const menu = document.getElementById('row-menu');
   if (!menu) return;
@@ -1690,38 +1907,66 @@ function _renderDetailBody(w, g) {
   const age = (w.age != null && w.age !== '') ? w.age : calcAge(w.dob);
   const visaLabels = { not_started:'ຍັງບໍ່ເລີ່ມ', applied:'ຍື່ນຂໍແລ້ວ', approved:'ອະນຸມັດ ✓', rejected:'ຖືກປະຕິເສດ ✗' };
   const warn = !ed && expiryClass(w.passport_expiry) !== 'expiry-ok';
-  const row = (label, sub, val) => '<tr><td>' + label + (sub ? '<span class="sub">' + sub + '</span>' : '') + '</td><td>' + val + '</td></tr>';
+  const row = (label, sub, val) =>
+    '<div class="vd-row">' +
+      '<span class="vd-lbl">' + label + (sub ? '<span class="vd-sub">' + sub + '</span>' : '') + '</span>' +
+      '<span class="vd-val">' + val + '</span>' +
+    '</div>';
+  const sec = (icon, lo, en, rows) =>
+    '<div class="vd-section">' +
+      '<div class="vd-section-head">' +
+        '<span class="vd-sec-icon">' + icon + '</span>' +
+        '<span class="vd-sec-title">' + lo + '</span>' +
+        '<span class="vd-sec-sub">/ ' + en + '</span>' +
+      '</div>' +
+      '<div class="vd-rows">' + rows + '</div>' +
+    '</div>';
+
   const sexOpts  = [{v:'',t:'--'},{v:'M',t:t('fm_sex_m')},{v:'F',t:t('fm_sex_f')}];
   const handOpts = [{v:'',t:'--'},{v:'R',t:'R (Right)'},{v:'L',t:'L (Left)'}];
   const bloodOpts= [{v:'',t:'--'},{v:'A',t:'A'},{v:'B',t:'B'},{v:'O',t:'O'},{v:'AB',t:'AB'},{v:'B+',t:'B+'},{v:'B-',t:'B-'}];
   const sizeOpts = [{v:'',t:'--'},{v:'S',t:'S'},{v:'M',t:'M'},{v:'L',t:'L'},{v:'XL',t:'XL'},{v:'XXL',t:'XXL'}];
 
   const tableHtml =
-    '<div class="vm-detail-section">' +
-      (warn ? '<div class="vm-warn">&#9888; ' + t('vc_passport_warn', { date: w.passport_expiry }) + '</div>' : '') +
-      '<table class="vm-tbl">' +
+    '<div class="vd-sections">' +
+      (warn ? '<div class="vd-warn">&#9888; ' + t('vc_passport_warn', { date: w.passport_expiry }) + '</div>' : '') +
+
+      sec('👤', 'ຂໍ້ມູນລະບຸຕົວຕົນ', 'Identity',
         row('Worker ID', 'ລະຫັດ', _ev(w,'worker_id', esc(w.worker_id||'--'), 'text')) +
-        row(t('vc_name'), '/ຊື່', _ev(w,'en_name', esc(w.en_name||'--'), 'text')) +
-        row('ຊື່ ນາມສະກຸນ', '', _ev(w,'lo_name', esc(w.lo_name||'--'), 'text')) +
-        row(t('vc_dob'), 'ວັນເດືອນປີເກີດ', _ev(w,'dob', esc(w.dob||'--'), 'text')) +
+        row(t('vc_name'), 'EN Name', _ev(w,'en_name', esc(w.en_name||'--'), 'text')) +
+        row('ຊື່ ນາມສະກຸນ', 'LO Name', _ev(w,'lo_name', esc(w.lo_name||'--'), 'text')) +
+        row(t('vc_dob'), 'ວັນເດືອນປີ', _ev(w,'dob', esc(w.dob||'--'), 'text')) +
         row(t('vc_age'), 'ອາຍຸ', _ev(w,'age', age ? age + ' yrs' : '--', 'text')) +
         row(t('vc_nationality'), 'ສັນຊາດ', _ev(w,'nationality', esc(w.nationality||'--'), 'text')) +
-        row(t('vc_sex'), 'ເພດ', ed ? _ev(w,'sex','','select',sexOpts) : (w.sex==='M'?'♂ '+t('fm_sex_m'):w.sex==='F'?'♀ '+t('fm_sex_f'):'--')) +
-        row(t('vc_province'), 'ແຂວງ', _ev(w,'province', esc(w.province||'--'), 'text')) +
-        row(t('vc_district'), 'ເມືອງ', _ev(w,'district', esc(w.district||'--'), 'text')) +
-        row(t('vc_village'), 'ບ້ານ', _ev(w,'village', esc(w.village||'--'), 'text')) +
-        row(t('vc_weight_height'), 'Kg ; Cm', ed
-            ? '<div class="split">' + _ev(w,'weight','','text') + _ev(w,'height','','text') + '</div>'
-            : '<div class="split"><span>'+(w.weight?w.weight+'Kg':'--')+'</span><span>'+(w.height?w.height+'Cm':'--')+'</span></div>') +
-        row(t('vc_size'), 'ຂະໜາດເສື້ອ', ed ? _ev(w,'size','','select',sizeOpts) : esc(w.size||'--')) +
-        row(t('vc_hand'), 'ຊ້າຍຫຼືຂວາ', ed ? _ev(w,'hand','','select',handOpts) : (w.hand==='R'?'R (Right)':w.hand==='L'?'L (Left)':'--')) +
-        row(t('vc_blood'), 'ກຸ່ມເລືອດ', ed ? _ev(w,'blood','','select',bloodOpts) : esc(w.blood||'--')) +
-        row(t('vc_passport'), 'ເລກທີ', _ev(w,'passport_no', '<span style="font-family:monospace">'+esc(w.passport_no||'--')+'</span>', 'text')) +
-        row(t('vc_issue'), 'ວັນທີອອກ', _ev(w,'passport_issue', esc(w.passport_issue||'--'), 'text')) +
-        row(t('vc_expiry'), 'ໝົດອາຍຸ', ed ? _ev(w,'passport_expiry','','text') : '<span class="'+expiryClass(w.passport_expiry)+'">'+esc(w.passport_expiry||'--')+'</span>') +
-        row(t('vc_tel'), 'ໂທຫຼັກ', _ev(w,'tel', esc(w.tel||'--'), 'text')) +
-        row('Emergency', 'ໂທສຸກເສີນ', _ev(w,'emg_tel', esc(w.emg_tel||'--'), 'text')) +
-      '</table>' +
+        row(t('vc_sex'), 'ເພດ', ed ? _ev(w,'sex','','select',sexOpts) : (w.sex==='M'?'♂ '+t('fm_sex_m'):w.sex==='F'?'♀ '+t('fm_sex_f'):'--'))
+      ) +
+
+      sec('📍', 'ທີ່ຢູ່', 'Address',
+        row('ແຂວງ', 'Province', _ev(w,'province', esc(w.province||'--'), 'text')) +
+        row('ເມືອງ', 'District', _ev(w,'district', esc(w.district||'--'), 'text')) +
+        row('ບ້ານ',  'Village',  _ev(w,'village',  esc(w.village||'--'),  'text'))
+      ) +
+
+      sec('📋', 'ຂໍ້ມູນຮ່າງກາຍ', 'Physical',
+        row(t('vc_weight_height'), 'Kg / Cm', ed
+          ? '<div class="vd-split">' + _ev(w,'weight','','text') + _ev(w,'height','','text') + '</div>'
+          : '<div class="vd-split"><span>'+(w.weight?w.weight+' Kg':'--')+'</span><span>'+(w.height?w.height+' Cm':'--')+'</span></div>') +
+        row(t('vc_size'),  'ຂະໜາດ',   ed ? _ev(w,'size','','select',sizeOpts)  : esc(w.size||'--')) +
+        row(t('vc_hand'),  'ຊ້າຍ/ຂວາ', ed ? _ev(w,'hand','','select',handOpts)  : (w.hand==='R'?'R (Right)':w.hand==='L'?'L (Left)':'--')) +
+        row(t('vc_blood'), 'ກຸ່ມເລືອດ', ed ? _ev(w,'blood','','select',bloodOpts) : esc(w.blood||'--'))
+      ) +
+
+      sec('🛂', 'ເອກະສານເດີນທາງ', 'Passport',
+        row(t('vc_passport'), 'ເລກທີ',   _ev(w,'passport_no', '<span style="font-family:monospace;letter-spacing:1px">'+esc(w.passport_no||'--')+'</span>', 'text')) +
+        row(t('vc_issue'),   'ວັນທີອອກ', _ev(w,'passport_issue', esc(w.passport_issue||'--'), 'text')) +
+        row(t('vc_expiry'),  'ໝົດອາຍຸ',  ed ? _ev(w,'passport_expiry','','text') : '<span class="'+expiryClass(w.passport_expiry)+'">'+esc(w.passport_expiry||'--')+'</span>')
+      ) +
+
+      sec('📞', 'ຕິດຕໍ່', 'Contact',
+        row(t('vc_tel'),  'ໂທຫຼັກ',   _ev(w,'tel',     esc(w.tel||'--'),     'text')) +
+        row('Emergency', 'ໂທສຸກເສີນ', _ev(w,'emg_tel', esc(w.emg_tel||'--'), 'text'))
+      ) +
+
     '</div>';
 
   if (ed) {
@@ -1754,7 +1999,7 @@ function _renderDetailTopbar(w, uid) {
   const el = document.getElementById('vm-topbar-actions'); if (!el) return;
   let h = '';
   h += '<button class="vm-action-btn" onclick="zoomCard(\''+esc(uid)+'\')" title="'+esc(t('vd_zoom'))+'">&#10530;</button>';
-  h += '<button class="vm-action-btn" onclick="exportWorkerPDF()">&#11015; PDF</button>';
+  h += '<button class="vm-action-btn" onclick="openExportDialog(\'worker\',\''+esc(uid)+'\')">&#11015; Export</button>';
   if (isAdmin()) {
     if (detailEditMode) {
       h += '<button class="vm-action-btn" onclick="cancelDetailEdit(\''+esc(uid)+'\')">&#10005; '+esc(t('fm_cancel'))+'</button>';
@@ -1822,6 +2067,7 @@ function zoomCard(uid) {
 
 // ── VIEW CARD ─────────────────────────────────────────────────────
 function openView(uid) {
+  _ensureGroupFor(uid);   // resolve owning group (global search / overview)
   const g = DB.getGroup(activeGroupId);
   const w = g && g.workers.find(x => x.uid === uid);
   if (!w) return;
@@ -2120,9 +2366,47 @@ function openDocView(uid, cat, idx) {
   openDocViewById(0, f.data, f.type, f.name);
 }
 
-function scanForDoc(cat) {
-  if (cat === 'passport' && typeof openPassportScan === 'function') openPassportScan();
+// ── DOCUMENT SCAN (icon menu in the worker form) ──────────────────
+const _SCAN_LABELS = {
+  form_1:   'ແບບຟอร์มสมัคร · Application form',
+  id_card:  'ID card · ບັດປະຈำตัว',
+  passport: 'Passport · พาสปอร์ต',
+  land_doc: 'ໂฉนดที่ดิน · Land deed',
+};
+
+function toggleScanMenu(e) { if (e) e.stopPropagation(); document.getElementById('scan-type-menu')?.classList.toggle('open'); }
+function closeScanMenu()   { document.getElementById('scan-type-menu')?.classList.remove('open'); }
+
+function startScan(cat) {
+  closeScanMenu();
+  // Passport → the real camera + MRZ scanner (offline OCR)
+  if (cat === 'passport' && typeof openPassportScan === 'function') { openPassportScan(); return; }
+  // Other docs → generic capture (AI/Google extraction is mocked for now)
+  _genericDocScan(cat);
 }
+
+// Capture or pick an image/PDF and queue it to attach as the chosen document
+// when the worker is saved. AI extraction (Google) is a planned step — mocked.
+function _genericDocScan(cat) {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = 'image/*,application/pdf';
+  inp.setAttribute('capture', 'environment');   // prefer the rear camera on mobile
+  inp.onchange = () => {
+    const file = inp.files && inp.files[0];
+    if (!file) return;
+    _fileToDataURL(file, 1400, dataUrl => {
+      const type = file.type === 'application/pdf' ? 'pdf' : 'image';
+      window._pendingScanDocs = window._pendingScanDocs || [];
+      window._pendingScanDocs.push({ cat, name: cat + '-scan.' + (type === 'pdf' ? 'pdf' : 'jpg'), type, data: dataUrl });
+      toast('🤖 ' + (_SCAN_LABELS[cat] || cat) + ' — ແนบแล้ว · AI extraction (Google) coming soon', 'ok');
+    });
+  };
+  inp.click();
+}
+
+// back-compat
+function scanForDoc(cat) { startScan(cat); }
 
 // ── WORKER FORM ───────────────────────────────────────────────────
 function openWorkerForm(editUid) {
@@ -2139,8 +2423,13 @@ function openWorkerForm(editUid) {
   document.getElementById('f-edit-uid').value = '';
   document.getElementById('f-photo').value = '';
   window._pendingScanDoc = null;
+  window._pendingScanDocs = [];
   renderFormPhoto();
   document.getElementById('fm-title').textContent = t('fm_add_worker');
+
+  if (!editUid) {
+    document.getElementById('f-worker-id').value = _genWorkerId();
+  }
 
   if (editUid) {
     const g = DB.getGroup(activeGroupId);
@@ -2199,6 +2488,39 @@ function populateCityDropdowns() {
 function updateIdPreview() {}
 function regenerateId() {}
 
+function _genWorkerId() {
+  const g = DB.getGroup(activeGroupId);
+  const dist = ((g && g.site_code)     || '').trim().toUpperCase();
+  const prov = ((g && g.province_code) || '').trim().toUpperCase();
+  if (!dist && !prov) return '';
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yy = String(now.getFullYear()).slice(-2);
+  const dateStr = dd + mm + yy;
+  const parts = [dist, prov, dateStr].filter(Boolean);
+  const prefix = parts.join('-') + '-';
+  let max = 0;
+  DB.getWorkers(activeGroupId).forEach(w => {
+    if (w.worker_id && w.worker_id.startsWith(prefix)) {
+      const n = parseInt(w.worker_id.slice(prefix.length), 10);
+      if (!isNaN(n) && n > max) max = n;
+    }
+  });
+  return prefix + String(max + 1).padStart(3, '0');
+}
+
+function checkWorkerIdDup(val) {
+  const warn = document.getElementById('worker-id-warn');
+  if (!warn) return;
+  const v = (val || '').trim();
+  const editUid = (document.getElementById('f-edit-uid') || {}).value || '';
+  if (!v) { warn.style.display = 'none'; return; }
+  const ws = DB.getWorkers(activeGroupId);
+  const dup = ws.some(w => w.worker_id === v && w.uid !== editUid);
+  warn.style.display = dup ? 'block' : 'none';
+}
+
 function saveWorker() {
   if (!isAdmin()) return;
   const enName = document.getElementById('f-en-name').value.trim();
@@ -2243,16 +2565,19 @@ function saveWorker() {
     languages:      document.getElementById('f-languages').value.trim(),
   };
 
-  // Attach a passport image captured during scanning (auto document extraction)
-  if (window._pendingScanDoc) {
+  // Attach any scanned documents (passport MRZ scan + generic doc scans)
+  const _pending = [];
+  if (window._pendingScanDoc) { _pending.push(window._pendingScanDoc); window._pendingScanDoc = null; }
+  if (Array.isArray(window._pendingScanDocs)) { _pending.push(...window._pendingScanDocs); window._pendingScanDocs = []; }
+  if (_pending.length) {
     const prev = editUid
       ? ((DB.getGroup(activeGroupId).workers.find(x => x.uid === editUid) || {}).documents || {})
       : {};
     const docs = JSON.parse(JSON.stringify(prev));
-    const c = window._pendingScanDoc.cat;
-    docs[c] = (docs[c] || []).concat([{ name: window._pendingScanDoc.name, type: window._pendingScanDoc.type, data: window._pendingScanDoc.data }]);
+    _pending.forEach(p => {
+      docs[p.cat] = (docs[p.cat] || []).concat([{ name: p.name, type: p.type, data: p.data }]);
+    });
     data.documents = docs;
-    window._pendingScanDoc = null;
   }
 
   if (editUid) {
@@ -2325,19 +2650,23 @@ function openGroupForm(gid, event) {
   if (event) event.stopPropagation();
   if (!isAdmin()) return;
   editGroupId = gid || null;
-  document.getElementById('gf-name').value     = '';
-  document.getElementById('gf-date').value     = '';
-  document.getElementById('gf-route').value    = '';
-  document.getElementById('gf-assigned').value = '';
-  document.getElementById('gf-arrivals').value = '';
+  document.getElementById('gf-name').value          = '';
+  document.getElementById('gf-site-code').value     = '';
+  document.getElementById('gf-province-code').value = '';
+  document.getElementById('gf-date').value          = '';
+  document.getElementById('gf-route').value         = '';
+  document.getElementById('gf-assigned').value      = '';
+  document.getElementById('gf-arrivals').value      = '';
   document.getElementById('gm-title').textContent = editGroupId ? t('gm_edit_group') : t('gm_new_group');
   document.getElementById('gm-btn').textContent   = editGroupId ? t('gm_save') : t('gm_create');
 
   if (editGroupId) {
     const g = DB.getGroup(editGroupId);
     if (g) {
-      document.getElementById('gf-name').value      = g.name || '';
-      document.getElementById('gf-date').value      = g.departure || '';
+      document.getElementById('gf-name').value          = g.name || '';
+      document.getElementById('gf-site-code').value     = g.site_code || '';
+      document.getElementById('gf-province-code').value = g.province_code || '';
+      document.getElementById('gf-date').value          = g.departure || '';
       document.getElementById('gf-route').value     = g.route || '';
       document.getElementById('gf-assigned').value  = (g.assigned != null ? g.assigned : '');
       document.getElementById('gf-arrivals').value  = (g.arrivals != null ? g.arrivals : '');
@@ -2353,6 +2682,8 @@ function saveGroup() {
   const num = id => { const v = document.getElementById(id).value.trim(); return v === '' ? '' : Math.max(0, parseInt(v, 10) || 0); };
   const data = {
     name: name,
+    site_code:     document.getElementById('gf-site-code').value.trim().toUpperCase(),
+    province_code: document.getElementById('gf-province-code').value.trim().toUpperCase(),
     departure: document.getElementById('gf-date').value.trim(),
     route: document.getElementById('gf-route').value.trim(),
     assigned: num('gf-assigned'),
@@ -2415,6 +2746,27 @@ document.getElementById('cm-confirm-btn').addEventListener('click', () => {
   closeOverlay('confirm-overlay');
 });
 
+// ── UNIFIED CREATE MENU (groups / workers / import in one place) ──
+function openCreate() {
+  const sub = document.getElementById('create-worker-sub');
+  if (sub) {
+    const g = activeGroupId ? DB.getGroup(activeGroupId) : null;
+    sub.textContent = g ? ('ເພີ່ມເຂົ້າ: ' + (g.name || 'ກຸ່ມປັດຈຸບັນ')) : 'ເປີດກຸ່ມກ່ອນ · open a group first';
+  }
+  openOverlay('create-overlay');
+}
+function createNewGroup()  { closeOverlay('create-overlay'); openGroupForm(null); }
+function createAddWorker() {
+  closeOverlay('create-overlay');
+  if (!activeGroupId) { toast('ເປີດກຸ່ມກ່ອນເພີ່ມແຮງງານ · Open a group first', 'warn'); return; }
+  openWorkerForm(null);
+}
+function createImport()    { closeOverlay('create-overlay'); openImport(); }
+
+// ── IMPORT (PPTX stub — feature not yet implemented) ──────────────
+function openImport() { openOverlay('import-overlay'); }
+function doImport()   { toast('ຍັງບໍ່ທັນ implement ຟີເຈີ Import PPTX', 'warn'); }
+
 // ── EXPORT CSV ────────────────────────────────────────────────────
 function exportCSV() {
   const g  = DB.getGroup(activeGroupId);
@@ -2436,6 +2788,250 @@ function exportCSV() {
   a.click();
 }
 
+// ── EXPORT DIALOG ─────────────────────────────────────────────────────────
+const _EXPORT_FIELDS = [
+  { group: 'ຂໍ້ມູນ / Identity', fields: [
+    { key:'worker_id',   label:'Worker ID',   def:true  },
+    { key:'en_name',     label:'EN Name',     def:true  },
+    { key:'lo_name',     label:'Lao Name',    def:true  },
+    { key:'sex',         label:'Sex',         def:true  },
+    { key:'dob',         label:'DOB',         def:true  },
+    { key:'age',         label:'Age',         def:true  },
+    { key:'blood',       label:'Blood',       def:false },
+    { key:'nationality', label:'Nationality', def:false },
+  ]},
+  { group: 'ພາສປອດ / Passport', fields: [
+    { key:'passport_no',     label:'Passport No', def:true  },
+    { key:'passport_issue',  label:'Issue Date',  def:false },
+    { key:'passport_expiry', label:'Expiry',      def:true  },
+    { key:'visa_status',     label:'Visa',        def:false },
+  ]},
+  { group: 'ທີ່ຢູ່ / Address', fields: [
+    { key:'village',  label:'Village',  def:false },
+    { key:'district', label:'District', def:false },
+    { key:'province', label:'Province', def:false },
+  ]},
+  { group: 'ການຈ້າງ / Employment', fields: [
+    { key:'employer_code',    label:'Employer',   def:true  },
+    { key:'group_supervisor', label:'Supervisor', def:true  },
+    { key:'grade',            label:'Grade',      def:false },
+    { key:'couple',           label:'Couple',     def:false },
+    { key:'group_name',       label:'Group',      def:true  },
+  ]},
+  { group: 'ຮ່າງກາຍ / Physical', fields: [
+    { key:'weight', label:'Weight(kg)', def:false },
+    { key:'height', label:'Height(cm)', def:false },
+    { key:'size',   label:'Size',       def:false },
+    { key:'hand',   label:'Hand',       def:false },
+  ]},
+  { group: 'ຕິດຕໍ່ / Contact', fields: [
+    { key:'tel',     label:'Tel',           def:true  },
+    { key:'emg_tel', label:'Emergency Tel', def:false },
+  ]},
+];
+
+let _exportCtx = null;
+
+function openExportDialog(scope, uid) {
+  _exportCtx = { scope, uid: uid || null };
+  const g  = DB.getGroup(activeGroupId);
+  const ws = scope === 'worker'
+    ? (g ? g.workers.filter(x => x.uid === (uid || _currentViewUid)) : [])
+    : (tableFiltered.length ? tableFiltered : DB.getWorkers(activeGroupId));
+
+  const subjEl = document.getElementById('export-subject');
+  if (scope === 'worker') {
+    const w = ws[0];
+    subjEl.textContent = w ? (w.en_name || w.lo_name || 'Worker') : 'Worker';
+  } else {
+    subjEl.textContent = (g ? g.name : '') + (ws.length ? ' · ' + ws.length + ' ຄົນ' : '');
+  }
+
+  // detail-pdf only makes sense for single worker
+  const detBtn = document.querySelector('.export-opt[data-fmt="detail-pdf"]');
+  if (detBtn) detBtn.style.display = scope === 'worker' ? '' : 'none';
+
+  // reset + default selection (honours Settings → Data & Backup default)
+  document.querySelectorAll('.export-opt').forEach(el => el.classList.remove('sel'));
+  let defFmt = localStorage.getItem('kd_export_default') || 'kd-pdf';
+  if (scope !== 'worker' && defFmt === 'detail-pdf') defFmt = 'kd-pdf';
+  let defEl = document.querySelector('.export-opt[data-fmt="' + defFmt + '"]');
+  if (!defEl) defEl = document.querySelector('.export-opt[data-fmt="kd-pdf"]');
+  if (defEl) defEl.classList.add('sel');
+
+  _updateCsvFieldsVis();
+  _renderExportFields();
+  openOverlay('export-overlay');
+}
+
+function toggleExportFmt(el) {
+  el.classList.toggle('sel');
+  _updateCsvFieldsVis();
+}
+
+function _updateCsvFieldsVis() {
+  const on = !!document.querySelector('.export-opt[data-fmt="csv"].sel');
+  document.getElementById('export-csv-fields').style.display = on ? '' : 'none';
+}
+
+function _renderExportFields() {
+  const wrap = document.getElementById('export-field-list');
+  if (!wrap) return;
+  wrap.innerHTML = _EXPORT_FIELDS.map(grp =>
+    '<div class="ef-group">' +
+    '<div class="ef-group-label">' + esc(grp.group) + '</div>' +
+    '<div class="ef-group-fields">' +
+    grp.fields.map(f =>
+      '<label class="ef-field"><input type="checkbox" name="ef-' + f.key + '"' +
+      (f.def ? ' checked' : '') + '><span>' + esc(f.label) + '</span></label>'
+    ).join('') +
+    '</div></div>'
+  ).join('');
+}
+
+function exportFieldsAll(on) {
+  document.querySelectorAll('#export-field-list input[type="checkbox"]').forEach(el => el.checked = on);
+}
+
+async function doExport() {
+  const fmts = [...document.querySelectorAll('.export-opt.sel')].map(el => el.dataset.fmt);
+  if (!fmts.length) { toast('ກະລຸນາເລືອກຢ່າງໜ້ອຍ 1 ຮູບແບບ', 'warn'); return; }
+
+  closeOverlay('export-overlay');
+  await new Promise(r => setTimeout(r, 150));
+
+  const scope = _exportCtx.scope;
+  const g = DB.getGroup(activeGroupId);
+  let workers;
+  if (scope === 'worker') {
+    const uid = _exportCtx.uid || _currentViewUid;
+    workers = g ? g.workers.filter(x => x.uid === uid) : [];
+  } else {
+    workers = tableFiltered.length ? tableFiltered : DB.getWorkers(activeGroupId);
+  }
+  if (!workers.length) { toast('ບໍ່ມີຂໍ້ມູນ', 'warn'); return; }
+
+  for (const fmt of fmts) {
+    if      (fmt === 'detail-pdf') { exportWorkerPDF(); await new Promise(r => setTimeout(r, 200)); }
+    else if (fmt === 'kd-pdf')     _doKdCardPdf(workers, g);
+    else if (fmt === 'kd-png')     await _doKdCardPng(workers, g);
+    else if (fmt === 'csv')        _doExportCsv(workers, g);
+    else if (fmt === 'docs')       await _doExportDocs(workers);
+  }
+}
+
+function _doKdCardPdf(workers, g) {
+  const container = document.getElementById('print-group-container');
+  if (!container) return;
+  container.innerHTML = workers.map(w =>
+    '<div class="print-group-page">' + _renderKdCard(w, g) + '</div>'
+  ).join('');
+  document.body.classList.add('printing-group');
+  const cleanup = () => {
+    document.body.classList.remove('printing-group');
+    container.innerHTML = '';
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  setTimeout(() => window.print(), 80);
+}
+
+async function _doKdCardPng(workers, g) {
+  if (!window.html2canvas) { toast('html2canvas ບໍ່ໄດ້ໂຫລດ', 'warn'); return; }
+  for (let i = 0; i < workers.length; i++) {
+    const w = workers[i];
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-999;background:#fff;padding:8px;width:340px;';
+    wrap.innerHTML = _renderKdCard(w, g);
+    document.body.appendChild(wrap);
+    try {
+      const canvas = await html2canvas(wrap, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = ((w.en_name || w.lo_name || 'worker').replace(/[^a-z0-9_]/gi, '_') + '_kd_card.png');
+      a.click();
+      URL.revokeObjectURL(url);
+      if (workers.length > 1) await new Promise(r => setTimeout(r, 400));
+    } finally {
+      document.body.removeChild(wrap);
+    }
+  }
+}
+
+function _doExportCsv(workers, g) {
+  const selFields = [];
+  _EXPORT_FIELDS.forEach(grp => {
+    grp.fields.forEach(f => {
+      const el = document.querySelector('#export-field-list input[name="ef-' + f.key + '"]');
+      if (el && el.checked) selFields.push(f);
+    });
+  });
+  if (!selFields.length) { toast('ກະລຸນາເລືອກ field ຢ່າງໜ້ອຍ 1 ອັນ', 'warn'); return; }
+  const gName = g ? g.name : '';
+  const rows = workers.map(w => selFields.map(f => {
+    let v = '';
+    if (f.key === 'age')        v = calcAge(w.dob) || '';
+    else if (f.key === 'group_name') v = gName;
+    else                        v = w[f.key] || '';
+    return '"' + v.toString().replace(/"/g, '""') + '"';
+  }).join(','));
+  const csv = '﻿' + [selFields.map(f => f.label).join(','), ...rows].join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = (gName.replace(/[^a-z0-9]/gi, '_') || 'workers') + '.csv';
+  a.click();
+}
+
+async function _doExportDocs(workers) {
+  const allDocs = [];
+  for (const w of workers) {
+    try {
+      const docs = await DB.getDocuments(w.uid);
+      DOC_CATS.forEach(cat => {
+        const versions = docs[cat.key] || [];
+        const cur = versions.find(v => v.isCurrent) || versions[0];
+        if (cur) allDocs.push({ w, cat, doc: cur });
+      });
+    } catch(e) { /* skip */ }
+  }
+  if (!allDocs.length) { toast('ບໍ່ມີເອກະສານທີ່ອັບໂຫລດ', 'warn'); return; }
+
+  if (!window.JSZip || allDocs.length <= 3) {
+    for (const { doc } of allDocs) {
+      const a = document.createElement('a');
+      a.href = doc.path;
+      a.download = doc.name || (doc.category + '.' + (doc.type || 'file'));
+      a.target = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      await new Promise(r => setTimeout(r, 350));
+    }
+    return;
+  }
+
+  toast('ກຳລັງສ້າງ ZIP...', 'info');
+  const zip = new JSZip();
+  for (const { w, cat, doc } of allDocs) {
+    try {
+      const resp = await fetch(doc.path);
+      const blob = await resp.blob();
+      const wName = (w.en_name || w.lo_name || w.uid).replace(/[^a-z0-9]/gi, '_');
+      const ext   = doc.type || (doc.name || '').split('.').pop() || 'bin';
+      zip.file(wName + '/' + cat.key + '_v' + (doc.version || 1) + '.' + ext, blob);
+    } catch(e) { /* skip unavailable file */ }
+  }
+  const content = await zip.generateAsync({ type: 'blob' });
+  const url = URL.createObjectURL(content);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = ((DB.getGroup(activeGroupId) || {}).name || 'workers').replace(/[^a-z0-9]/gi, '_') + '_docs.zip';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ── OVERLAY HELPERS ───────────────────────────────────────────────
 function openOverlay(id) {
   document.getElementById(id).classList.add('open');
@@ -2447,8 +3043,22 @@ function closeOverlay(id) {
   if (!document.querySelector('.overlay.open')) document.body.classList.remove('no-scroll');
 }
 
+// Close the scan-type dropdown when clicking outside it
+document.addEventListener('click', e => {
+  const w = document.querySelector('.scan-wrap');
+  if (w && !w.contains(e.target)) closeScanMenu();
+});
+
+// Keyboard shortcut: Ctrl/⌘ + ,  → open Settings (matches the profile-menu hint)
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === ',' && document.body.classList.contains('authed')) {
+    e.preventDefault();
+    if (!document.getElementById('settings-overlay').classList.contains('open')) openSettings();
+  }
+});
+
 // Click outside to close
-['view-overlay','form-overlay','group-overlay','confirm-overlay','settings-overlay','import-overlay','scan-overlay','docview-overlay','photo-editor-overlay'].forEach(id => {
+['view-overlay','form-overlay','group-overlay','confirm-overlay','settings-overlay','import-overlay','scan-overlay','docview-overlay','photo-editor-overlay','export-overlay','create-overlay'].forEach(id => {
   document.getElementById(id).addEventListener('click', e => {
     if (e.target.id === id) closeOverlay(id);
   });
@@ -2471,17 +3081,62 @@ document.querySelectorAll('.lang-btn').forEach(btn => {
 });
 
 // ── SETTINGS (all users — admin sees Cities+Users tabs, viewer sees Appearance only) ──
+const _SET_TABS = ['appearance','company','cities','notifications','data','users','about'];
+let _currentSetTab = 'appearance';
+
 function openSettings() {
   renderSettings();
+  const search = document.getElementById('settings-search-input');
+  if (search) search.value = '';
   switchSettingsTab('appearance');
   openOverlay('settings-overlay');
 }
 
 function switchSettingsTab(tab) {
+  _currentSetTab = tab;
   document.querySelectorAll('.set-nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  document.getElementById('set-pane-appearance').style.display = tab === 'appearance' ? 'block' : 'none';
-  document.getElementById('set-pane-cities').style.display     = tab === 'cities'     ? 'block' : 'none';
-  document.getElementById('set-pane-users').style.display      = tab === 'users'      ? 'block' : 'none';
+  _SET_TABS.forEach(t2 => {
+    const p = document.getElementById('set-pane-' + t2);
+    if (p) p.style.display = (t2 === tab) ? 'block' : 'none';
+  });
+}
+
+// Search box in the header — filter sections + rows by keyword (data-kw).
+function filterSettings(q) {
+  q = (q || '').trim().toLowerCase();
+  const navs = document.querySelectorAll('#set-tabs .set-nav-item');
+  const rows = document.querySelectorAll('#settings-overlay .set-row');
+  if (!q) {
+    navs.forEach(n => { n.style.display = ''; });
+    rows.forEach(r => { r.style.display = ''; });
+    switchSettingsTab(_currentSetTab || 'appearance');
+    return;
+  }
+  let firstShown = null;
+  _SET_TABS.forEach(tab => {
+    const pane = document.getElementById('set-pane-' + tab);
+    const nav  = document.querySelector('.set-nav-item[data-tab="' + tab + '"]');
+    if (!pane || !nav) return;
+    const adminOnly = nav.classList.contains('admin-only');
+    if (adminOnly && !isAdmin()) { nav.style.display = 'none'; pane.style.display = 'none'; return; }
+    const navKw = (nav.dataset.kw || '').toLowerCase();
+    const headTxt = (pane.querySelector('.ssh-title')?.textContent || '').toLowerCase();
+    const sectionMatch = navKw.includes(q) || headTxt.includes(q);
+    let anyRow = false;
+    pane.querySelectorAll('.set-row').forEach(r => {
+      const kw = ((r.dataset.kw || '') + ' ' + (r.textContent || '')).toLowerCase();
+      const m = sectionMatch || kw.includes(q);
+      r.style.display = m ? '' : 'none';
+      if (m) anyRow = true;
+    });
+    // panes without .set-row (cities/data lists/users/about) match on section only
+    const hasRows = pane.querySelector('.set-row');
+    const show = sectionMatch || (hasRows ? anyRow : false);
+    pane.style.display = show ? 'block' : 'none';
+    nav.style.display = show ? '' : 'none';
+    nav.classList.toggle('active', false);
+    if (show && !firstShown) { firstShown = nav; nav.classList.add('active'); }
+  });
 }
 
 function renderAppearance() {
@@ -2489,11 +3144,136 @@ function renderAppearance() {
   document.querySelectorAll('.theme-opt').forEach(b => {
     b.classList.toggle('active', b.dataset.themeVal === pref);
   });
-  // lang-btn active state is handled by applyTranslations() in i18n.js
-  document.querySelectorAll('.lang-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.lang === (typeof currentLang !== 'undefined' ? currentLang : 'en'));
-  });
+  const langSel = document.getElementById('set-lang-select');
+  if (langSel) langSel.value = (typeof currentLang !== 'undefined' ? currentLang : 'en');
   updateLogoDisplay();
+}
+
+// Language dropdown in Settings → Appearance
+function changeLangFromSettings(lang) {
+  setLang(lang);
+  if (!document.body.classList.contains('authed')) return;
+  rebuildFilters(); renderTable(); renderSidebar(); renderSidebarUser(); renderStats();
+  if (document.getElementById('dashboard-welcome')?.style.display !== 'none') renderDashboard();
+  renderSettings();
+}
+
+// ── Company ───────────────────────────────────────────────────────
+function renderCompany() {
+  updateLogoDisplay();
+  const inp = document.getElementById('set-company-name');
+  if (inp) inp.value = localStorage.getItem('kd_company_name') || '';
+}
+function saveCompanyName(v) {
+  v = (v || '').trim();
+  if (v) localStorage.setItem('kd_company_name', v); else localStorage.removeItem('kd_company_name');
+  toast(t('vd_saved') || 'Saved', 'ok');
+}
+
+// ── Notifications (passport-expiry thresholds) ────────────────────
+function renderNotifPrefs() {
+  const w = document.getElementById('set-warn-months');
+  const n = document.getElementById('set-near-months');
+  if (w) w.value = expiryWarnMonths();
+  if (n) n.value = expiryNearMonths();
+}
+function saveNotifPrefs() {
+  const w = parseInt(document.getElementById('set-warn-months').value, 10);
+  const n = parseInt(document.getElementById('set-near-months').value, 10);
+  if (w > 0) localStorage.setItem('kd_warn_months', String(w));
+  if (n > 0) localStorage.setItem('kd_near_months', String(Math.max(w || 1, n)));
+  renderNotifPrefs();
+  // re-render anything that paints expiry state
+  renderStats(); renderSidebar();
+  if (document.getElementById('dashboard-welcome')?.style.display !== 'none') renderDashboard();
+  if (document.getElementById('group-view')?.style.display !== 'none') renderTable();
+  toast(t('vd_saved') || 'Saved', 'ok');
+}
+
+// ── Data & Backup ─────────────────────────────────────────────────
+function renderExportDefault() {
+  const cur = localStorage.getItem('kd_export_default') || 'kd-pdf';
+  document.querySelectorAll('#set-export-default button').forEach(b =>
+    b.classList.toggle('active', b.dataset.exp === cur));
+}
+function saveExportDefault(fmt) {
+  localStorage.setItem('kd_export_default', fmt);
+  renderExportDefault();
+}
+async function doBackupNow() {
+  try { const f = await DB.backup(); toast((t('vd_saved') || 'Backup') + ' · ' + f, 'ok'); }
+  catch (e) { toast('Backup failed: ' + (e.message || e), 'warn'); }
+}
+async function toggleRestoreList() {
+  const box = document.getElementById('set-backup-list');
+  if (!box) return;
+  if (box.style.display !== 'none') { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  box.innerHTML = '<div class="set-card-label">ກຳລັງໂຫລດ...</div>';
+  let files = [];
+  try { files = await DB.listBackups(); } catch (e) {}
+  if (!files.length) { box.innerHTML = '<div class="set-card-label">ບໍ່ມີໄຟລ໌ສຳຮອງ · No backups</div>'; return; }
+  box.innerHTML = '<div class="set-card-label">ເລືອກໄຟລ໌ເພື່ອກູ້ຄືນ · Choose a backup</div>' +
+    '<div class="set-card"><div class="set-list" style="padding:5px 10px">' +
+    files.map(f => {
+      const name = typeof f === 'string' ? f : (f.file || f.name || JSON.stringify(f));
+      return '<div class="set-item"><span class="set-name" style="flex:1">' + esc(name) + '</span>' +
+        '<button class="btn btn-sm" onclick="doRestore(\'' + esc(name) + '\')">ກູ້ຄືນ</button></div>';
+    }).join('') + '</div></div>';
+}
+function doRestore(file) {
+  showConfirm('ກູ້ຄືນຂໍ້ມູນ', 'ກູ້ຄືນຈາກ ' + file + '? ຂໍ້ມູນປັດຈຸບັນຈະຖືກແທນທີ່.', async () => {
+    try { await DB.restore(file); toast('ກູ້ຄືນສຳເລັດ', 'ok'); closeOverlay('settings-overlay'); refreshAll(); }
+    catch (e) { toast('Restore failed: ' + (e.message || e), 'warn'); }
+  });
+}
+function exportAllData() {
+  const data = { exported_at: new Date().toISOString(), groups: DB.getGroups(), cities: DB.getCities(), users: DB.getUsers() };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'kd-database-' + new Date().toISOString().slice(0, 10) + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+function confirmHardReset() {
+  showConfirm(t('confirm_delete') || 'Reset', 'ລ້າງຂໍ້ມູນທັງໝົດຖາວອນ? ບໍ່ສາມາດກູ້ຄືນໄດ້ (ນອກຈາກມີສຳຮອງ).', () => {
+    DB.hardReset();
+    setTimeout(() => location.reload(), 400);
+  });
+}
+
+// ── About ─────────────────────────────────────────────────────────
+function renderAbout() {
+  const el = document.getElementById('set-about-stats');
+  if (!el) return;
+  const groups = DB.getGroups();
+  const workers = groups.reduce((n, g) => n + (g.workers || []).length, 0);
+  const cities = DB.getCities();
+  const cityCount = (cities.kr || []).length + (cities.la || []).length;
+  const rows = [
+    ['ກຸ່ມ · Groups', groups.length],
+    ['ແຮງງານ · Workers', workers],
+    ['ເມືອງ · Cities', cityCount],
+    ['ຜູ້ໃຊ້ · Users', DB.getUsers().length],
+  ];
+  el.innerHTML = rows.map(([k, v]) =>
+    '<div class="set-item"><span class="set-name" style="flex:1">' + k + '</span>' +
+    '<span class="set-code">' + v + '</span></div>').join('');
+}
+
+function renderSettings() {
+  renderAppearance();
+  renderAbout();
+  if (isAdmin()) {
+    renderCompany();
+    renderCityList('kr');
+    renderCityList('la');
+    renderNotifPrefs();
+    renderExportDefault();
+    renderUserList();
+  }
 }
 
 function updateLogoDisplay() {
@@ -2527,15 +3307,6 @@ function removeCompanyLogo() {
   const inp = document.getElementById('logo-file-input');
   if (inp) inp.value = '';
   updateLogoDisplay();
-}
-
-function renderSettings() {
-  renderAppearance();
-  if (isAdmin()) {
-    renderCityList('kr');
-    renderCityList('la');
-    renderUserList();
-  }
 }
 
 function renderCityList(country) {
@@ -2575,19 +3346,61 @@ function delCity(country, code) {
   );
 }
 
+const _SVG_SWAP  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3l4 4-4 4M20 7H4M8 21l-4-4 4-4M4 17h16"/></svg>';
+const _SVG_KEY   = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.5 12.5L20 3M16 7l3 3"/></svg>';
+const _SVG_EDIT  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+const _SVG_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+
 function renderUserList() {
   const users = DB.getUsers();
   const el = document.getElementById('set-users-list');
+  if (!el) return;
   el.innerHTML = users.map(u => {
-    const roleCls = u.role === 'admin' ? 'role-admin' : 'role-viewer';
     const self = currentUser && u.username === currentUser.username;
-    return '<div class="set-item">' +
-      '<span class="set-name" style="flex:1">' + esc(u.name || u.username) +
-        ' <span style="color:#999;font-size:0.78em">@' + esc(u.username) + '</span></span>' +
-      '<span class="role-badge ' + roleCls + '">' + t(u.role === 'admin' ? 'role_admin' : 'role_viewer') + '</span>' +
-      (self ? '' : '<button class="set-del" onclick="delUser(\'' + esc(u.username) + '\')" title="Delete">&#x2715;</button>') +
+    const roleCls = u.role === 'admin' ? 'role-admin' : 'role-viewer';
+    const roleLbl = t(u.role === 'admin' ? 'role_admin' : 'role_viewer');
+    const initial = esc((u.name || u.username || '?').trim().charAt(0).toUpperCase());
+    const uesc = esc(u.username);
+    return '<div class="set-user-row">' +
+      '<div class="set-user-av">' + initial + '</div>' +
+      '<div class="set-user-info">' +
+        '<div class="set-user-name">' + esc(u.name || u.username) + (self ? ' <span class="set-user-sub">(ທ່ານ)</span>' : '') + '</div>' +
+        '<div class="set-user-sub">@' + uesc + ' · <span class="role-badge ' + roleCls + '">' + roleLbl + '</span></div>' +
+      '</div>' +
+      '<div class="set-user-actions">' +
+        '<button class="set-icon-btn" title="ປ່ຽນບົດບາດ · Role" onclick="toggleUserRole(\'' + uesc + '\')">' + _SVG_SWAP + '</button>' +
+        '<button class="set-icon-btn" title="ຣີເຊັດລະຫັດ · Reset password" onclick="resetUserPw(\'' + uesc + '\')">' + _SVG_KEY + '</button>' +
+        '<button class="set-icon-btn" title="ແກ້ໄຂຊື່ · Rename" onclick="renameUser(\'' + uesc + '\')">' + _SVG_EDIT + '</button>' +
+        (self ? '' : '<button class="set-icon-btn danger" title="ລຶບ · Delete" onclick="delUser(\'' + uesc + '\')">' + _SVG_TRASH + '</button>') +
+      '</div>' +
     '</div>';
   }).join('');
+}
+
+function toggleUserRole(username) {
+  if (!isAdmin()) return;
+  const u = DB.getUsers().find(x => x.username === username);
+  if (!u) return;
+  const newRole = u.role === 'admin' ? 'viewer' : 'admin';
+  const res = DB.updateUser(username, { role: newRole });
+  if (res === 'last-admin') { alert(t('set_last_admin') || 'ຕ້ອງມີ admin ຢ່າງໜ້ອຍ 1 ຄົນ'); return; }
+  renderUserList();
+}
+function resetUserPw(username) {
+  if (!isAdmin()) return;
+  const pw = prompt('ລະຫັດຜ່ານໃໝ່ສຳລັບ @' + username + ' · New password:');
+  if (pw == null || pw === '') return;
+  DB.updateUser(username, { password: pw });
+  toast('ປ່ຽນລະຫັດຜ່ານແລ້ວ · Password reset', 'ok');
+}
+function renameUser(username) {
+  if (!isAdmin()) return;
+  const u = DB.getUsers().find(x => x.username === username);
+  const name = prompt('ຊື່ສະແດງ · Display name:', u ? (u.name || '') : '');
+  if (name == null) return;
+  DB.updateUser(username, { name });
+  renderUserList();
+  if (typeof renderSidebarUser === 'function') renderSidebarUser();
 }
 
 function addUser() {

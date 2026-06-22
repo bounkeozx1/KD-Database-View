@@ -1094,7 +1094,18 @@ const I18N = {
   }
 };
 
-function _detectLangFromTimezone() {
+function _detectDefaultLang() {
+  // 1) Honour an explicit saved choice.
+  try { const saved = localStorage.getItem('kd_lang'); if (saved && I18N[saved]) return saved; } catch (e) {}
+  // 2) Otherwise follow the device language (English device → English, Lao device → Lao, …).
+  try {
+    const nav = (navigator.language || navigator.userLanguage || '').toLowerCase();
+    if (nav.startsWith('lo')) return 'lo';
+    if (nav.startsWith('th')) return 'th';
+    if (nav.startsWith('ko')) return 'ko';
+    if (nav.startsWith('en')) return 'en';
+  } catch (e) {}
+  // 3) Fall back to a timezone hint.
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
     if (tz === 'Asia/Seoul' || tz === 'Asia/Pyongyang') return 'ko';
@@ -1103,7 +1114,7 @@ function _detectLangFromTimezone() {
   } catch (e) {}
   return 'en';
 }
-let currentLang = _detectLangFromTimezone();
+let currentLang = _detectDefaultLang();
 
 function t(key, vars) {
   const dict = I18N[currentLang] || I18N.en;

@@ -276,18 +276,14 @@
   transition: opacity 0.16s, transform 0.16s, visibility 0s;
 }
 
-/* Profile head (Claude.ai style) */
-.pm-profile-head { padding: 4px 4px 2px; }
-.pm-uhd {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 10px 8px; border-radius: 10px;
+/* Identity line at top of the menu (muted, like the reference's email) */
+.pm-id { padding: 8px 11px 6px; min-width: 0; }
+.pm-id-name {
+  font-size: 0.84rem; font-weight: 700; color: var(--sb-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.pm-uhd-info {
-  display: flex; flex-direction: column; gap: 5px;
-  overflow: hidden; min-width: 0;
-}
-.pm-uhd-name {
-  font-size: 0.93rem; font-weight: 700; color: var(--sb-text);
+.pm-id-sub {
+  font-size: 0.7rem; color: var(--sb-muted); margin-top: 1px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
@@ -299,7 +295,11 @@
   transition: background 0.12s;
 }
 .pm-item svg { width: 17px; height: 17px; flex-shrink: 0; color: var(--sb-faint); }
+.pm-item > span { flex: 1; min-width: 0; }
 .pm-item:hover { background: var(--sb-hover); }
+/* Right-aligned shortcut hint + submenu chevron */
+.pm-hint { flex: 0 0 auto !important; font-size: 0.72rem; color: var(--sb-faint); font-weight: 500; }
+.pm-item .pm-chev { flex: 0 0 auto; width: 15px; height: 15px; color: var(--sb-faint); }
 .pm-logout { color: #f87171; }
 .pm-logout svg { color: #f87171; }
 

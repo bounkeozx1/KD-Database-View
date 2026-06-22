@@ -261,6 +261,17 @@ const DB = (() => {
       _push('DELETE', '/users/' + encodeURIComponent(username));
       return 'ok';
     },
+    updateUser(username, patch) {
+      const target = _data.users.find(u => u.username === username);
+      if (!target) return 'missing';
+      if (target.role === 'admin' && patch.role && patch.role !== 'admin'
+          && _data.users.filter(u => u.role === 'admin').length <= 1) return 'last-admin';
+      if (typeof patch.name === 'string') target.name = patch.name.trim() || username;
+      if (patch.role) target.role = patch.role === 'admin' ? 'admin' : 'viewer';
+      if (patch.password) target.password = patch.password;  // cache only; server re-hashes
+      _push('PATCH', '/users/' + encodeURIComponent(username), patch);
+      return 'ok';
+    },
 
     /* ── Stats ── */
     getAllStats() {

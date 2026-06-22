@@ -125,6 +125,12 @@ function migrate() {
   if (!docCols.includes('group_id'))    db.exec('ALTER TABLE documents ADD COLUMN group_id TEXT');
   if (!docCols.includes('uploaded_by')) db.exec('ALTER TABLE documents ADD COLUMN uploaded_by TEXT');
 
+  const groupCols = db.prepare('PRAGMA table_info(groups)').all().map(c => c.name);
+  if (!groupCols.includes('site_code'))    db.exec("ALTER TABLE groups ADD COLUMN site_code TEXT DEFAULT ''");
+  if (!groupCols.includes('province_code')) db.exec("ALTER TABLE groups ADD COLUMN province_code TEXT DEFAULT ''");
+  if (!groupCols.includes('assigned'))     db.exec('ALTER TABLE groups ADD COLUMN assigned INTEGER DEFAULT 0');
+  if (!groupCols.includes('arrivals'))     db.exec('ALTER TABLE groups ADD COLUMN arrivals INTEGER DEFAULT 0');
+
   const empCols = db.prepare('PRAGMA table_info(employees)').all().map(c => c.name);
   if (!empCols.includes('grade'))           db.exec("ALTER TABLE employees ADD COLUMN grade TEXT DEFAULT ''");
   if (!empCols.includes('visa_status'))     db.exec("ALTER TABLE employees ADD COLUMN visa_status TEXT DEFAULT ''");

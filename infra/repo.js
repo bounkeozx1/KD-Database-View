@@ -71,6 +71,8 @@ function employeeToWorker(row) {
 function getBootstrap() {
   const groups = d().prepare('SELECT * FROM groups ORDER BY sort_order, created_at').all().map(g => ({
     id: g.id, name: g.name, departure: g.departure || '', route: g.route || '',
+    site_code: g.site_code || '',
+    province_code: g.province_code || '',
     pinned: !!g.pinned, archived: !!g.archived,
     workers: d().prepare('SELECT * FROM employees WHERE group_id=? ORDER BY sort_order, created_at').all(g.id).map(employeeToWorker),
   }));
@@ -86,13 +88,13 @@ function countEmployees() { return d().prepare('SELECT COUNT(*) AS c FROM employ
 /* ── Groups ── */
 function createGroup(g) {
   const id = g.id || 'g-' + Date.now().toString(36);
-  d().prepare('INSERT INTO groups (id,name,departure,route,pinned,archived) VALUES (?,?,?,?,?,?)')
-     .run(id, g.name || 'Group', g.departure || '', g.route || '', g.pinned ? 1 : 0, g.archived ? 1 : 0);
+  d().prepare('INSERT INTO groups (id,name,departure,route,site_code,province_code,pinned,archived) VALUES (?,?,?,?,?,?,?,?)')
+     .run(id, g.name || 'Group', g.departure || '', g.route || '', g.site_code || '', g.province_code || '', g.pinned ? 1 : 0, g.archived ? 1 : 0);
   return id;
 }
 function updateGroup(id, patch) {
   const cols = [], vals = [];
-  ['name','departure','route'].forEach(k => { if (k in patch) { cols.push(k + '=?'); vals.push(patch[k]); } });
+  ['name','departure','route','site_code','province_code'].forEach(k => { if (k in patch) { cols.push(k + '=?'); vals.push(patch[k]); } });
   if ('pinned' in patch)   { cols.push('pinned=?');   vals.push(patch.pinned ? 1 : 0); }
   if ('archived' in patch) { cols.push('archived=?'); vals.push(patch.archived ? 1 : 0); }
   if (!cols.length) return;
@@ -220,6 +222,21 @@ function deleteUser(username) {
   if (u.role === 'admin' && d().prepare("SELECT COUNT(*) AS c FROM users WHERE role='admin'").get().c <= 1) return 'last-admin';
   d().prepare('DELETE FROM users WHERE username=?').run(username); return 'ok';
 }
+// Edit a user: change display name, role, and/or reset password. Guards the last admin.
+function updateUser(username, patch) {
+  const u = d().prepare('SELECT role FROM users WHERE username=?').get(username);
+  if (!u) return 'missing';
+  if (u.role === 'admin' && patch.role && patch.role !== 'admin'
+      && d().prepare("SELECT COUNT(*) AS c FROM users WHERE role='admin'").get().c <= 1) return 'last-admin';
+  const cols = [], vals = [];
+  if (typeof patch.name === 'string')     { cols.push('name=?'); vals.push(patch.name.trim() || username); }
+  if (patch.role)                         { cols.push('role=?'); vals.push(patch.role === 'admin' ? 'admin' : 'viewer'); }
+  if (patch.password)                     { cols.push('password=?'); vals.push(_isHashed(patch.password) ? patch.password : _hashPw(patch.password)); }
+  if (!cols.length) return 'ok';
+  vals.push(username);
+  d().prepare('UPDATE users SET ' + cols.join(',') + ' WHERE username=?').run(...vals);
+  return 'ok';
+}
 function login(username, password) {
   const u = d().prepare('SELECT username, role, name, password FROM users WHERE username=?').get(username);
   if (!u || !_verifyPw(password, u.password)) return null;
@@ -239,7 +256,7 @@ function importAll(data) {
       data.groups.forEach(g => {
         const exists = tx.prepare('SELECT id FROM groups WHERE id=?').get(g.id);
         if (!exists) createGroup(g);
-        else updateGroup(g.id, { name: g.name, departure: g.departure, route: g.route });
+        else updateGroup(g.id, { name: g.name, departure: g.departure, route: g.route, site_code: g.site_code || '', province_code: g.province_code || '' });
         (g.workers || []).forEach(w => {
           const has = w.uid && tx.prepare('SELECT uid FROM employees WHERE uid=?').get(w.uid);
           if (has) updateEmployee(w.uid, w); else addEmployee(g.id, w);
@@ -306,7 +323,7 @@ module.exports = {
   getBootstrap, countEmployees,
   createGroup, updateGroup, deleteGroup,
   addEmployee, updateEmployee, deleteEmployee,
-  addCity, deleteCity, addUser, deleteUser, login, importAll,
+  addCity, deleteCity, addUser, deleteUser, updateUser, login, importAll,
   listDocuments, addDocument, deleteDocument,
   getActivity,
 };
