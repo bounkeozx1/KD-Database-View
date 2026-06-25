@@ -312,7 +312,7 @@ function _normalizeDate(s) {
    IMPORT UI
    ════════════════════════════════════════════════════ */
 
-let _importData = null;  // { groupMeta, workers }
+let _importData = null;  // { groupMeta, workers }  (workers may carry _doc for PDF/image)
 
 function openImport() {
   if (!isAdmin()) return;
@@ -320,9 +320,81 @@ function openImport() {
   document.getElementById('import-preview').innerHTML = '';
   document.getElementById('import-status').textContent = '';
   document.getElementById('import-target-wrap').style.display = 'none';
+  document.getElementById('import-newgroup-wrap').style.display = 'none';
+  const ng = document.getElementById('import-newgroup-name'); if (ng) ng.value = '';
   document.getElementById('import-btn-go').disabled = true;
   _importData = null;
   openOverlay('import-overlay');
+}
+
+/* CSV header (normalised) → worker field key. Mirrors the Export column labels. */
+const _CSV_KEYMAP = {
+  workerid:'worker_id', id:'worker_id',
+  enname:'en_name', 'name(en)':'en_name', englishname:'en_name', name:'en_name',
+  laoname:'lo_name', 'name(lao)':'lo_name',
+  sex:'sex', gender:'sex', dob:'dob', dateofbirth:'dob',
+  blood:'blood', bloodtype:'blood', nationality:'nationality',
+  passportno:'passport_no', passport:'passport_no',
+  issue:'passport_issue', issuedate:'passport_issue',
+  expiry:'passport_expiry', expirydate:'passport_expiry',
+  visa:'visa_status', visastatus:'visa_status',
+  village:'village', district:'district', province:'province',
+  employer:'employer_code', employercode:'employer_code', supervisor:'group_supervisor',
+  grade:'grade', couple:'couple',
+  'weight(kg)':'weight', weight:'weight', 'height(cm)':'height', height:'height',
+  size:'size', hand:'hand', tel:'tel', emergencytel:'emg_tel', emergency:'emg_tel',
+};
+function _csvNorm(s) { return (s || '').toLowerCase().replace(/[\s_./-]/g, ''); }
+
+/* Parse a CSV string → array of cell-arrays (handles quoted fields + "" escapes). */
+function _parseCsv(text) {
+  text = text.replace(/^﻿/, '');
+  const rows = []; let row = [], cur = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; }
+      else cur += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { row.push(cur); cur = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(cur); cur = '';
+      if (row.length > 1 || row[0] !== '') rows.push(row);
+      row = [];
+    } else cur += c;
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  return rows;
+}
+function _csvToWorkers(text) {
+  const rows = _parseCsv(text);
+  if (rows.length < 2) return [];
+  const headers = rows[0].map(h => _CSV_KEYMAP[_csvNorm(h)] || null);
+  const out = [];
+  for (let r = 1; r < rows.length; r++) {
+    const cells = rows[r];
+    if (!cells.length || cells.every(c => !c.trim())) continue;
+    const w = {};
+    headers.forEach((key, i) => { if (key && cells[i] != null && cells[i] !== '') w[key] = cells[i].trim(); });
+    if (Object.keys(w).length) out.push(w);
+  }
+  return out;
+}
+/* JSON export {groups,cities,users} OR array/{workers} → flat workers + groupMeta. */
+function _jsonToImport(obj) {
+  let workers = [], groupMeta = {};
+  if (Array.isArray(obj)) workers = obj;
+  else if (obj && Array.isArray(obj.groups)) {
+    obj.groups.forEach(g => (g.workers || []).forEach(w => workers.push(w)));
+    if (obj.groups.length === 1) groupMeta = { name: obj.groups[0].name, departure: obj.groups[0].departure, route: obj.groups[0].route };
+  } else if (obj && Array.isArray(obj.workers)) workers = obj.workers;
+  return { groupMeta, workers };
+}
+function _fileToDataUrlImport(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(file);
+  });
 }
 
 async function handleImportFile(input) {
@@ -333,38 +405,58 @@ async function handleImportFile(input) {
   statusEl.textContent = 'กำลังอ่านไฟล์…';
   previewEl.innerHTML = '';
   document.getElementById('import-btn-go').disabled = true;
+  const name = (file.name || '').toLowerCase();
 
   try {
-    if (typeof JSZip === 'undefined') {
-      statusEl.textContent = 'กำลังโหลด JSZip…';
-      await _loadJSZip();
+    if (name.endsWith('.csv')) {
+      _importData = { groupMeta: {}, workers: _csvToWorkers(await file.text()) };
+    } else if (name.endsWith('.json')) {
+      _importData = _jsonToImport(JSON.parse(await file.text()));
+    } else if (name.endsWith('.pdf') || (file.type || '').startsWith('image/')) {
+      const dataUrl = await _fileToDataUrlImport(file);
+      const type = name.endsWith('.pdf') ? 'pdf' : 'image';
+      _importData = { groupMeta: {}, workers: [{
+        en_name: (file.name || 'document').replace(/\.[^.]+$/, '').toUpperCase(),
+        _doc: { cat: 'form_1', name: file.name || 'import', type, data: dataUrl },
+      }] };
+    } else {
+      if (typeof JSZip === 'undefined') { statusEl.textContent = 'กำลังโหลด JSZip…'; await _loadJSZip(); }
+      _importData = await parsePptxWorkers(await file.arrayBuffer());
     }
-    const buf = await file.arrayBuffer();
-    statusEl.textContent = 'กำลัง parse…';
-    _importData = await parsePptxWorkers(buf);
 
     const { groupMeta, workers } = _importData;
+    if (!workers || !workers.length) { statusEl.textContent = 'ไม่พบข้อมูลในไฟล์นี้'; return; }
 
-    // Fill target group selector
-    const sel = document.getElementById('import-target-group');
-    const groups = DB.getGroups();
-    sel.innerHTML = groups.map(g =>
-      '<option value="' + esc(g.id) + '">' + esc(g.name) + '</option>'
-    ).join('');
-    // Add option to create new group from PPTX header
-    if (groupMeta.name) {
-      sel.innerHTML = '<option value="_new">' + esc(groupMeta.name) + ' (ใหม่)</option>' + sel.innerHTML;
-    }
-    document.getElementById('import-target-wrap').style.display = 'flex';
-
-    // Preview table
-    statusEl.textContent = 'พบข้อมูล ' + workers.length + ' คน';
+    _fillImportTargets(groupMeta.name);
+    statusEl.textContent = 'พบข้อมูล ' + workers.length + ' รายการ';
     previewEl.innerHTML = _buildPreviewTable(workers);
     document.getElementById('import-btn-go').disabled = false;
   } catch (err) {
     statusEl.textContent = 'Error: ' + (err.message || String(err));
     console.error(err);
   }
+}
+
+/* Build the target-group dropdown: current group first, then others, then "new". */
+function _fillImportTargets(suggestName) {
+  const sel = document.getElementById('import-target-group');
+  const groups = DB.getGroups();
+  const active = (typeof activeGroupId !== 'undefined') ? activeGroupId : '';
+  let html = '';
+  const cur = groups.find(g => g.id === active);
+  if (cur) html += '<option value="' + esc(cur.id) + '">' + esc(cur.name) + ' (ปัจจุบัน)</option>';
+  html += groups.filter(g => g.id !== active).map(g =>
+    '<option value="' + esc(g.id) + '">' + esc(g.name) + '</option>').join('');
+  html += '<option value="__new">➕ สร้างกลุ่มใหม่...</option>';
+  sel.innerHTML = html;
+  const ng = document.getElementById('import-newgroup-name');
+  if (ng && suggestName) ng.value = suggestName;
+  document.getElementById('import-target-wrap').style.display = 'flex';
+  onImportTargetChange();
+}
+function onImportTargetChange() {
+  const v = document.getElementById('import-target-group').value;
+  document.getElementById('import-newgroup-wrap').style.display = (v === '__new') ? 'flex' : 'none';
 }
 
 function _buildPreviewTable(workers) {
@@ -397,10 +489,11 @@ async function doImport() {
 
   let groupId = targetVal;
 
-  // Create new group from PPTX header if chosen
-  if (targetVal === '_new') {
+  // Create a new group if chosen (name from the input, or PPTX/JSON header)
+  if (targetVal === '__new' || targetVal === '_new') {
+    const typed = (document.getElementById('import-newgroup-name')?.value || '').trim();
     groupId = DB.createGroup({
-      name:      groupMeta.name || 'Imported Group',
+      name:      typed || groupMeta.name || 'Imported Group',
       departure: groupMeta.departure || '',
       route:     groupMeta.route || '',
     });
@@ -412,10 +505,12 @@ async function doImport() {
   );
 
   for (const w of workers) {
-    if (!w.en_name && !w.passport_no) { skipped++; continue; }
-    if (w.passport_no && existingPassports.has(w.passport_no)) { skipped++; continue; }
+    const doc = w._doc;
     const copy = { ...w };
-    delete copy._type;
+    delete copy._type; delete copy._doc;
+    if (!doc && !copy.en_name && !copy.passport_no) { skipped++; continue; }
+    if (!doc && copy.passport_no && existingPassports.has(copy.passport_no)) { skipped++; continue; }
+    if (doc) copy.documents = { [doc.cat]: [{ name: doc.name, type: doc.type, data: doc.data }] };
     DB.addWorker(groupId, copy);
     added++;
   }
@@ -424,12 +519,8 @@ async function doImport() {
   activeGroupId = groupId;
   refreshAll();
   statusEl.textContent = '';
-
-  // Flash message
-  const bar = document.getElementById('count-bar');
-  const orig = bar.innerHTML;
-  bar.innerHTML = '<span style="color:#1a8a50;font-weight:700">✔ Import เสร็จ — เพิ่ม ' + added + ' คน' + (skipped ? ', ข้าม ' + skipped + ' (ซ้ำ/ว่าง)' : '') + '</span>';
-  setTimeout(() => { if (bar.innerHTML.includes('Import')) bar.innerHTML = orig; refreshAll(); }, 3500);
+  if (typeof toast === 'function')
+    toast('✔ Import เสร็จ — เพิ่ม ' + added + ' รายการ' + (skipped ? ', ข้าม ' + skipped : ''), 'ok');
 }
 
 /* Load JSZip from the bundled vendor/ copy (offline — no CDN) */

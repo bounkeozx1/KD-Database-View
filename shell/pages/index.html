@@ -123,6 +123,10 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               <span>ສົ່ງອອກ · Export</span>
             </button>
+            <button onclick="openCustomizeSidebar();closeMoreMenu()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span>ປັບแถบข้าง · Customize sidebar</span>
+            </button>
           </div>
         </div>
       </nav>
@@ -169,11 +173,19 @@
 
       <div class="pm-sep"></div>
 
-      <button class="pm-item" onclick="openSettings();switchSettingsTab('appearance');closeProfileMenu()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-        <span>ພາສາ · Language</span>
-        <svg class="pm-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-      </button>
+      <div class="pm-lang-wrap">
+        <button class="pm-item" onclick="togglePmLang(event)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          <span>ພາສາ · Language</span>
+          <svg class="pm-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <div class="pm-lang-list" id="pm-lang-list">
+          <button data-lang="en" onclick="pmSetLang('en')"><span>English</span><svg class="pm-lang-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+          <button data-lang="th" onclick="pmSetLang('th')"><span>ไทย</span><svg class="pm-lang-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+          <button data-lang="lo" onclick="pmSetLang('lo')"><span>ລາວ</span><svg class="pm-lang-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+          <button data-lang="ko" onclick="pmSetLang('ko')"><span>한국어</span><svg class="pm-lang-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+        </div>
+      </div>
 
       <button class="pm-item" onclick="openSettings();switchSettingsTab('about');closeProfileMenu()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
@@ -332,13 +344,9 @@
         <p class="page-sub" id="page-sub" data-i18n="app_sub">Worker Management System</p>
       </div>
       <div class="page-actions">
-        <button class="btn btn-export" onclick="openExportDialog('group')" title="ສົ່ງອອກ / Export">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          <span>ສົ່ງອອກ</span>
-        </button>
-        <button class="btn btn-add admin-only" id="btn-create" onclick="openCreate()">
+        <button class="btn btn-add admin-only" id="btn-create" onclick="openCreate()" title="ສ້າງ / ສົ່ງອອກ / ນຳເຂົ້າ">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          <span>ສ້າງ · Create</span>
+          <span>ເມນູ · Menu</span>
         </button>
       </div>
     </div>
@@ -536,7 +544,7 @@
 
 <!-- WORKER FORM -->
 <div class="overlay" id="form-overlay">
-  <div class="form-modal" onclick="event.stopPropagation()">
+  <div class="form-modal form-page" onclick="event.stopPropagation()">
     <div class="form-header">
       <h2 id="fm-title" data-i18n="fm_add_worker">Add Worker</h2>
       <div class="scan-wrap admin-only">
@@ -582,7 +590,7 @@
       </div>
 
       <div class="form-section">
-        <div class="form-sec-title">ຂໍ້ມູນສ່ວນຕົວ · Personal Information</div>
+        <div class="form-sec-title"><span class="form-sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span>ຂໍ້ມູນສ່ວນຕົວ · Personal</span></div>
         <div class="form-grid">
           <div class="form-group">
             <label><span data-i18n="fm_name_en">Name (EN)</span></label>
@@ -695,7 +703,7 @@
       </div>
 
       <div class="form-section">
-        <div class="form-sec-title">ຂໍ້ມູນພາສປອດ · Passport Information</div>
+        <div class="form-sec-title"><span class="form-sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="10" r="3"/><line x1="9" y1="17" x2="15" y2="17"/></svg></span><span>ຂໍ້ມູນພາສປອດ · Passport</span></div>
         <div class="form-grid col3">
           <div class="form-group">
             <label><span data-i18n="fm_passport_no">Passport No.</span></label>
@@ -727,7 +735,7 @@
       </div>
 
       <div class="form-section">
-        <div class="form-sec-title">ການສຶກສາ & ສະຖານະ · Education &amp; Status</div>
+        <div class="form-sec-title"><span class="form-sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1 2.5 3 6 3s6-2 6-3v-5"/></svg></span><span>ການສຶກສາ & ສະຖານະ · Education &amp; Status</span></div>
         <div class="form-grid">
           <div class="form-group">
             <label>Grade</label>
@@ -765,9 +773,7 @@
       </div>
 
       <div class="form-section">
-        <div class="form-sec-title">ການເດີນທາງ & ການມອບໝາຍ · Travel &amp; Assignment
-          <span style="color:var(--text-faint);font-weight:600;text-transform:none;letter-spacing:0">(ທາງເລືອກ · optional — ຂັ້ນຕອນຄັດເລືອກທີ 2)</span>
-        </div>
+        <div class="form-sec-title"><span class="form-sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3.5S19 3 17.5 4.5L14 8 5.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 4.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></span><span>ການເດີນທາງ & ການມອບໝາຍ · Travel &amp; Assignment</span><span style="color:var(--text-faint);font-weight:600;font-size:0.78rem">(ທາງເລືອກ · optional)</span></div>
         <div class="form-grid">
           <div class="form-group">
             <label><span data-i18n="fm_la_city">Lao City (origin)</span></label>
@@ -930,17 +936,17 @@
 <div class="overlay" id="import-overlay">
   <div class="import-modal" onclick="event.stopPropagation()">
     <div class="form-header">
-      <h2>&#8593; Import ข้อมูลจาก PPTX</h2>
+      <h2>นำเข้าข้อมูล · Import</h2>
       <button class="fm-close" onclick="closeOverlay('import-overlay')">&#x2715;</button>
     </div>
     <div class="import-body">
       <!-- Drop / browse zone -->
       <label class="import-dropzone" id="import-dropzone">
         <div class="import-dz-icon">&#128196;</div>
-        <div class="import-dz-text">คลิกเพื่อเลือกไฟล์ <strong>.pptx</strong><br>
-          <span class="import-dz-sub">รองรับ format บัตรพนักงาน KD (1 สไลด์ = 1 คน)</span>
+        <div class="import-dz-text">คลิกเพื่อเลือกไฟล์<br>
+          <span class="import-dz-sub">PPTX · CSV · JSON · PDF / รูปภาพ &nbsp;(ตรงกับที่ Export ได้)</span>
         </div>
-        <input type="file" id="import-file" accept=".pptx"
+        <input type="file" id="import-file" accept=".pptx,.csv,.json,.pdf,image/*"
                style="display:none" onchange="handleImportFile(this)">
       </label>
 
@@ -949,7 +955,11 @@
       <!-- Target group -->
       <div class="import-target-wrap" id="import-target-wrap" style="display:none">
         <label class="import-target-label">นำเข้าไปยังกลุ่ม:</label>
-        <select id="import-target-group" style="flex:1"></select>
+        <select id="import-target-group" style="flex:1" onchange="onImportTargetChange()"></select>
+      </div>
+      <div class="import-target-wrap" id="import-newgroup-wrap" style="display:none">
+        <label class="import-target-label">ชื่อกลุ่มใหม่:</label>
+        <input id="import-newgroup-name" placeholder="เช่น DAMYANG 2026 – Group 2" style="flex:1">
       </div>
 
       <!-- Preview table -->
@@ -1233,7 +1243,7 @@
 <div class="overlay" id="create-overlay">
   <div class="form-modal create-sheet" onclick="event.stopPropagation()">
     <div class="form-header">
-      <h2>＋ ສ້າງ · Create</h2>
+      <h2>ເມນູ · Menu</h2>
       <button class="fm-close" onclick="closeOverlay('create-overlay')">×</button>
     </div>
     <div class="set-action-list">
@@ -1249,9 +1259,31 @@
       </button>
       <button class="set-action" onclick="createImport()">
         <span class="sa-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/></svg></span>
-        <span class="set-action-body"><span class="set-action-title">ນຳເຂົ້າ PPTX · Import</span><span class="set-action-sub">ນຳເຂົ້າຂໍ້ມູນຈາກໄຟລ໌ PPTX</span></span>
+        <span class="set-action-body"><span class="set-action-title">ນຳເຂົ້າ · Import</span><span class="set-action-sub">PPTX · CSV · JSON · PDF / ຮູບ</span></span>
         <span class="set-action-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
       </button>
+      <button class="set-action" onclick="createExport()">
+        <span class="sa-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg></span>
+        <span class="set-action-body"><span class="set-action-title">ສົ່ງອອກ · Export</span><span class="set-action-sub">PDF · PNG · CSV · ເອກະສານ</span></span>
+        <span class="set-action-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── CUSTOMIZE SIDEBAR ── -->
+<div class="overlay" id="customize-overlay">
+  <div class="form-modal customize-modal" onclick="event.stopPropagation()">
+    <div class="cz-head">
+      <div class="cz-head-text">
+        <h2>ປັບແຖບຂ້າງ · Customize sidebar</h2>
+        <p>ເລືອກລາຍການທີ່ຈະສະແດງໃນແຖບຂ້າງ · Choose which items appear in your sidebar.</p>
+      </div>
+      <button class="fm-close" onclick="closeOverlay('customize-overlay')">&#x2715;</button>
+    </div>
+    <div class="cz-list" id="cz-list"></div>
+    <div class="cz-foot">
+      <button class="btn btn-primary" onclick="closeOverlay('customize-overlay')">Done</button>
     </div>
   </div>
 </div>

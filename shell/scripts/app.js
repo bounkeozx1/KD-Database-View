@@ -637,6 +637,7 @@ function _groupRowHtml(g, s, totalGroups) {
 }
 
 function renderSidebar() {
+  applySidebarPrefs();   // honour Customize-sidebar visibility choices
   const groups = DB.getGroups();
   const stats  = DB.getAllStats();
   const q = sidebarSearchQ.toLowerCase();
@@ -789,9 +790,69 @@ function toggleSidebarSearch() {
 // ── "More" submenu ────────────────────────────────────────────────
 function toggleMoreMenu(event) {
   if (event) event.stopPropagation();
-  document.getElementById('sb-more')?.classList.toggle('open');
+  const more = document.getElementById('sb-more');
+  const menu = document.getElementById('more-menu');
+  if (!more || !menu) return;
+  const willOpen = !more.classList.contains('open');
+  more.classList.toggle('open');
+  if (willOpen) {
+    // Position the fixed popup just below the More button (avoids overflow clipping)
+    const btn = more.querySelector('button');
+    const r = btn.getBoundingClientRect();
+    const mw = menu.offsetWidth || 200;
+    let left = r.left;
+    if (left + mw > window.innerWidth - 8) left = Math.max(8, window.innerWidth - mw - 8);
+    menu.style.left = left + 'px';
+    menu.style.top  = (r.bottom + 4) + 'px';
+  }
 }
 function closeMoreMenu() { document.getElementById('sb-more')?.classList.remove('open'); }
+
+// ── CUSTOMIZE SIDEBAR (choose which items show) ───────────────────
+const SIDEBAR_ITEMS = [
+  { key:'create',    sel:'.sb-create',         label:'ສ້າງ · Create',
+    icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>' },
+  { key:'dashboard', sel:'#nav-dashboard',     label:'ໜ້າຫຼັກ · Dashboard',
+    icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>' },
+  { key:'workers',   sel:'#nav-workers',       label:'ກຸ່ມ · Groups',
+    icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>' },
+  { key:'alerts',    sel:'#nav-alerts',        label:'ພາສປອດໃກ້ໝົດ · Alerts',
+    icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>' },
+  { key:'projects',  sel:'#sb-groups-section', label:'ໂປຣເຈັກ · Projects',
+    icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>' },
+];
+function _hiddenSidebar() {
+  try { return new Set(JSON.parse(localStorage.getItem('kd_sidebar_hidden') || '[]')); } catch (e) { return new Set(); }
+}
+function applySidebarPrefs() {
+  const hidden = _hiddenSidebar();
+  SIDEBAR_ITEMS.forEach(it => {
+    const el = document.querySelector(it.sel);
+    if (!el) return;
+    if (hidden.has(it.key)) el.style.display = 'none';
+    else el.style.removeProperty('display');  // let CSS (e.g. .admin-only) decide visibility
+  });
+}
+function openCustomizeSidebar() {
+  const hidden = _hiddenSidebar();
+  const list = document.getElementById('cz-list');
+  if (list) list.innerHTML = SIDEBAR_ITEMS.map(it => {
+    const on = !hidden.has(it.key);
+    return '<button class="cz-item ' + (on ? 'on' : '') + '" onclick="toggleSidebarItem(\'' + it.key + '\', this)">' +
+      '<span class="cz-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>' +
+      '<span class="cz-item-ic">' + it.icon + '</span>' +
+      '<span class="cz-item-label">' + esc(it.label) + '</span>' +
+    '</button>';
+  }).join('');
+  openOverlay('customize-overlay');
+}
+function toggleSidebarItem(key, btn) {
+  const hidden = _hiddenSidebar();
+  if (hidden.has(key)) hidden.delete(key); else hidden.add(key);
+  localStorage.setItem('kd_sidebar_hidden', JSON.stringify([...hidden]));
+  if (btn) btn.classList.toggle('on', !hidden.has(key));
+  applySidebarPrefs();
+}
 
 // ── Language globe dropdown ───────────────────────────────────────
 function toggleLangMenu(event) {
@@ -809,9 +870,43 @@ function toggleProfileMenu(event) {
   if (event) event.stopPropagation();
   const sb = document.getElementById('sidebar');
   if (sb && sb.classList.contains('collapsed')) sb.classList.remove('collapsed');
+  document.getElementById('pm-lang-list')?.classList.remove('open');   // reset language flyout
   document.getElementById('sb-profile-menu')?.classList.toggle('open');
 }
-function closeProfileMenu() { document.getElementById('sb-profile-menu')?.classList.remove('open'); }
+function closeProfileMenu() {
+  document.getElementById('sb-profile-menu')?.classList.remove('open');
+  document.getElementById('pm-lang-list')?.classList.remove('open');
+}
+
+// Language flyout inside the profile menu (only the 4 supported languages)
+function togglePmLang(e) {
+  if (e) e.stopPropagation();
+  const list = document.getElementById('pm-lang-list');
+  const btn  = (e && e.currentTarget) || document.querySelector('.pm-lang-wrap > .pm-item');
+  if (!list) return;
+  const willOpen = !list.classList.contains('open');
+  list.classList.toggle('open');
+  if (willOpen && btn) {
+    _pmMarkLang();
+    const r  = btn.getBoundingClientRect();
+    const mw = list.offsetWidth || 200;
+    let left = r.right + 6;                                   // flyout to the right (like the reference)
+    if (left + mw > window.innerWidth - 8) left = Math.max(8, r.left - mw - 6);  // flip left if no room
+    let top = r.top - 6;
+    const mh = list.offsetHeight || 180;
+    if (top + mh > window.innerHeight - 8) top = Math.max(8, window.innerHeight - mh - 8);
+    list.style.left = left + 'px';
+    list.style.top  = top + 'px';
+  }
+}
+function _pmMarkLang() {
+  const cur = (typeof currentLang !== 'undefined' ? currentLang : 'en');
+  document.querySelectorAll('#pm-lang-list button').forEach(b => b.classList.toggle('on', b.dataset.lang === cur));
+}
+function pmSetLang(lang) {
+  changeLangFromSettings(lang);   // switch language + live re-render
+  _pmMarkLang();
+}
 
 function profileAddAccount() {
   closeProfileMenu();
@@ -2762,12 +2857,24 @@ function createAddWorker() {
   openWorkerForm(null);
 }
 function createImport()    { closeOverlay('create-overlay'); openImport(); }
+function createExport()    { closeOverlay('create-overlay'); openExportDialog('group'); }
 
 // ── IMPORT (PPTX stub — feature not yet implemented) ──────────────
 function openImport() { openOverlay('import-overlay'); }
 function doImport()   { toast('ຍັງບໍ່ທັນ implement ຟີເຈີ Import PPTX', 'warn'); }
 
 // ── EXPORT CSV ────────────────────────────────────────────────────
+// Safe download filename: keep Unicode letters (Lao/Thai/…), strip only the
+// characters a filesystem rejects, and fall back when nothing usable remains.
+function _safeFile(name, fallback) {
+  let s = (name == null ? '' : String(name)).trim()
+    .replace(/[\/\\:*?"<>|\x00-\x1f]+/g, '_')   // illegal FS chars → _
+    .replace(/\s+/g, ' ')
+    .replace(/_{2,}/g, '_')
+    .replace(/^[_\s]+|[_\s]+$/g, '');
+  return s || fallback || 'export';
+}
+
 function exportCSV() {
   const g  = DB.getGroup(activeGroupId);
   const ws = DB.getWorkers(activeGroupId);
@@ -2784,7 +2891,7 @@ function exportCSV() {
   const csv = '﻿' + [headers.join(','), ...rows].join('\n');
   const a = document.createElement('a');
   a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-  a.download = (g ? g.name.replace(/[^a-z0-9]/gi, '_') : 'workers') + '.csv';
+  a.download = _safeFile(g && g.name, 'workers') + '.csv';
   a.click();
 }
 
@@ -2950,7 +3057,7 @@ async function _doKdCardPng(workers, g) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = ((w.en_name || w.lo_name || 'worker').replace(/[^a-z0-9_]/gi, '_') + '_kd_card.png');
+      a.download = _safeFile(w.en_name || w.lo_name, 'worker') + '_kd_card.png';
       a.click();
       URL.revokeObjectURL(url);
       if (workers.length > 1) await new Promise(r => setTimeout(r, 400));
@@ -2980,7 +3087,7 @@ function _doExportCsv(workers, g) {
   const csv = '﻿' + [selFields.map(f => f.label).join(','), ...rows].join('\n');
   const a = document.createElement('a');
   a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-  a.download = (gName.replace(/[^a-z0-9]/gi, '_') || 'workers') + '.csv';
+  a.download = _safeFile(gName, 'workers') + '.csv';
   a.click();
 }
 
@@ -3018,7 +3125,7 @@ async function _doExportDocs(workers) {
     try {
       const resp = await fetch(doc.path);
       const blob = await resp.blob();
-      const wName = (w.en_name || w.lo_name || w.uid).replace(/[^a-z0-9]/gi, '_');
+      const wName = _safeFile(w.en_name || w.lo_name || w.uid, 'worker');
       const ext   = doc.type || (doc.name || '').split('.').pop() || 'bin';
       zip.file(wName + '/' + cat.key + '_v' + (doc.version || 1) + '.' + ext, blob);
     } catch(e) { /* skip unavailable file */ }
@@ -3027,7 +3134,7 @@ async function _doExportDocs(workers) {
   const url = URL.createObjectURL(content);
   const a = document.createElement('a');
   a.href = url;
-  a.download = ((DB.getGroup(activeGroupId) || {}).name || 'workers').replace(/[^a-z0-9]/gi, '_') + '_docs.zip';
+  a.download = _safeFile((DB.getGroup(activeGroupId) || {}).name, 'workers') + '_docs.zip';
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -3043,10 +3150,12 @@ function closeOverlay(id) {
   if (!document.querySelector('.overlay.open')) document.body.classList.remove('no-scroll');
 }
 
-// Close the scan-type dropdown when clicking outside it
+// Close transient popups when clicking outside them
 document.addEventListener('click', e => {
   const w = document.querySelector('.scan-wrap');
   if (w && !w.contains(e.target)) closeScanMenu();
+  const more = document.getElementById('sb-more');
+  if (more && more.classList.contains('open') && !more.contains(e.target)) closeMoreMenu();
 });
 
 // Keyboard shortcut: Ctrl/⌘ + ,  → open Settings (matches the profile-menu hint)
@@ -3058,7 +3167,7 @@ document.addEventListener('keydown', e => {
 });
 
 // Click outside to close
-['view-overlay','form-overlay','group-overlay','confirm-overlay','settings-overlay','import-overlay','scan-overlay','docview-overlay','photo-editor-overlay','export-overlay','create-overlay'].forEach(id => {
+['view-overlay','form-overlay','group-overlay','confirm-overlay','settings-overlay','import-overlay','scan-overlay','docview-overlay','photo-editor-overlay','export-overlay','create-overlay','customize-overlay'].forEach(id => {
   document.getElementById(id).addEventListener('click', e => {
     if (e.target.id === id) closeOverlay(id);
   });

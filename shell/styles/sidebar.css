@@ -140,11 +140,13 @@
 
 /* "More" with submenu */
 .sb-more { position: relative; }
+/* Fixed-position popup so it is never clipped by .sidebar-scroll's overflow.
+   left/top are set by toggleMoreMenu() relative to the button. */
 .sb-submenu {
-  display: none; position: absolute; left: calc(100% - 6px); top: 0;
-  min-width: 180px; background: #1e1e1e;
+  display: none; position: fixed; left: 0; top: 0;
+  min-width: 200px; background: #1e1e1e;
   border: 1px solid var(--sb-border); border-radius: 12px;
-  box-shadow: 0 14px 36px -10px rgba(0,0,0,0.6); padding: 6px; z-index: 320;
+  box-shadow: 0 14px 36px -10px rgba(0,0,0,0.6); padding: 6px; z-index: 620;
 }
 .sb-more.open .sb-submenu { display: block; }
 .sb-submenu button {
@@ -302,6 +304,28 @@
 .pm-item .pm-chev { flex: 0 0 auto; width: 15px; height: 15px; color: var(--sb-faint); }
 .pm-logout { color: #f87171; }
 .pm-logout svg { color: #f87171; }
+
+/* Language flyout — floats out to the side (fixed → never clipped).
+   left/top set by togglePmLang(). Shows only the 4 supported languages. */
+.pm-lang-wrap { position: relative; }
+.pm-lang-list {
+  display: none; position: fixed; left: 0; top: 0; z-index: 640;
+  min-width: 190px; background: #1e1e1e;
+  border: 1px solid var(--sb-border); border-radius: 12px;
+  box-shadow: 0 14px 36px -10px rgba(0,0,0,0.6); padding: 6px;
+}
+.pm-lang-list.open { display: block; }
+.pm-lang-list button {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: transparent; border: none; border-radius: 8px; cursor: pointer;
+  padding: 9px 11px; font-family: inherit; font-size: 0.86rem; font-weight: 500; color: var(--sb-text);
+  transition: background 0.12s, color 0.12s;
+}
+.pm-lang-list button span { flex: 1; }
+.pm-lang-list button:hover { background: var(--sb-hover); }
+.pm-lang-list button.on { font-weight: 700; }
+.pm-lang-check { width: 15px; height: 15px; flex: none; color: #3dba7a; opacity: 0; }
+.pm-lang-list button.on .pm-lang-check { opacity: 1; }
 
 /* ── Collapsed state (icon rail) ── */
 /* ── Collapsed icon rail — desktop only ── */
