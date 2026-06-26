@@ -42,12 +42,19 @@ function _verifyPw(plain, stored) {
   return String(stored) === String(plain == null ? '' : plain); // legacy plaintext
 }
 
-/* ── Read: assemble the flat worker object ── */
-function employeeToWorker(row) {
-  const p = d().prepare('SELECT passport_no, issue_date, expiry_date FROM passports WHERE employee_uid=?').get(row.uid) || {};
+/* ── Read: assemble the flat worker object ──
+ * `passportMap` / `docsMap` are optional pre-fetched batches (uid → rows). When
+ * provided (the bootstrap path), no per-employee query is issued — this turns the
+ * old N+1 (2 queries × every employee) into a constant 2 queries total. */
+function employeeToWorker(row, passportMap, docsMap) {
+  const p = passportMap
+    ? (passportMap[row.uid] || {})
+    : (d().prepare('SELECT passport_no, issue_date, expiry_date FROM passports WHERE employee_uid=?').get(row.uid) || {});
   const docs = {};
-  d().prepare('SELECT category, file_path, type, name FROM documents WHERE employee_uid=? ORDER BY id').all(row.uid)
-     .forEach(doc => {
+  const docRows = docsMap
+    ? (docsMap[row.uid] || [])
+    : d().prepare('SELECT category, file_path, type, name FROM documents WHERE employee_uid=? ORDER BY id').all(row.uid);
+  docRows.forEach(doc => {
        (docs[doc.category] = docs[doc.category] || []).push({ name: doc.name, type: doc.type, data: doc.file_path });
      });
   const w = {
@@ -61,7 +68,7 @@ function employeeToWorker(row) {
     kr_city: row.kr_city || '', la_city: row.la_city || '',
     grade: row.grade || '', visa_status: row.visa_status || '',
     education: row.education || '', work_experience: row.work_experience || '', languages: row.languages || '',
-    photo: row.photo_path || '',
+    photo: row.photo_path || '', photo_orig: row.photo_orig || '',
     passport_no: p.passport_no || '', passport_issue: p.issue_date || '', passport_expiry: p.expiry_date || '',
     documents: docs,
   };
@@ -69,18 +76,83 @@ function employeeToWorker(row) {
 }
 
 function getBootstrap() {
+  // Batch-load everything in a handful of queries instead of N+1 per employee.
+  const empByGroup = {};
+  d().prepare('SELECT * FROM employees ORDER BY group_id, sort_order, created_at').all()
+     .forEach(e => { (empByGroup[e.group_id] = empByGroup[e.group_id] || []).push(e); });
+  const passportMap = {};
+  d().prepare('SELECT employee_uid, passport_no, issue_date, expiry_date FROM passports').all()
+     .forEach(p => { passportMap[p.employee_uid] = p; });
+  const docsMap = {};
+  d().prepare('SELECT employee_uid, category, file_path, type, name FROM documents ORDER BY id').all()
+     .forEach(doc => { (docsMap[doc.employee_uid] = docsMap[doc.employee_uid] || []).push(doc); });
+
   const groups = d().prepare('SELECT * FROM groups ORDER BY sort_order, created_at').all().map(g => ({
     id: g.id, name: g.name, departure: g.departure || '', route: g.route || '',
     site_code: g.site_code || '',
     province_code: g.province_code || '',
     pinned: !!g.pinned, archived: !!g.archived,
-    workers: d().prepare('SELECT * FROM employees WHERE group_id=? ORDER BY sort_order, created_at').all(g.id).map(employeeToWorker),
+    workers: (empByGroup[g.id] || []).map(e => employeeToWorker(e, passportMap, docsMap)),
   }));
   const cities = { kr: [], la: [] };
   d().prepare('SELECT country, code, name FROM cities ORDER BY id').all()
      .forEach(c => { (cities[c.country] = cities[c.country] || []).push({ code: c.code, name: c.name }); });
   const users = d().prepare('SELECT username, role, name FROM users ORDER BY id').all();
-  return { groups, cities, users };
+  const settings = getSettings();
+  settings.doc_cats = getDocCategories(settings);   // self-healed, server-persisted list
+  return { groups, cities, users, settings };
+}
+
+/* ── Document categories (server-persisted + self-healing) ──
+ * Categories used to live only in the browser's localStorage, so they vanished
+ * whenever the site was opened from a new origin (e.g. each fresh Cloudflare
+ * quick-tunnel URL) — and every document filed under them looked "lost". They
+ * now live in app_settings, and the list is augmented with any category that
+ * actually has documents but isn't in the configured list, so no uploaded
+ * document can ever be hidden by a missing category definition. */
+const DEFAULT_DOC_CATS = [
+  { key: 'passport',  label: 'Passport' },
+  { key: 'id_card',   label: 'ID Card' },
+  { key: 'residence', label: 'Residence certificate' },
+  { key: 'form_1',    label: 'Form 1' },
+  { key: 'form_2',    label: 'Form 2' },
+  { key: 'land_doc',  label: 'Land document' },
+];
+function _deriveCatLabel(key) {
+  if (/^doc_/i.test(key)) return 'Document ' + key.replace(/^doc_/i, '').slice(0, 6);
+  return key.replace(/_/g, ' ').replace(/\b\w/g, m => m.toUpperCase());
+}
+function getDocCategories(settings) {
+  settings = settings || getSettings();
+  const cats = Array.isArray(settings.doc_cats) && settings.doc_cats.length
+    ? settings.doc_cats.slice() : DEFAULT_DOC_CATS.slice();
+  const known = new Set(cats.map(c => c && c.key));
+  let changed = false;
+  d().prepare('SELECT DISTINCT category FROM documents').all().forEach(r => {
+    const key = r.category;
+    if (key && key !== 'photo' && !known.has(key)) {
+      cats.push({ key, label: _deriveCatLabel(key) });
+      known.add(key);
+      changed = true;
+    }
+  });
+  if (changed) setSetting('doc_cats', cats);   // persist the recovered list once
+  return cats;
+}
+
+/* ── App settings (key-value, server-persisted) ── */
+function getSettings() {
+  const out = {};
+  d().prepare('SELECT key, value FROM app_settings').all().forEach(r => {
+    try { out[r.key] = JSON.parse(r.value); } catch (e) { out[r.key] = r.value; }
+  });
+  return out;
+}
+function setSetting(key, value) {
+  if (!key) return 'invalid';
+  const v = JSON.stringify(value);
+  d().prepare('INSERT INTO app_settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(String(key), v);
+  return 'ok';
 }
 
 function countEmployees() { return d().prepare('SELECT COUNT(*) AS c FROM employees').get().c; }
@@ -103,8 +175,9 @@ function updateGroup(id, patch) {
 }
 function deleteGroup(id) {
   // remove stored files for this group's employees first
-  d().prepare('SELECT uid, photo_path FROM employees WHERE group_id=?').all(id).forEach(e => {
+  d().prepare('SELECT uid, photo_path, photo_orig FROM employees WHERE group_id=?').all(id).forEach(e => {
     if (e.photo_path) deleteStored(e.photo_path);
+    if (e.photo_orig) deleteStored(e.photo_orig);
     d().prepare('SELECT file_path FROM documents WHERE employee_uid=?').all(e.uid).forEach(x => deleteStored(x.file_path));
   });
   d().prepare('DELETE FROM groups WHERE id=?').run(id); // cascades to employees/passports/documents
@@ -167,9 +240,10 @@ function getActivity(employeeUid) {
 
 function addEmployee(groupId, w) {
   const id = w.uid || uid();
-  const photo = saveDataUrl(w.photo, 'photo');
-  const cols = ['uid','group_id','photo_path', ...EMP_COLS];
-  const vals = [id, groupId, photo, ...EMP_COLS.map(c => w[c] || '')];
+  const photo     = saveDataUrl(w.photo, 'photo');
+  const photoOrig = saveDataUrl(w.photo_orig, 'photo');
+  const cols = ['uid','group_id','photo_path','photo_orig', ...EMP_COLS];
+  const vals = [id, groupId, photo, photoOrig, ...EMP_COLS.map(c => w[c] || '')];
   d().prepare('INSERT INTO employees (' + cols.join(',') + ') VALUES (' + cols.map(() => '?').join(',') + ')').run(...vals);
   _writePassport(id, w);
   if (w.documents) _writeDocuments(id, w.documents);
@@ -187,16 +261,26 @@ function updateEmployee(id, patch) {
     photoChanged = true;
     cols.push('photo_path=?'); vals.push(newPhoto);
   }
+  let oldOrig = null, newOrig = null, origChanged = false;
+  if ('photo_orig' in patch) {
+    const cur = d().prepare('SELECT photo_orig FROM employees WHERE uid=?').get(id);
+    oldOrig = cur && cur.photo_orig || '';
+    newOrig = saveDataUrl(patch.photo_orig, 'photo');
+    origChanged = true;
+    cols.push('photo_orig=?'); vals.push(newOrig);
+  }
   if (cols.length) { vals.push(id); d().prepare('UPDATE employees SET ' + cols.join(',') + ' WHERE uid=?').run(...vals); }
   if (photoChanged && oldPhoto && oldPhoto !== newPhoto && isStoredPath(oldPhoto)) deleteStored(oldPhoto);
+  if (origChanged && oldOrig && oldOrig !== newOrig && isStoredPath(oldOrig)) deleteStored(oldOrig);
   if ('passport_no' in patch || 'passport_issue' in patch || 'passport_expiry' in patch) _writePassport(id, patch);
   if ('documents' in patch) _writeDocuments(id, patch.documents);
-  const changed = Object.keys(patch).filter(k => !['photo','documents','_by'].includes(k)).join(', ');
+  const changed = Object.keys(patch).filter(k => !['photo','photo_orig','documents','_by'].includes(k)).join(', ');
   if (changed) logActivity(id, 'updated', changed, patch._by || null);
 }
 function deleteEmployee(id) {
-  const e = d().prepare('SELECT photo_path, en_name FROM employees WHERE uid=?').get(id);
+  const e = d().prepare('SELECT photo_path, photo_orig, en_name FROM employees WHERE uid=?').get(id);
   if (e && e.photo_path) deleteStored(e.photo_path);
+  if (e && e.photo_orig) deleteStored(e.photo_orig);
   d().prepare('SELECT file_path FROM documents WHERE employee_uid=?').all(id).forEach(x => deleteStored(x.file_path));
   d().prepare('DELETE FROM employees WHERE uid=?').run(id);
 }
@@ -325,5 +409,5 @@ module.exports = {
   addEmployee, updateEmployee, deleteEmployee,
   addCity, deleteCity, addUser, deleteUser, updateUser, login, importAll,
   listDocuments, addDocument, deleteDocument,
-  getActivity,
+  getActivity, getSettings, setSetting,
 };

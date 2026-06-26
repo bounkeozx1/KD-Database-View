@@ -6,6 +6,7 @@
 // ── State ─────────────────────────────────────────────────────────
 let activeGroupId = '';
 let _currentViewUid = null;  // uid of worker currently shown in detail overlay
+let _navUids = [];           // ordered uids for ←/→ navigation in the detail view
 let sidebarSearchQ = '';
 let tableFiltered  = [];
 let sortCol  = 'worker_id';
@@ -70,6 +71,7 @@ function toggleTheme() { setThemePref(document.documentElement.getAttribute('dat
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     await DB.init();
+    await _migrateDocCatsToServer();
   } catch (e) {
     document.body.innerHTML =
       '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;' +
@@ -201,8 +203,8 @@ function calcAge(dob) {
 }
 // Passport-expiry alert thresholds (configurable in Settings → Notifications).
 // Stored in months; default 12 (urgent/red) and 24 (upcoming/yellow).
-function expiryWarnMonths() { return Math.max(1, parseInt(localStorage.getItem('kd_warn_months'), 10) || 12); }
-function expiryNearMonths() { return Math.max(expiryWarnMonths(), parseInt(localStorage.getItem('kd_near_months'), 10) || 24); }
+function expiryWarnMonths() { return Math.max(1, parseInt(DB.getSetting('warn_months', 12), 10) || 12); }
+function expiryNearMonths() { return Math.max(expiryWarnMonths(), parseInt(DB.getSetting('near_months', 24), 10) || 24); }
 function expiryClass(s) {
   const d = parseDate(s);
   if (!d) return '';
@@ -247,7 +249,7 @@ function avatarHtml(name, sizeClass) {
 function personPhoto(w, sizeClass) {
   if (w && w.photo) {
     return '<div class="avatar ' + sizeClass + ' has-photo" title="' + esc(w.en_name || '') + '">' +
-           '<img src="' + w.photo + '" alt="' + esc(w.en_name || '') + '"></div>';
+           '<img src="' + w.photo + '" alt="' + esc(w.en_name || '') + '" loading="lazy" decoding="async"></div>';
   }
   return avatarHtml(w ? w.en_name : '', sizeClass);
 }
@@ -810,15 +812,15 @@ function closeMoreMenu() { document.getElementById('sb-more')?.classList.remove(
 
 // ── CUSTOMIZE SIDEBAR (choose which items show) ───────────────────
 const SIDEBAR_ITEMS = [
-  { key:'create',    sel:'.sb-create',         label:'ສ້າງ · Create',
+  { key:'create',    sel:'.sb-create',         lo:'ສ້າງ', en:'Create',
     icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>' },
-  { key:'dashboard', sel:'#nav-dashboard',     label:'ໜ້າຫຼັກ · Dashboard',
+  { key:'dashboard', sel:'#nav-dashboard',     lo:'ໜ້າຫຼັກ', en:'Dashboard',
     icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>' },
-  { key:'workers',   sel:'#nav-workers',       label:'ກຸ່ມ · Groups',
+  { key:'workers',   sel:'#nav-workers',       lo:'ກຸ່ມ', en:'Groups',
     icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>' },
-  { key:'alerts',    sel:'#nav-alerts',        label:'ພາສປອດໃກ້ໝົດ · Alerts',
+  { key:'alerts',    sel:'#nav-alerts',        lo:'ພາສປອດໃກ້ໝົດ', en:'Alerts',
     icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>' },
-  { key:'projects',  sel:'#sb-groups-section', label:'ໂປຣເຈັກ · Projects',
+  { key:'projects',  sel:'#sb-groups-section', lo:'ໂປຣເຈັກ', en:'Projects',
     icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>' },
 ];
 function _hiddenSidebar() {
@@ -841,7 +843,7 @@ function openCustomizeSidebar() {
     return '<button class="cz-item ' + (on ? 'on' : '') + '" onclick="toggleSidebarItem(\'' + it.key + '\', this)">' +
       '<span class="cz-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>' +
       '<span class="cz-item-ic">' + it.icon + '</span>' +
-      '<span class="cz-item-label">' + esc(it.label) + '</span>' +
+      '<span class="cz-item-label">' + esc(bi(it.lo, it.en)) + '</span>' +
     '</button>';
   }).join('');
   openOverlay('customize-overlay');
@@ -1002,6 +1004,17 @@ function renderDashboard() {
     '<span style="color:var(--sb-green,#3dba7a)">▲ ' + total + '</span>&nbsp;' + t('dz_total_projects');
   if (el('dz-alerts-foot'))   el('dz-alerts-foot').textContent   =
     alertCount > 0 ? t('dz_needs_attention') : t('dz_all_clear');
+
+  // Completeness summary: average data-field % + how many records are fully done
+  let dataSum = 0, fullDone = 0;
+  allWorkers.forEach(w => {
+    const dc = dataCompleteness(w), kc = docsCompleteness(w);
+    dataSum += dc.pct;
+    if (dc.pct >= 100 && kc.pct >= 100) fullDone++;
+  });
+  const avgData = workers ? Math.round(dataSum / workers) : 0;
+  if (el('dz-cmp-num'))  el('dz-cmp-num').textContent  = avgData + '%';
+  if (el('dz-cmp-foot')) el('dz-cmp-foot').textContent = bi('ຄົບສົມບູນ ', 'ครบสมบูรณ์ ') + fullDone + '/' + workers + bi(' ຄົນ', ' คน');
 
   // Notification badge in header
   const nb = el('th-notif-badge');
@@ -1775,6 +1788,7 @@ function renderCards() {
   grid.className = 'cards-grid kd-grid';
   grid.innerHTML = tableFiltered.map(w =>
     '<div class="idc-cell" onclick="openView(\'' + esc(w.uid) + '\')">' +
+      _completenessChip(w) +
       _renderKdCard(w, g) +
     '</div>'
   ).join('');
@@ -2026,7 +2040,7 @@ function _renderDetailBody(w, g) {
     '<div class="vd-sections">' +
       (warn ? '<div class="vd-warn">&#9888; ' + t('vc_passport_warn', { date: w.passport_expiry }) + '</div>' : '') +
 
-      sec('👤', 'ຂໍ້ມູນລະບຸຕົວຕົນ', 'Identity',
+      sec('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>', 'ຂໍ້ມູນລະບຸຕົວຕົນ', 'Identity',
         row('Worker ID', 'ລະຫັດ', _ev(w,'worker_id', esc(w.worker_id||'--'), 'text')) +
         row(t('vc_name'), 'EN Name', _ev(w,'en_name', esc(w.en_name||'--'), 'text')) +
         row('ຊື່ ນາມສະກຸນ', 'LO Name', _ev(w,'lo_name', esc(w.lo_name||'--'), 'text')) +
@@ -2036,13 +2050,13 @@ function _renderDetailBody(w, g) {
         row(t('vc_sex'), 'ເພດ', ed ? _ev(w,'sex','','select',sexOpts) : (w.sex==='M'?'♂ '+t('fm_sex_m'):w.sex==='F'?'♀ '+t('fm_sex_f'):'--'))
       ) +
 
-      sec('📍', 'ທີ່ຢູ່', 'Address',
+      sec('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>', 'ທີ່ຢູ່', 'Address',
         row('ແຂວງ', 'Province', _ev(w,'province', esc(w.province||'--'), 'text')) +
         row('ເມືອງ', 'District', _ev(w,'district', esc(w.district||'--'), 'text')) +
         row('ບ້ານ',  'Village',  _ev(w,'village',  esc(w.village||'--'),  'text'))
       ) +
 
-      sec('📋', 'ຂໍ້ມູນຮ່າງກາຍ', 'Physical',
+      sec('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>', 'ຂໍ້ມູນຮ່າງກາຍ', 'Physical',
         row(t('vc_weight_height'), 'Kg / Cm', ed
           ? '<div class="vd-split">' + _ev(w,'weight','','text') + _ev(w,'height','','text') + '</div>'
           : '<div class="vd-split"><span>'+(w.weight?w.weight+' Kg':'--')+'</span><span>'+(w.height?w.height+' Cm':'--')+'</span></div>') +
@@ -2051,13 +2065,13 @@ function _renderDetailBody(w, g) {
         row(t('vc_blood'), 'ກຸ່ມເລືອດ', ed ? _ev(w,'blood','','select',bloodOpts) : esc(w.blood||'--'))
       ) +
 
-      sec('🛂', 'ເອກະສານເດີນທາງ', 'Passport',
+      sec('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>', 'ເອກະສານເດີນທາງ', 'Passport',
         row(t('vc_passport'), 'ເລກທີ',   _ev(w,'passport_no', '<span style="font-family:monospace;letter-spacing:1px">'+esc(w.passport_no||'--')+'</span>', 'text')) +
         row(t('vc_issue'),   'ວັນທີອອກ', _ev(w,'passport_issue', esc(w.passport_issue||'--'), 'text')) +
         row(t('vc_expiry'),  'ໝົດອາຍຸ',  ed ? _ev(w,'passport_expiry','','text') : '<span class="'+expiryClass(w.passport_expiry)+'">'+esc(w.passport_expiry||'--')+'</span>')
       ) +
 
-      sec('📞', 'ຕິດຕໍ່', 'Contact',
+      sec('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>', 'ຕິດຕໍ່', 'Contact',
         row(t('vc_tel'),  'ໂທຫຼັກ',   _ev(w,'tel',     esc(w.tel||'--'),     'text')) +
         row('Emergency', 'ໂທສຸກເສີນ', _ev(w,'emg_tel', esc(w.emg_tel||'--'), 'text'))
       ) +
@@ -2085,6 +2099,7 @@ function _renderDetailBody(w, g) {
         '<div class="vph-name-lo">' + esc(w.lo_name || '') + '</div>' +
         (w.worker_id ? '<div class="vph-id">' + esc(w.worker_id) + '</div>' : '') +
       '</div>' +
+      _completenessBox(w) +
     '</div>';
 
   return '<div class="vm-single-view">' + photoHeader + tableHtml + '</div>';
@@ -2093,6 +2108,15 @@ function _renderDetailBody(w, g) {
 function _renderDetailTopbar(w, uid) {
   const el = document.getElementById('vm-topbar-actions'); if (!el) return;
   let h = '';
+  // Prev / next worker (also bound to ← / → keys)
+  const ni = _navUids.indexOf(uid);
+  if (_navUids.length > 1 && ni >= 0) {
+    const prevDis = ni <= 0 ? ' disabled' : '';
+    const nextDis = ni >= _navUids.length - 1 ? ' disabled' : '';
+    h += '<button class="vm-action-btn vm-nav-btn" onclick="_navWorker(-1)" title="'+esc(t('nav_prev')||'ก่อนหน้า (←)')+'"'+prevDis+'>&#8249;</button>';
+    h += '<button class="vm-action-btn vm-nav-btn" onclick="_navWorker(1)" title="'+esc(t('nav_next')||'ถัดไป (→)')+'"'+nextDis+'>&#8250;</button>';
+    h += '<span class="vm-nav-count">'+(ni+1)+'/'+_navUids.length+'</span>';
+  }
   h += '<button class="vm-action-btn" onclick="zoomCard(\''+esc(uid)+'\')" title="'+esc(t('vd_zoom'))+'">&#10530;</button>';
   h += '<button class="vm-action-btn" onclick="openExportDialog(\'worker\',\''+esc(uid)+'\')">&#11015; Export</button>';
   if (isAdmin()) {
@@ -2170,6 +2194,12 @@ function openView(uid) {
   _currentViewUid = uid;
   detailEditMode = false;
 
+  // Build the ←/→ navigation order: follow the table the user is looking at
+  // (filtered + sorted) when it contains this worker, otherwise the group order.
+  const navSrc = (tableFiltered && tableFiltered.some(x => x.uid === uid))
+    ? tableFiltered : (g ? g.workers : []);
+  _navUids = navSrc.map(x => x.uid);
+
   const age   = calcAge(w.dob);
   const idNum = w.worker_id ? w.worker_id.split('-').pop() : '--';
 
@@ -2204,12 +2234,47 @@ function openView(uid) {
 
   // Load docs immediately (no tab, single scroll page)
   document.getElementById('vm-docs-content').innerHTML =
-    '<div class="vm-docs-title">&#128193; ' + t('vc_documents') + '</div>' +
+    '<div class="vm-docs-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> ' + t('vc_documents') + '</div>' +
     '<div class="doc-loading">&#8203;</div>';
   _loadAndRenderDocs(uid);
 
   openOverlay('view-overlay');
 }
+
+// Jump to the previous / next worker in the current detail-view order (←/→).
+// Works in the detail drawer AND while zooming a card — in zoom mode we refresh
+// both the underlying detail and the zoomed card so flipping through to print is
+// seamless.
+function _navWorker(dir) {
+  if (!_currentViewUid || !_navUids.length) return;
+  const i = _navUids.indexOf(_currentViewUid);
+  if (i < 0) return;
+  const j = i + dir;
+  if (j < 0 || j >= _navUids.length) return;   // clamp at the ends
+  const next = _navUids[j];
+  const zoomOpen = document.getElementById('cardzoom-overlay')?.classList.contains('open');
+  openView(next);                 // keep the detail + state in sync
+  if (zoomOpen) zoomCard(next);   // re-render the zoomed card on top
+}
+
+// Arrow keys flip through workers while the detail drawer or the card-zoom view is
+// open — but not while editing a field or when another modal (doc viewer / editor /
+// export) is focused on top.
+document.addEventListener('keydown', e => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  if (detailEditMode) return;
+  const voOpen   = document.getElementById('view-overlay')?.classList.contains('open');
+  const zoomOpen = document.getElementById('cardzoom-overlay')?.classList.contains('open');
+  if (!voOpen && !zoomOpen) return;
+  const tag = (e.target && e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target && e.target.isContentEditable)) return;
+  // Block only when a DIFFERENT overlay (not the detail/zoom pair) is on top.
+  const blocking = [...document.querySelectorAll('.overlay.open')]
+    .some(el => el.id !== 'view-overlay' && el.id !== 'cardzoom-overlay');
+  if (blocking) return;
+  e.preventDefault();
+  _navWorker(e.key === 'ArrowRight' ? 1 : -1);
+});
 
 function _triggerPhotoEdit(uid) {
   const inp = document.getElementById('photo-edit-input');
@@ -2240,117 +2305,364 @@ async function _handlePhotoEdit(input, uid) {
   });
 }
 
-// ── In-profile photo editor (upload + rotate, no Excel form needed) ──
-// Opens from the KD card photo box in the worker detail view. Landscape photos
-// can be rotated; the result is baked into the saved image and the card crops it
-// to its fixed box (object-fit: cover), so layout never shifts.
-let _pe = null;   // { uid, src (un-rotated dataURL), rot (0/90/180/270), out (baked) }
+// ── Pan / zoom / rotate / crop image editor (profile photos + documents) ──
+// Shows the WHOLE image (so a face or a document edge is never silently cut),
+// then lets the user drag to pan, wheel/slider to zoom, and rotate in 90° steps.
+// The green frame is exactly what gets saved — the output is rendered from that
+// frame to a fresh canvas. Used for both the KD-card photo (1:1 frame, which is
+// why faces used to get cropped) and for re-cropping an uploaded document.
+let _ce = null;          // editor state
+let _ceWired = false;    // pointer/wheel listeners attached once
 
+function _ceOpen(opts) {
+  _ce = { src: opts.src || '', orig: opts.src || '', img: null, rot: 0, scale: 1, tx: 0, ty: 0,
+          aspect: opts.aspect || null, mode: opts.mode || 'photo', allowPick: !!opts.allowPick,
+          onSave: opts.onSave || function () {}, drag: null };
+  const titleEl = document.getElementById('ce-title'); if (titleEl) titleEl.textContent = opts.title || '';
+  const pick = document.getElementById('ce-pick'); if (pick) pick.style.display = _ce.allowPick ? '' : 'none';
+  const prev = document.getElementById('ce-prev');
+  if (prev) prev.className = 'ce-prev ' + (_ce.mode === 'doc' ? 'ce-prev-doc' : 'ce-prev-photo');
+  openOverlay('photo-editor-overlay');
+  _ceWire();
+  _ceLoad(_ce.src);
+}
+
+function _ceLoad(src) {
+  const z = document.getElementById('ce-zoom'); if (z) z.value = 1;
+  if (!src) { _ce.img = null; _ceDraw(); return; }
+  const img = new Image();
+  img.onload  = () => { _ce.img = img; _ce.rot = 0; _ce.scale = 1; _ce.tx = 0; _ce.ty = 0; if (z) z.value = 1; _ceDraw(); };
+  img.onerror = () => { _ce.img = null; _ceDraw(); };
+  img.src = src;
+}
+
+// Crop frame: centred in the stage, sized to `aspect` (or the image's own aspect
+// when free), leaving a small margin so the whole image is visible at zoom 1.
+function _ceGeom() {
+  const canvas = document.getElementById('ce-canvas');
+  const SW = canvas.width, SH = canvas.height;
+  const M = Math.round(Math.min(SW, SH) * 0.06);
+  const avW = SW - 2 * M, avH = SH - 2 * M;
+  let a = _ce.aspect;
+  if (!a && _ce.img) a = _ce.img.naturalWidth / _ce.img.naturalHeight;
+  let CW, CH;
+  if (a) { if (avW / avH > a) { CH = avH; CW = a * CH; } else { CW = avW; CH = CW / a; } }
+  else   { CW = avW; CH = avH; }
+  return { SW, SH, CW, CH, cropX: (SW - CW) / 2, cropY: (SH - CH) / 2, cx0: SW / 2, cy0: SH / 2 };
+}
+// Scale that makes the whole (rotated) image fit inside the crop frame at zoom 1.
+function _ceBaseScale(g) {
+  if (!_ce.img) return 1;
+  const rot = ((_ce.rot % 360) + 360) % 360;
+  const swap = rot === 90 || rot === 270;
+  const rw = swap ? _ce.img.naturalHeight : _ce.img.naturalWidth;
+  const rh = swap ? _ce.img.naturalWidth  : _ce.img.naturalHeight;
+  return Math.min(g.CW / rw, g.CH / rh);
+}
+
+function _ceDraw() {
+  const canvas = document.getElementById('ce-canvas'); if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const g = _ceGeom();
+  ctx.fillStyle = '#15181b'; ctx.fillRect(0, 0, g.SW, g.SH);
+  if (_ce.img) {
+    const eff = _ceBaseScale(g) * _ce.scale;
+    ctx.save();
+    ctx.translate(g.cx0 + _ce.tx, g.cy0 + _ce.ty);
+    ctx.rotate(_ce.rot * Math.PI / 180);
+    ctx.scale(eff, eff);
+    ctx.drawImage(_ce.img, -_ce.img.naturalWidth / 2, -_ce.img.naturalHeight / 2);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = '14px system-ui,sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(t('photo_pick_hint') || 'ເລືອກຮູບ', g.SW / 2, g.SH / 2);
+  }
+  // dim everything outside the crop frame, then stroke the frame
+  ctx.save();
+  ctx.fillStyle = 'rgba(18,20,24,0.58)';
+  ctx.beginPath();
+  ctx.rect(0, 0, g.SW, g.SH);
+  ctx.rect(g.cropX, g.cropY, g.CW, g.CH);
+  ctx.fill('evenodd');
+  ctx.restore();
+  ctx.strokeStyle = '#c9f040'; ctx.lineWidth = 2;
+  ctx.strokeRect(g.cropX + 1, g.cropY + 1, g.CW - 2, g.CH - 2);
+  _ceUpdatePreview();
+}
+
+// Render exactly the crop frame to a fresh, up-scaled canvas (shared by the live
+// preview and the final save — so what you see is what you get).
+function _ceComposeCanvas(maxDim) {
+  if (!_ce || !_ce.img) return null;
+  const g = _ceGeom();
+  const eff = _ceBaseScale(g) * _ce.scale;
+  const K = Math.min(4, maxDim / Math.max(g.CW, g.CH));
+  const oc = document.createElement('canvas');
+  oc.width  = Math.max(1, Math.round(g.CW * K));
+  oc.height = Math.max(1, Math.round(g.CH * K));
+  const octx = oc.getContext('2d');
+  octx.fillStyle = '#ffffff'; octx.fillRect(0, 0, oc.width, oc.height);
+  octx.translate((g.cx0 + _ce.tx - g.cropX) * K, (g.cy0 + _ce.ty - g.cropY) * K);
+  octx.rotate(_ce.rot * Math.PI / 180);
+  octx.scale(eff * K, eff * K);
+  octx.drawImage(_ce.img, -_ce.img.naturalWidth / 2, -_ce.img.naturalHeight / 2);
+  return oc;
+}
+
+// Live "as it appears on the data page" preview — updates on every adjustment.
+function _ceUpdatePreview() {
+  const img = document.getElementById('ce-prev-img');
+  if (!img) return;
+  if (!_ce || !_ce.img) { img.removeAttribute('src'); return; }
+  const oc = _ceComposeCanvas(360);
+  if (oc) img.src = oc.toDataURL('image/jpeg', 0.82);
+}
+
+function _ceXY(e) {
+  const canvas = document.getElementById('ce-canvas');
+  const r = canvas.getBoundingClientRect();
+  const cx = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+  const cy = (e.touches ? e.touches[0].clientY : e.clientY) - r.top;
+  return { x: cx * (canvas.width / r.width), y: cy * (canvas.height / r.height) };
+}
+function _ceDown(e) { if (!_ce || !_ce.img) return; e.preventDefault(); const p = _ceXY(e); _ce.drag = { x: p.x, y: p.y, tx: _ce.tx, ty: _ce.ty }; }
+function _ceMove(e) { if (!_ce || !_ce.drag) return; e.preventDefault(); const p = _ceXY(e); _ce.tx = _ce.drag.tx + (p.x - _ce.drag.x); _ce.ty = _ce.drag.ty + (p.y - _ce.drag.y); _ceDraw(); }
+function _ceUp()    { if (_ce) _ce.drag = null; }
+function _ceWheel(e){ if (!_ce || !_ce.img) return; e.preventDefault(); _ceZoomTo(_ce.scale * (e.deltaY < 0 ? 1.1 : 1 / 1.1)); }
+function _ceZoom(v) { _ceZoomTo(parseFloat(v)); }
+function _ceZoomBy(f){ _ceZoomTo(_ce.scale * f); }
+function _ceZoomTo(s){ if (!_ce) return; _ce.scale = Math.max(1, Math.min(8, s)); const z = document.getElementById('ce-zoom'); if (z) z.value = _ce.scale; _ceDraw(); }
+function _ceRotate(dir){ if (!_ce || !_ce.img) return; _ce.rot = (((_ce.rot + dir * 90) % 360) + 360) % 360; _ceDraw(); }
+// Reset = revert to the FULL original image (undo any crop/zoom/rotate mistake).
+// We reload the untouched original so even a previously-saved bad crop comes back.
+function _ceReset() {
+  if (!_ce) return;
+  _ce.src = _ce.orig;
+  _ceLoad(_ce.orig);          // reloads original + resets transform → whole image
+}
+function _cePick(input) {
+  const file = input.files && input.files[0]; if (!file || !_ce) return;
+  input.value = '';
+  _fileToDataURL(file, 1600, dataUrl => { _ce.src = _ce.orig = dataUrl; _ceLoad(dataUrl); });
+}
+function _ceWire() {
+  if (_ceWired) return; _ceWired = true;
+  const c = document.getElementById('ce-canvas'); if (!c) return;
+  c.addEventListener('mousedown', _ceDown);
+  window.addEventListener('mousemove', _ceMove);
+  window.addEventListener('mouseup', _ceUp);
+  c.addEventListener('touchstart', _ceDown, { passive: false });
+  c.addEventListener('touchmove',  _ceMove, { passive: false });
+  window.addEventListener('touchend', _ceUp);
+  c.addEventListener('wheel', _ceWheel, { passive: false });
+}
+
+// Save = the crop frame at full quality. Also hands back the untouched original
+// (_ce.orig) so callers that support revert can keep it.
+function _ceSave() {
+  if (!_ce) return closeOverlay('photo-editor-overlay');
+  const oc = _ceComposeCanvas(1400);
+  if (!oc) { closeOverlay('photo-editor-overlay'); return; }
+  const out = oc.toDataURL('image/jpeg', 0.9);
+  const cb = _ce.onSave, orig = _ce.orig;
+  closeOverlay('photo-editor-overlay');
+  cb(out, orig);
+}
+
+// Entry point from the KD-card photo box. 1:1 frame matches the card's 80×80 box.
+// The editor opens on the ORIGINAL (un-cropped) photo when we have one, so the
+// user can always re-crop from scratch or Reset back to the full image.
 function openPhotoEditor(uid) {
   if (!isAdmin()) return;
   const g = DB.getGroup(activeGroupId);
   const w = g && g.workers.find(x => x.uid === uid);
   if (!w) return;
-  _pe = { uid, src: w.photo || '', rot: 0, out: w.photo || '' };
-  _renderPhotoEditor();
-  openOverlay('photo-editor-overlay');
-}
-
-// Bake current src+rotation onto a canvas → JPEG data URL (also used for preview)
-function _peCompose(cb) {
-  if (!_pe || !_pe.src) { cb(''); return; }
-  const img = new Image();
-  img.onload = () => {
-    const rot  = ((_pe.rot % 360) + 360) % 360;
-    const swap = rot === 90 || rot === 270;
-    const maxDim = 1000;
-    let iw = img.width, ih = img.height;
-    const scale = Math.min(1, maxDim / Math.max(iw, ih));
-    iw = Math.round(iw * scale); ih = Math.round(ih * scale);
-    const c = document.createElement('canvas');
-    c.width  = swap ? ih : iw;
-    c.height = swap ? iw : ih;
-    const ctx = c.getContext('2d');
-    ctx.translate(c.width / 2, c.height / 2);
-    ctx.rotate(rot * Math.PI / 180);
-    ctx.drawImage(img, -iw / 2, -ih / 2, iw, ih);
-    cb(c.toDataURL('image/jpeg', 0.85));
-  };
-  img.onerror = () => cb(_pe.src);
-  img.src = _pe.src;
-}
-
-function _renderPhotoEditor() {
-  const stage   = document.getElementById('pe-stage');
-  const saveBtn = document.getElementById('pe-save');
-  const rotL    = document.getElementById('pe-rot-l');
-  const rotR    = document.getElementById('pe-rot-r');
-  const has = !!(_pe && _pe.src);
-  if (rotL) rotL.disabled = !has;
-  if (rotR) rotR.disabled = !has;
-  if (!has) {
-    if (stage)   stage.innerHTML = '<div class="pe-empty">' + esc(t('photo_pick_hint') || 'เลือกรูปเพื่ออัปโหลด') + '</div>';
-    if (saveBtn) saveBtn.disabled = true;
-    return;
-  }
-  _peCompose(out => {
-    _pe.out = out;
-    if (stage)   stage.innerHTML = '<img src="' + out + '" alt="">';
-    if (saveBtn) saveBtn.disabled = false;
+  _ceOpen({
+    src: w.photo_orig || w.photo || '', aspect: 1, allowPick: true, mode: 'photo',
+    title: t('photo_editor_title') || 'ແກ້ໄຂຮູບໂປຣໄຟລ໌',
+    onSave: (dataUrl, orig) => {
+      try {
+        // Save the cropped result for display AND keep the original for future reverts.
+        DB.updateWorker(activeGroupId, uid, { photo: dataUrl, photo_orig: orig || dataUrl });
+        const gg = DB.getGroup(activeGroupId);
+        const ww = gg && gg.workers.find(x => x.uid === uid);
+        if (ww) { ww.photo = dataUrl; ww.photo_orig = orig || dataUrl; }
+        if (_currentViewUid === uid) openView(uid);   // refresh the KD card in place
+        toast(t('photo_saved') || 'ອັບເດດຮູບແລ້ວ', 'ok');
+      } catch (e) {
+        toast(t('photo_save_err') || 'ບັນທຶກຮູບບໍ່ສຳເລັດ', 'err');
+      }
+    },
   });
 }
 
-function pePickFile(input) {
-  const file = input.files && input.files[0];
-  if (!file || !_pe) return;
-  input.value = '';
-  _fileToDataURL(file, 1200, dataUrl => { _pe.src = dataUrl; _pe.rot = 0; _renderPhotoEditor(); });
-}
-
-function peRotate(dir) {
-  if (!_pe || !_pe.src) return;
-  _pe.rot = (((_pe.rot + dir * 90) % 360) + 360) % 360;
-  _renderPhotoEditor();
-}
-
-function peSave() {
-  if (!_pe) return closeOverlay('photo-editor-overlay');
-  const uid = _pe.uid, out = _pe.out || '';
-  try {
-    DB.updateWorker(activeGroupId, uid, { photo: out });
-    const g = DB.getGroup(activeGroupId);
-    const w = g && g.workers.find(x => x.uid === uid);
-    if (w) w.photo = out;
-    closeOverlay('photo-editor-overlay');
-    if (_currentViewUid === uid) openView(uid);   // refresh the KD card in place
-    toast(t('photo_saved') || 'อัปเดตรูปแล้ว', 'ok');
-  } catch (e) {
-    toast(t('photo_save_err') || 'บันทึกรูปไม่สำเร็จ', 'err');
-  }
-}
-
 // ── DOCUMENTS (inside the detail drawer, versioned) ───────────────
-const DOC_CATS = [
-  { key: 'passport', label: 'Passport' },
-  { key: 'id_card',  label: 'ID Card' },
-  { key: 'form_1',   label: 'Form 1' },
-  { key: 'form_2',   label: 'Form 2' },
-  { key: 'form_3',   label: 'Form 3' },
-  { key: 'land_doc', label: 'Land Document' },
+// Document categories — admin-configurable in Settings → Documents (localStorage).
+// Not locked to a fixed six; admins can add/rename/remove types (e.g. residence cert).
+const _DEFAULT_DOC_CATS = [
+  { key: 'passport',  label: 'Passport' },
+  { key: 'id_card',   label: 'ID Card' },
+  { key: 'residence', label: 'Residence certificate' },
+  { key: 'form_1',    label: 'Form 1' },
+  { key: 'form_2',    label: 'Form 2' },
+  { key: 'land_doc',  label: 'Land document' },
 ];
+function getDocCats() {
+  try { const c = DB.getSetting('doc_cats', null); if (Array.isArray(c) && c.length) return c; } catch (e) {}
+  // legacy fallback (older versions stored this per-browser)
+  try { const l = JSON.parse(localStorage.getItem('kd_doc_cats')); if (Array.isArray(l) && l.length) return l; } catch (e) {}
+  return _DEFAULT_DOC_CATS;
+}
+
+// One-time migration: older builds kept document categories ONLY in this
+// browser's localStorage, so they disappeared the moment the app was opened from
+// a different origin (e.g. each new Cloudflare quick-tunnel URL gets its own
+// localStorage), making every document under them look lost. The server now owns
+// categories — lift any local copy onto it (preserving the human labels) so they
+// persist across devices, restarts and changing URLs. Safe to run every boot:
+// it never overwrites a server-side rename and never resurrects a deleted type.
+async function _migrateDocCatsToServer() {
+  try {
+    let local = null;
+    try { local = JSON.parse(localStorage.getItem('kd_doc_cats')); } catch (e) {}
+    if (!Array.isArray(local) || !local.length) return;
+    const server = DB.getSetting('doc_cats', null);
+    const merged = (Array.isArray(server) ? server : []).slice();
+    const byKey  = new Map(merged.map((c, i) => [c.key, i]));
+    let changed  = !Array.isArray(server);   // server had nothing → seed it
+    local.forEach(lc => {
+      if (!lc || !lc.key) return;
+      if (byKey.has(lc.key)) {
+        // Replace a derived placeholder ("Document xxxxx") with the real label.
+        const idx = byKey.get(lc.key);
+        if (lc.label && merged[idx].label !== lc.label && /^Document /.test(merged[idx].label || '')) {
+          merged[idx] = { ...merged[idx], label: lc.label };
+          changed = true;
+        }
+      } else {
+        merged.push({ key: lc.key, label: lc.label || lc.key });
+        byKey.set(lc.key, merged.length - 1);
+        changed = true;
+      }
+    });
+    if (changed && merged.length) {
+      DB.setSetting('doc_cats', merged);
+      try { await DB.flush(); } catch (e) {}
+    }
+    // Migrated onto the server → stop relying on the per-browser copy.
+    try { localStorage.removeItem('kd_doc_cats'); } catch (e) {}
+  } catch (e) { /* migration must never block boot */ }
+}
+
+// ── Completeness (text-data fields + documents) ───────────────────
+// Two independent scores per worker:
+//   • data  — how many of the "required" fields are filled (admin-configurable,
+//             defaults to a core set)
+//   • docs  — how many document categories have at least one uploaded file
+// Shown as a small box in the detail view, a chip on list cards, and a dashboard
+// stat, so it's obvious at a glance whose record is incomplete.
+const _DEFAULT_REQ_FIELDS = ['worker_id','en_name','lo_name','dob','sex','nationality',
+  'passport_no','passport_expiry','tel','province','village','employer_code'];
+// Every field that can be marked "required" (key → bilingual label).
+const _REQ_FIELD_CATALOG = [
+  ['worker_id','Worker ID'], ['en_name','EN Name'], ['lo_name','ຊື່ ລາວ'],
+  ['dob','ວັນເກີດ / DOB'], ['sex','ເພດ / Sex'], ['nationality','ສັນຊາດ'],
+  ['blood','ກຸ່ມເລືອດ'], ['grade','Grade'],
+  ['passport_no','ເລກພາສປอด'], ['passport_issue','ວັນອອກ'], ['passport_expiry','ວັນໝົດອາຍຸ'],
+  ['visa_status','Visa'], ['tel','ໂທ'], ['emg_tel','ໂທສຸກເສີນ'],
+  ['province','ແຂວງ'], ['district','ເມືອງ'], ['village','ບ້ານ'],
+  ['employer_code','ນາຍຈ້າງ'], ['group_supervisor','Supervisor'],
+  ['weight','ນ້ຳໜັກ'], ['height','ສ່ວນສູງ'], ['size','ຂະໜາດ'], ['couple','ຄູ່'],
+];
+function getReqFields() {
+  try { const c = DB.getSetting('req_fields', null); if (Array.isArray(c) && c.length) return c; } catch (e) {}
+  return _DEFAULT_REQ_FIELDS;
+}
+function dataCompleteness(w) {
+  const fields = getReqFields();
+  let filled = 0;
+  fields.forEach(f => {
+    let v = w[f];
+    if (f === 'age' && (v == null || v === '')) v = calcAge(w.dob);
+    if (String(v == null ? '' : v).trim()) filled++;
+  });
+  const total = fields.length || 1;
+  return { filled, total, pct: Math.round(filled / total * 100) };
+}
+// Prefer the freshest docs we have for this worker (the versioned cache updates
+// the instant something is uploaded), falling back to the bootstrap snapshot.
+function docsCompleteness(w) {
+  const cats = getDocCats();
+  const docs = (_docCache && _docCache[w.uid]) || w.documents || {};
+  let have = 0;
+  cats.forEach(c => { const a = docs[c.key]; if (a && a.length) have++; });
+  const total = cats.length || 1;
+  return { have, total, pct: Math.round(have / total * 100) };
+}
+function _pctColor(p) { return p >= 100 ? '#16a34a' : p >= 60 ? '#f59e0b' : '#dc2626'; }
+
+// Small completeness box for the detail view corner.
+function _completenessBox(w) {
+  const d = dataCompleteness(w), k = docsCompleteness(w);
+  const allDone = d.pct >= 100 && k.pct >= 100;
+  const bar = (label, pct, right, col) =>
+    '<div class="cmp-row">' +
+      '<span class="cmp-lbl">' + label + '</span>' +
+      '<span class="cmp-bar"><span style="width:' + pct + '%;background:' + col + '"></span></span>' +
+      '<span class="cmp-pct" style="color:' + col + '">' + right + '</span>' +
+    '</div>';
+  return '<div class="cmp-box" id="cmp-box-' + esc(w.uid) + '"' + (allDone ? ' data-done="1"' : '') + '>' +
+    '<div class="cmp-head">' + bi('ຄວາມຄົບຖ້ວນ', 'ความครบถ้วน') + (allDone ? ' <span class="cmp-check">✓</span>' : '') + '</div>' +
+    bar(bi('ຂໍ້ມູນ', 'ข้อมูล'), d.pct, d.pct + '%', _pctColor(d.pct)) +
+    bar(bi('ເອກະສານ', 'เอกสาร'), k.pct, k.have + '/' + k.total, _pctColor(k.pct)) +
+  '</div>';
+}
+// Replace the detail box in place (after docs finish loading, so docs% is fresh).
+function _refreshCmpBox(uid) {
+  const el = document.getElementById('cmp-box-' + uid);
+  if (!el) return;
+  const w = _findWorker(uid);
+  if (w) el.outerHTML = _completenessBox(w);
+}
+function _findWorker(uid) {
+  const groups = DB.getGroups();
+  for (const g of groups) { const w = (g.workers || []).find(x => x.uid === uid); if (w) return w; }
+  return null;
+}
+
+// Compact corner chip for list / KD-card cells.
+function _completenessChip(w) {
+  const d = dataCompleteness(w), k = docsCompleteness(w);
+  const title = bi('ຂໍ້ມູນ ', 'ข้อมูล ') + d.pct + '% · ' + bi('ເອກະສານ ', 'เอกสาร ') + k.have + '/' + k.total;
+  return '<div class="cmp-chip" title="' + esc(title) + '">' +
+    '<span class="cmp-chip-dot" style="background:' + _pctColor(d.pct) + '"></span>' + d.pct + '%' +
+    '<span class="cmp-chip-sep">·</span>' +
+    '<span class="cmp-chip-dot" style="background:' + _pctColor(k.pct) + '"></span>' + k.have + '/' + k.total +
+  '</div>';
+}
 
 function renderDocuments(w) {
   setTimeout(() => _loadAndRenderDocs(w.uid), 0);
   return '';
 }
 
+const _docCache = {};   // uid → docs map (instant render + optimistic upload)
+
 async function _loadAndRenderDocs(uid) {
+  if (!document.getElementById('vm-docs-content') && !document.getElementById('vm-docs-' + uid)) return;
+  let docs = _docCache[uid] || {};
+  try { docs = await DB.getDocuments(uid); } catch (e) { /* keep cache */ }
+  _docCache[uid] = docs;
+  _renderDocs(uid);
+  _refreshCmpBox(uid);   // docs% is now accurate → update the completeness box
+}
+
+function _renderDocs(uid) {
   const container = document.getElementById('vm-docs-content') || document.getElementById('vm-docs-' + uid);
   if (!container) return;
-  let docs = {};
-  try { docs = await DB.getDocuments(uid); } catch (e) { docs = {}; }
+  const docs = _docCache[uid] || {};
   const canEdit = isAdmin();
-  const html = DOC_CATS.map(cat => {
+  const html = getDocCats().map(cat => {
     const versions = docs[cat.key] || [];
     const current = versions.find(v => v.isCurrent) || versions[0];
     const history = versions.filter(v => v !== current);
@@ -2360,10 +2672,10 @@ async function _loadAndRenderDocs(uid) {
 
     // Preview thumbnail (monochrome) or a neutral placeholder
     const preview = hasFile
-      ? '<div class="docb-preview" onclick="openDocViewById(' + current.id + ',\'' + esc(current.path) + '\',\'' + current.type + '\',\'' + esc(current.name) + '\')">' +
+      ? '<div class="docb-preview" onclick="openDocViewById(' + current.id + ',\'' + esc(current.path) + '\',\'' + current.type + '\',\'' + esc(current.name) + '\',\'' + esc(uid) + '\',\'' + esc(cat.key) + '\')">' +
           (current.type === 'pdf'
             ? '<div class="docb-pdf">PDF</div>'
-            : '<img src="' + esc(current.path) + '" alt="">') +
+            : '<img src="' + esc(current.path) + '" alt="" loading="lazy" decoding="async">') +
         '</div>'
       : '<div class="docb-preview docb-preview-empty">' +
           '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>' +
@@ -2380,7 +2692,7 @@ async function _loadAndRenderDocs(uid) {
     const histHtml = history.length
       ? '<div class="docb-history"><span class="docb-hist-label">' + t('doc_history') + ':</span>' +
           history.map(v =>
-            '<span class="docb-hist-item" onclick="openDocViewById(' + v.id + ',\'' + esc(v.path) + '\',\'' + v.type + '\',\'' + esc(v.name) + '\')">v' + v.version +
+            '<span class="docb-hist-item" onclick="openDocViewById(' + v.id + ',\'' + esc(v.path) + '\',\'' + v.type + '\',\'' + esc(v.name) + '\',\'' + esc(uid) + '\',\'' + esc(cat.key) + '\')">v' + v.version +
               (canEdit ? '<button onclick="deleteDocById(event,' + v.id + ',\'' + uid + '\')">&#x2715;</button>' : '') +
             '</span>'
           ).join('') +
@@ -2413,24 +2725,28 @@ async function _loadAndRenderDocs(uid) {
     '</div>';
   }).join('');
 
-  container.innerHTML = '<div class="vm-docs-title">&#128193; ' + t('vc_documents') + '</div><div class="docb-grid">' + html + '</div>';
+  container.innerHTML = '<div class="vm-docs-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> ' + t('vc_documents') + '</div><div class="docb-grid">' + html + '</div>';
 }
 
 function handleDocUpload(input, uid, cat) {
   const file = input.files && input.files[0];
   if (!file) return;
   input.value = '';
-  _fileToDataURL(file, 1600, async dataUrl => {
-    const container = document.getElementById('vm-docs-content') || document.getElementById('vm-docs-' + uid);
-    if (container) container.innerHTML = '<div class="vm-docs-title">&#128193; ' + t('vc_documents') + '</div><div class="doc-loading">&#8203;</div>';
-    try {
-      await DB.uploadDocument(uid, activeGroupId, cat, dataUrl, file.name);
-      toast('Document uploaded', 'ok');
-    } catch (e) {
-      toast('Upload failed: ' + (e && e.message || e), 'err');
-      return;
-    }
-    _loadAndRenderDocs(uid);
+  _fileToDataURL(file, 1600, dataUrl => {
+    const type = file.type === 'application/pdf' ? 'pdf' : 'image';
+    // Optimistic: show the document instantly from the local data URL (no waiting)
+    _docCache[uid] = _docCache[uid] || {};
+    const list = _docCache[uid][cat] = _docCache[uid][cat] || [];
+    const ver  = list.reduce((m, v) => Math.max(m, v.version || 0), 0) + 1;
+    list.forEach(v => { v.isCurrent = false; });
+    list.unshift({ id: 'tmp-' + Date.now(), path: dataUrl, type, name: file.name || '',
+                   version: ver, isCurrent: true, uploadedAt: new Date().toISOString() });
+    _renderDocs(uid);
+    toast('ກຳລັງບັນທຶກ... · uploading', 'ok');
+    // Sync to the server in the background — UI is already updated
+    DB.uploadDocument(uid, activeGroupId, cat, dataUrl, file.name)
+      .then(() => _loadAndRenderDocs(uid))   // silent reconcile (real id/path)
+      .catch(e => toast('Upload failed: ' + (e && e.message || e), 'err'));
   });
 }
 
@@ -2443,13 +2759,37 @@ async function deleteDocById(event, docId, uid) {
   toast('Document deleted', 'ok');
 }
 
-function openDocViewById(docId, path, type, name) {
+let _docView = null;   // { docId, path, type, name, uid, cat } for the in-place editor
+
+function openDocViewById(docId, path, type, name, uid, cat) {
+  _docView = { docId, path, type, name: name || '', uid: uid || '', cat: cat || '' };
   const body = document.getElementById('docview-body');
   if (!body) return;
   body.innerHTML = type === 'pdf'
     ? '<iframe class="docview-pdf" src="' + esc(path) + '"></iframe>'
     : '<img class="docview-img" src="' + esc(path) + '" alt="' + esc(name || '') + '">';
+  // The Edit/crop button only makes sense for an admin editing a real image
+  // attached to a known worker + category (so we can upload the result back).
+  const editBtn = document.getElementById('docview-edit');
+  if (editBtn) editBtn.style.display = (type === 'image' && uid && cat && isAdmin()) ? '' : 'none';
   openOverlay('docview-overlay');
+}
+
+// Re-crop / fix the currently-previewed document, then save it as a new version.
+function editCurrentDoc() {
+  if (!_docView || _docView.type !== 'image' || !_docView.uid || !_docView.cat) return;
+  const { path, uid, cat, name } = _docView;
+  _ceOpen({
+    src: path, aspect: null, allowPick: false, mode: 'doc',   // free crop; whole doc visible by default
+    title: bi('ແກ້ໄຂເອກະສານ', 'แก้ไขเอกสาร'),
+    onSave: (dataUrl) => {
+      closeOverlay('docview-overlay');
+      toast(bi('ກຳລັງບັນທຶກ...', 'กำลังบันทึก...'), 'ok');
+      DB.uploadDocument(uid, activeGroupId, cat, dataUrl, name || (cat + '.jpg'))
+        .then(() => { _loadAndRenderDocs(uid); toast(bi('ບັນທຶກແລ້ວ', 'บันทึกแล้ว'), 'ok'); })
+        .catch(e => toast('Save failed: ' + (e && e.message || e), 'err'));
+    },
+  });
 }
 
 // kept for backward compat (old in-memory doc references)
@@ -2480,8 +2820,9 @@ function startScan(cat) {
   _genericDocScan(cat);
 }
 
-// Capture or pick an image/PDF and queue it to attach as the chosen document
-// when the worker is saved. AI extraction (Google) is a planned step — mocked.
+// Capture or pick an image/PDF: attach it as the chosen document AND try AI
+// extraction (Google Gemini) to auto-fill the form. Falls back to attach-only
+// when no GEMINI_API_KEY is configured on the server (mockup).
 function _genericDocScan(cat) {
   const inp = document.createElement('input');
   inp.type = 'file';
@@ -2490,18 +2831,105 @@ function _genericDocScan(cat) {
   inp.onchange = () => {
     const file = inp.files && inp.files[0];
     if (!file) return;
-    _fileToDataURL(file, 1400, dataUrl => {
+    _fileToDataURL(file, 1400, async dataUrl => {
       const type = file.type === 'application/pdf' ? 'pdf' : 'image';
       window._pendingScanDocs = window._pendingScanDocs || [];
       window._pendingScanDocs.push({ cat, name: cat + '-scan.' + (type === 'pdf' ? 'pdf' : 'jpg'), type, data: dataUrl });
-      toast('🤖 ' + (_SCAN_LABELS[cat] || cat) + ' — ແนบแล้ว · AI extraction (Google) coming soon', 'ok');
+      if (typeof renderFormDocList === 'function') renderFormDocList();
+      toast((_SCAN_LABELS[cat] || cat) + ' — ແนบแล้ว', 'ok');
+
+      // Try AI extraction (server holds the API key)
+      try {
+        const r = await DB.aiExtract(dataUrl, cat);
+        if (r && r.mock) {
+          toast('🤖 AI extraction: mockup — ໃສ່ GEMINI_API_KEY ເພື່ອเปิดใช้', 'info');
+        } else if (r && r.ok && r.data) {
+          _applyAiToForm(cat, r.data);
+          toast('🤖 AI ກรอกข้อมูลให้แล้ว · auto-filled', 'ok');
+        } else if (r && r.error) {
+          toast('AI: ' + r.error, 'warn');
+        }
+      } catch (e) { /* ignore — file is still attached */ }
     });
   };
   inp.click();
 }
 
+// Map an AI extraction result onto the open worker form (only fills blanks → never overwrites)
+function _applyAiToForm(cat, d) {
+  if (!d) return;
+  const set = (id, v) => { const el = document.getElementById(id); if (el && v && !el.value) el.value = v; };
+  const toDMY = s => { const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec((s || '').trim()); return m ? (m[3].padStart(2,'0') + '/' + m[2].padStart(2,'0') + '/' + m[1]) : ''; };
+  const setSex = v => { const s = document.getElementById('f-sex'); if (s && !s.value && v) s.value = /^f/i.test(v) ? 'F' : /^m/i.test(v) ? 'M' : ''; };
+  const setDate = (dp, v) => { const dmy = toDMY(v); if (dmy && !_dateInputVal(dp.replace('dp-','f-'))) setDatePicker(dp, dmy); };
+
+  if (cat === 'passport') {
+    set('f-passport-no', (d.passport_number || '').toUpperCase());
+    set('f-en-name', ([d.given_names, d.surname].filter(Boolean).join(' ') || d.full_name || '').toUpperCase());
+    set('f-nationality', (d.nationality || d.country_code || '').toUpperCase());
+    setSex(d.sex);
+    setDate('dp-dob', d.date_of_birth);
+    setDate('dp-issue', d.date_of_issue);
+    setDate('dp-expiry', d.expiry_date);
+  } else if (cat === 'id_card') {
+    set('f-en-name', (d.full_name || '').toUpperCase());
+    set('f-lo-name', d.full_name_local);
+    set('f-nationality', (d.nationality || '').toUpperCase());
+    set('f-village', d.address);
+    setSex(d.sex);
+    setDate('dp-dob', d.date_of_birth);
+  } else if (cat === 'form_1') {
+    set('f-en-name', (d.full_name_en || '').toUpperCase());
+    set('f-lo-name', d.full_name_local);
+    set('f-passport-no', (d.passport_number || '').toUpperCase());
+    set('f-nationality', (d.nationality || '').toUpperCase());
+    set('f-village', d.village || d.address);
+    set('f-district', d.district);
+    set('f-province', d.province);
+    set('f-tel', d.tel);
+    set('f-emg-tel', d.emergency_tel);
+    set('f-education', d.education);
+    setSex(d.sex);
+    setDate('dp-dob', d.date_of_birth);
+  }
+}
+
 // back-compat
 function scanForDoc(cat) { startScan(cat); }
+
+// ── Worker form: attach documents during creation/edit ────────────
+function populateFormDocCats() {
+  const sel = document.getElementById('f-doc-cat'); if (!sel) return;
+  sel.innerHTML = getDocCats().map(c => '<option value="' + esc(c.key) + '">' + esc(c.label) + '</option>').join('');
+}
+function addFormDoc(input) {
+  const file = input.files && input.files[0]; if (!file) return;
+  input.value = '';
+  const cat = (document.getElementById('f-doc-cat') || {}).value || 'form_1';
+  _fileToDataURL(file, 1600, dataUrl => {
+    const type = file.type === 'application/pdf' ? 'pdf' : 'image';
+    window._pendingScanDocs = window._pendingScanDocs || [];
+    window._pendingScanDocs.push({ cat, name: file.name || (cat + '.' + (type === 'pdf' ? 'pdf' : 'jpg')), type, data: dataUrl });
+    renderFormDocList();
+    toast((file.name || 'document'), 'ok');
+  });
+}
+function renderFormDocList() {
+  const el = document.getElementById('f-doc-list'); if (!el) return;
+  const docs = window._pendingScanDocs || [];
+  const catLabel = k => (getDocCats().find(c => c.key === k) || {}).label || k;
+  el.innerHTML = docs.map((d, i) =>
+    '<div class="form-doc-item">' +
+      '<span class="fdoc-cat">' + esc(catLabel(d.cat)) + '</span>' +
+      '<span class="fdoc-name">' + esc(d.name || '') + '</span>' +
+      '<button type="button" class="fdoc-del" onclick="removeFormDoc(' + i + ')" title="Remove">&#x2715;</button>' +
+    '</div>').join('');
+}
+function removeFormDoc(i) {
+  if (!window._pendingScanDocs) return;
+  window._pendingScanDocs.splice(i, 1);
+  renderFormDocList();
+}
 
 // ── WORKER FORM ───────────────────────────────────────────────────
 function openWorkerForm(editUid) {
@@ -2519,6 +2947,8 @@ function openWorkerForm(editUid) {
   document.getElementById('f-photo').value = '';
   window._pendingScanDoc = null;
   window._pendingScanDocs = [];
+  populateFormDocCats();
+  renderFormDocList();
   renderFormPhoto();
   document.getElementById('fm-title').textContent = t('fm_add_worker');
 
@@ -2960,7 +3390,7 @@ function openExportDialog(scope, uid) {
 
   // reset + default selection (honours Settings → Data & Backup default)
   document.querySelectorAll('.export-opt').forEach(el => el.classList.remove('sel'));
-  let defFmt = localStorage.getItem('kd_export_default') || 'kd-pdf';
+  let defFmt = DB.getSetting('export_default', 'kd-pdf');
   if (scope !== 'worker' && defFmt === 'detail-pdf') defFmt = 'kd-pdf';
   let defEl = document.querySelector('.export-opt[data-fmt="' + defFmt + '"]');
   if (!defEl) defEl = document.querySelector('.export-opt[data-fmt="kd-pdf"]');
@@ -3022,6 +3452,7 @@ async function doExport() {
     if      (fmt === 'detail-pdf') { exportWorkerPDF(); await new Promise(r => setTimeout(r, 200)); }
     else if (fmt === 'kd-pdf')     _doKdCardPdf(workers, g);
     else if (fmt === 'kd-png')     await _doKdCardPng(workers, g);
+    else if (fmt === 'pptx')       await _doKdCardPptx(workers, g);
     else if (fmt === 'csv')        _doExportCsv(workers, g);
     else if (fmt === 'docs')       await _doExportDocs(workers);
   }
@@ -3096,7 +3527,7 @@ async function _doExportDocs(workers) {
   for (const w of workers) {
     try {
       const docs = await DB.getDocuments(w.uid);
-      DOC_CATS.forEach(cat => {
+      getDocCats().forEach(cat => {
         const versions = docs[cat.key] || [];
         const cur = versions.find(v => v.isCurrent) || versions[0];
         if (cur) allDocs.push({ w, cat, doc: cur });
@@ -3139,6 +3570,176 @@ async function _doExportDocs(workers) {
   URL.revokeObjectURL(url);
 }
 
+// ── PowerPoint (.pptx) export ─────────────────────────────────────
+// One KD card per slide. Each card is rasterised with html2canvas (same path as
+// the PNG export) and packed into a minimal-but-valid OOXML package via JSZip —
+// no external pptx library required. Output opens cleanly in PowerPoint / Google
+// Slides / Keynote with one editable picture per slide.
+const _PPTX_W = 12192000, _PPTX_H = 6858000;            // 16:9 slide (EMU)
+const _XH = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n';
+const _NS_P = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"';
+const _EMPTY_TREE = '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>';
+
+const _PPTX_THEME = _XH +
+'<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Office">' +
+'<a:themeElements>' +
+'<a:clrScheme name="Office">' +
+'<a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1>' +
+'<a:dk2><a:srgbClr val="44546A"/></a:dk2><a:lt2><a:srgbClr val="E7E6E6"/></a:lt2>' +
+'<a:accent1><a:srgbClr val="4472C4"/></a:accent1><a:accent2><a:srgbClr val="ED7D31"/></a:accent2>' +
+'<a:accent3><a:srgbClr val="A5A5A5"/></a:accent3><a:accent4><a:srgbClr val="FFC000"/></a:accent4>' +
+'<a:accent5><a:srgbClr val="5B9BD5"/></a:accent5><a:accent6><a:srgbClr val="70AD47"/></a:accent6>' +
+'<a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink></a:clrScheme>' +
+'<a:fontScheme name="Office"><a:majorFont><a:latin typeface="Calibri Light"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont>' +
+'<a:minorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont></a:fontScheme>' +
+'<a:fmtScheme name="Office">' +
+'<a:fillStyleLst>' +
+'<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>' +
+'<a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:lumMod val="110000"/><a:satMod val="105000"/><a:tint val="67000"/></a:schemeClr></a:gs><a:gs pos="50000"><a:schemeClr val="phClr"><a:lumMod val="105000"/><a:satMod val="103000"/><a:tint val="73000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:lumMod val="105000"/><a:satMod val="109000"/><a:tint val="81000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill>' +
+'<a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:satMod val="103000"/><a:lumMod val="102000"/><a:tint val="94000"/></a:schemeClr></a:gs><a:gs pos="50000"><a:schemeClr val="phClr"><a:satMod val="110000"/><a:lumMod val="100000"/><a:shade val="100000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:lumMod val="99000"/><a:satMod val="120000"/><a:shade val="78000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill></a:fillStyleLst>' +
+'<a:lnStyleLst>' +
+'<a:ln w="6350" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln>' +
+'<a:ln w="12700" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln>' +
+'<a:ln w="19050" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/><a:miter lim="800000"/></a:ln></a:lnStyleLst>' +
+'<a:effectStyleLst>' +
+'<a:effectStyle><a:effectLst/></a:effectStyle>' +
+'<a:effectStyle><a:effectLst/></a:effectStyle>' +
+'<a:effectStyle><a:effectLst><a:outerShdw blurRad="57150" dist="19050" dir="5400000" rotWithShape="0"><a:srgbClr val="000000"><a:alpha val="63000"/></a:srgbClr></a:outerShdw></a:effectLst></a:effectStyle></a:effectStyleLst>' +
+'<a:bgFillStyleLst>' +
+'<a:solidFill><a:schemeClr val="phClr"/></a:solidFill>' +
+'<a:solidFill><a:schemeClr val="phClr"><a:tint val="95000"/><a:satMod val="170000"/></a:schemeClr></a:solidFill>' +
+'<a:gradFill rotWithShape="1"><a:gsLst><a:gs pos="0"><a:schemeClr val="phClr"><a:tint val="93000"/><a:satMod val="150000"/><a:shade val="98000"/><a:lumMod val="102000"/></a:schemeClr></a:gs><a:gs pos="50000"><a:schemeClr val="phClr"><a:tint val="98000"/><a:satMod val="130000"/><a:shade val="90000"/><a:lumMod val="103000"/></a:schemeClr></a:gs><a:gs pos="100000"><a:schemeClr val="phClr"><a:shade val="63000"/><a:satMod val="120000"/></a:schemeClr></a:gs></a:gsLst><a:lin ang="5400000" scaled="0"/></a:gradFill></a:bgFillStyleLst>' +
+'</a:fmtScheme></a:themeElements></a:theme>';
+
+function _pptxRels(list) {   // list: [{id,type,target}]
+  return _XH + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    list.map(r => '<Relationship Id="' + r.id + '" Type="' + r.type + '" Target="' + r.target + '"/>').join('') +
+    '</Relationships>';
+}
+const _RT = {
+  off:   'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument',
+  master:'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster',
+  slide: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide',
+  layout:'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout',
+  theme: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme',
+  image: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
+};
+
+async function _buildPptx(slides) {
+  const n = slides.length;
+  const zip = new JSZip();
+
+  // [Content_Types].xml
+  let ct = _XH + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Default Extension="png" ContentType="image/png"/>' +
+    '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>' +
+    '<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>' +
+    '<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>' +
+    '<Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>';
+  for (let i = 1; i <= n; i++) ct += '<Override PartName="/ppt/slides/slide' + i + '.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>';
+  ct += '</Types>';
+  zip.file('[Content_Types].xml', ct);
+
+  // root rels
+  zip.file('_rels/.rels', _pptxRels([{ id: 'rId1', type: _RT.off, target: 'ppt/presentation.xml' }]));
+
+  // presentation.xml + rels
+  let sldIds = '', presRels = [{ id: 'rId1', type: _RT.master, target: 'slideMasters/slideMaster1.xml' }];
+  for (let i = 1; i <= n; i++) {
+    sldIds += '<p:sldId id="' + (255 + i) + '" r:id="rId' + (i + 1) + '"/>';
+    presRels.push({ id: 'rId' + (i + 1), type: _RT.slide, target: 'slides/slide' + i + '.xml' });
+  }
+  presRels.push({ id: 'rId' + (n + 2), type: _RT.theme, target: 'theme/theme1.xml' });
+  zip.file('ppt/presentation.xml', _XH +
+    '<p:presentation ' + _NS_P + '>' +
+    '<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>' +
+    '<p:sldIdLst>' + sldIds + '</p:sldIdLst>' +
+    '<p:sldSz cx="' + _PPTX_W + '" cy="' + _PPTX_H + '"/>' +
+    '<p:notesSz cx="6858000" cy="9144000"/></p:presentation>');
+  zip.file('ppt/_rels/presentation.xml.rels', _pptxRels(presRels));
+
+  // theme
+  zip.file('ppt/theme/theme1.xml', _PPTX_THEME);
+
+  // slide master + rels
+  zip.file('ppt/slideMasters/slideMaster1.xml', _XH +
+    '<p:sldMaster ' + _NS_P + '><p:cSld><p:bg><p:bgRef idx="1001"><a:schemeClr val="bg1"/></p:bgRef></p:bg>' +
+    '<p:spTree>' + _EMPTY_TREE + '</p:spTree></p:cSld>' +
+    '<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>' +
+    '<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst></p:sldMaster>');
+  zip.file('ppt/slideMasters/_rels/slideMaster1.xml.rels', _pptxRels([
+    { id: 'rId1', type: _RT.layout, target: '../slideLayouts/slideLayout1.xml' },
+    { id: 'rId2', type: _RT.theme,  target: '../theme/theme1.xml' },
+  ]));
+
+  // slide layout + rels
+  zip.file('ppt/slideLayouts/slideLayout1.xml', _XH +
+    '<p:sldLayout ' + _NS_P + ' type="blank" preserve="1"><p:cSld name="Blank">' +
+    '<p:spTree>' + _EMPTY_TREE + '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>');
+  zip.file('ppt/slideLayouts/_rels/slideLayout1.xml.rels', _pptxRels([
+    { id: 'rId1', type: _RT.master, target: '../slideMasters/slideMaster1.xml' },
+  ]));
+
+  // slides + media
+  for (let i = 0; i < n; i++) {
+    const s = slides[i], idx = i + 1;
+    // Fit the card image inside the slide, centred, preserving aspect.
+    const padY = Math.round(_PPTX_H * 0.05);
+    let drawH = _PPTX_H - 2 * padY;
+    let drawW = Math.round(s.w * (drawH / s.h));
+    const maxW = Math.round(_PPTX_W * 0.94);
+    if (drawW > maxW) { drawW = maxW; drawH = Math.round(s.h * (drawW / s.w)); }
+    const offX = Math.round((_PPTX_W - drawW) / 2);
+    const offY = Math.round((_PPTX_H - drawH) / 2);
+    zip.file('ppt/media/image' + idx + '.png', s.b64, { base64: true });
+    zip.file('ppt/slides/slide' + idx + '.xml', _XH +
+      '<p:sld ' + _NS_P + '><p:cSld><p:spTree>' + _EMPTY_TREE +
+      '<p:pic><p:nvPicPr><p:cNvPr id="2" name="Card ' + idx + '"/>' +
+      '<p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr>' +
+      '<p:blipFill><a:blip r:embed="rId2"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>' +
+      '<p:spPr><a:xfrm><a:off x="' + offX + '" y="' + offY + '"/><a:ext cx="' + drawW + '" cy="' + drawH + '"/></a:xfrm>' +
+      '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>' +
+      '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>');
+    zip.file('ppt/slides/_rels/slide' + idx + '.xml.rels', _pptxRels([
+      { id: 'rId1', type: _RT.layout, target: '../slideLayouts/slideLayout1.xml' },
+      { id: 'rId2', type: _RT.image,  target: '../media/image' + idx + '.png' },
+    ]));
+  }
+
+  return zip.generateAsync({ type: 'blob',
+    mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
+}
+
+async function _doKdCardPptx(workers, g) {
+  if (!window.html2canvas) { toast('html2canvas ບໍ່ໄດ້ໂຫລດ', 'warn'); return; }
+  if (!window.JSZip)       { toast('JSZip ບໍ່ໄດ້ໂຫລດ', 'warn'); return; }
+  toast(bi('ກຳລັງສ້າງ PowerPoint...', 'กำลังสร้าง PowerPoint...'), 'info');
+  const slides = [];
+  for (let i = 0; i < workers.length; i++) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-999;background:#fff;padding:8px;width:340px;';
+    wrap.innerHTML = _renderKdCard(workers[i], g);
+    document.body.appendChild(wrap);
+    try {
+      const canvas = await html2canvas(wrap, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      slides.push({ b64: canvas.toDataURL('image/png').split(',')[1], w: canvas.width, h: canvas.height });
+    } finally {
+      document.body.removeChild(wrap);
+    }
+  }
+  if (!slides.length) { toast('ບໍ່ມີຂໍ້ມູນ', 'warn'); return; }
+  const blob = await _buildPptx(slides);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = _safeFile(g && g.name, 'workers') + '.pptx';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('PowerPoint ✓', 'ok');
+}
+
 // ── OVERLAY HELPERS ───────────────────────────────────────────────
 function openOverlay(id) {
   document.getElementById(id).classList.add('open');
@@ -3169,9 +3770,28 @@ document.addEventListener('keydown', e => {
 // Click outside to close
 ['view-overlay','form-overlay','group-overlay','confirm-overlay','settings-overlay','import-overlay','scan-overlay','docview-overlay','photo-editor-overlay','export-overlay','create-overlay','customize-overlay'].forEach(id => {
   document.getElementById(id).addEventListener('click', e => {
-    if (e.target.id === id) closeOverlay(id);
+    if (e.target.id !== id) return;
+    // Worker form: clicking outside / accidental close → auto-save so data isn't lost
+    if (id === 'form-overlay') { autoSaveWorkerForm(); return; }
+    closeOverlay(id);
   });
 });
+
+// Auto-save the worker form if it holds any meaningful data; otherwise just close.
+function autoSaveWorkerForm() {
+  const hasData =
+    (document.getElementById('f-en-name')?.value || '').trim() ||
+    (document.getElementById('f-lo-name')?.value || '').trim() ||
+    (document.getElementById('f-passport-no')?.value || '').trim() ||
+    (document.getElementById('f-photo')?.value || '') ||
+    (window._pendingScanDocs && window._pendingScanDocs.length);
+  if (hasData && typeof saveWorker === 'function') {
+    saveWorker();   // saves + closes + refreshes
+    toast('💾 ບັນທຶກອັດຕະໂນมัติ · auto-saved', 'ok');
+  } else {
+    closeOverlay('form-overlay');
+  }
+}
 
 // ── LANGUAGE ──────────────────────────────────────────────────────
 document.querySelectorAll('.lang-btn').forEach(btn => {
@@ -3190,7 +3810,7 @@ document.querySelectorAll('.lang-btn').forEach(btn => {
 });
 
 // ── SETTINGS (all users — admin sees Cities+Users tabs, viewer sees Appearance only) ──
-const _SET_TABS = ['appearance','company','cities','notifications','data','users','about'];
+const _SET_TABS = ['appearance','company','cities','documents','notifications','data','users','about'];
 let _currentSetTab = 'appearance';
 
 function openSettings() {
@@ -3271,11 +3891,11 @@ function changeLangFromSettings(lang) {
 function renderCompany() {
   updateLogoDisplay();
   const inp = document.getElementById('set-company-name');
-  if (inp) inp.value = localStorage.getItem('kd_company_name') || '';
+  if (inp) inp.value = DB.getSetting('company_name', '') || '';
 }
 function saveCompanyName(v) {
   v = (v || '').trim();
-  if (v) localStorage.setItem('kd_company_name', v); else localStorage.removeItem('kd_company_name');
+  DB.setSetting('company_name', v);
   toast(t('vd_saved') || 'Saved', 'ok');
 }
 
@@ -3289,8 +3909,8 @@ function renderNotifPrefs() {
 function saveNotifPrefs() {
   const w = parseInt(document.getElementById('set-warn-months').value, 10);
   const n = parseInt(document.getElementById('set-near-months').value, 10);
-  if (w > 0) localStorage.setItem('kd_warn_months', String(w));
-  if (n > 0) localStorage.setItem('kd_near_months', String(Math.max(w || 1, n)));
+  if (w > 0) DB.setSetting('warn_months', w);
+  if (n > 0) DB.setSetting('near_months', Math.max(w || 1, n));
   renderNotifPrefs();
   // re-render anything that paints expiry state
   renderStats(); renderSidebar();
@@ -3301,12 +3921,12 @@ function saveNotifPrefs() {
 
 // ── Data & Backup ─────────────────────────────────────────────────
 function renderExportDefault() {
-  const cur = localStorage.getItem('kd_export_default') || 'kd-pdf';
+  const cur = DB.getSetting('export_default', 'kd-pdf');
   document.querySelectorAll('#set-export-default button').forEach(b =>
     b.classList.toggle('active', b.dataset.exp === cur));
 }
 function saveExportDefault(fmt) {
-  localStorage.setItem('kd_export_default', fmt);
+  DB.setSetting('export_default', fmt);
   renderExportDefault();
 }
 async function doBackupNow() {
@@ -3362,10 +3982,10 @@ function renderAbout() {
   const cities = DB.getCities();
   const cityCount = (cities.kr || []).length + (cities.la || []).length;
   const rows = [
-    ['ກຸ່ມ · Groups', groups.length],
-    ['ແຮງງານ · Workers', workers],
-    ['ເມືອງ · Cities', cityCount],
-    ['ຜູ້ໃຊ້ · Users', DB.getUsers().length],
+    [bi('ກຸ່ມ', 'Groups'), groups.length],
+    [bi('ແຮງງານ', 'Workers'), workers],
+    [bi('ເມືອງ', 'Cities'), cityCount],
+    [bi('ຜູ້ໃຊ້', 'Users'), DB.getUsers().length],
   ];
   el.innerHTML = rows.map(([k, v]) =>
     '<div class="set-item"><span class="set-name" style="flex:1">' + k + '</span>' +
@@ -3379,10 +3999,96 @@ function renderSettings() {
     renderCompany();
     renderCityList('kr');
     renderCityList('la');
+    renderDocCatsSettings();
+    renderReqFields();
     renderNotifPrefs();
     renderExportDefault();
     renderUserList();
   }
+}
+
+// ── Document categories (Settings → Documents) — admin-configurable ──
+function renderDocCatsSettings(editIdx) {
+  const el = document.getElementById('set-doccats-list'); if (!el) return;
+  const cats = getDocCats();
+  el.innerHTML = cats.map((c, i) => {
+    if (i === editIdx) {
+      return '<div class="set-item set-item-editing">' +
+        '<input id="set-doccat-edit-' + i + '" class="set-inline-input" value="' + esc(c.label) + '" ' +
+        'onkeydown="if(event.key===\'Enter\')saveDocCat(' + i + ');if(event.key===\'Escape\')renderDocCatsSettings();">' +
+        '<button class="set-act set-save" onclick="saveDocCat(' + i + ')" title="Save">&#x2713;</button>' +
+        '<button class="set-act set-cancel" onclick="renderDocCatsSettings()" title="Cancel">&#x2715;</button>' +
+        '</div>';
+    }
+    return '<div class="set-item">' +
+      '<span class="set-name" style="flex:1">' + esc(c.label) + '</span>' +
+      '<button class="set-act set-move" onclick="moveDocCat(' + i + ',-1)" title="' + esc(t('move_up') || 'เลื่อนขึ้น') + '"' + (i === 0 ? ' disabled' : '') + '>&#9650;</button>' +
+      '<button class="set-act set-move" onclick="moveDocCat(' + i + ',1)" title="' + esc(t('move_down') || 'เลื่อนลง') + '"' + (i === cats.length - 1 ? ' disabled' : '') + '>&#9660;</button>' +
+      '<button class="set-act set-edit" onclick="renderDocCatsSettings(' + i + ')" title="Edit">&#x270E;</button>' +
+      (cats.length > 1 ? '<button class="set-act set-del" onclick="delDocCat(' + i + ')" title="Delete">&#x2715;</button>' : '') +
+      '</div>';
+  }).join('') || '<div class="set-empty">—</div>';
+  if (editIdx !== undefined) {
+    const inp = document.getElementById('set-doccat-edit-' + editIdx);
+    if (inp) { inp.focus(); inp.select(); }
+  }
+}
+// Required-field picker (Settings → Documents): which fields the data-% counts.
+function renderReqFields() {
+  const el = document.getElementById('set-reqfields-list'); if (!el) return;
+  const sel = new Set(getReqFields());
+  el.innerHTML = _REQ_FIELD_CATALOG.map(([key, label]) =>
+    '<label class="reqf-item">' +
+      '<input type="checkbox"' + (sel.has(key) ? ' checked' : '') + (isAdmin() ? '' : ' disabled') +
+        ' onchange="toggleReqField(\'' + key + '\',this.checked)">' +
+      '<span>' + esc(label) + '</span>' +
+    '</label>'
+  ).join('');
+}
+function toggleReqField(key, on) {
+  if (!isAdmin()) return;
+  let cur = getReqFields().slice();
+  if (on) { if (!cur.includes(key)) cur.push(key); }
+  else    { cur = cur.filter(k => k !== key); }
+  if (!cur.length) { cur = ['en_name']; renderReqFields(); }   // never empty
+  DB.setSetting('req_fields', cur);
+}
+function _saveDocCats(cats) { DB.setSetting('doc_cats', cats); }
+// Reorder a category up/down. The array order IS the display order everywhere
+// (detail drawer, export), and it's persisted server-side via doc_cats.
+function moveDocCat(i, dir) {
+  if (!isAdmin()) return;
+  const cats = getDocCats().slice();
+  const j = i + dir;
+  if (j < 0 || j >= cats.length) return;
+  const tmp = cats[i]; cats[i] = cats[j]; cats[j] = tmp;
+  _saveDocCats(cats); renderDocCatsSettings();
+}
+function addDocCat() {
+  if (!isAdmin()) return;
+  const inp = document.getElementById('set-doccat-name');
+  const label = (inp.value || '').trim(); if (!label) return;
+  const cats = getDocCats().slice();
+  cats.push({ key: 'doc_' + Date.now().toString(36), label });
+  _saveDocCats(cats); inp.value = ''; renderDocCatsSettings();
+}
+function saveDocCat(i) {
+  if (!isAdmin()) return;
+  const inp = document.getElementById('set-doccat-edit-' + i);
+  const label = inp ? inp.value.trim() : '';
+  if (!label) return;
+  const cats = getDocCats().slice();
+  if (!cats[i]) return;
+  cats[i] = { ...cats[i], label };
+  _saveDocCats(cats); renderDocCatsSettings();
+}
+function delDocCat(i) {
+  if (!isAdmin()) return;
+  const cats = getDocCats().slice();
+  const c = cats[i]; if (!c) return;
+  showConfirm(t('confirm_delete') || 'Delete',
+    bi('ລຶບປະເພດເອກະສານ ', 'Remove document type ') + '"' + c.label + '"?',
+    () => { cats.splice(i, 1); _saveDocCats(cats); renderDocCatsSettings(); });
 }
 
 function updateLogoDisplay() {

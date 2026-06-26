@@ -14,6 +14,7 @@ const url  = require('node:url');
 const dbmod = require('../infra/db');
 const repo  = require('../infra/repo');
 const admin = require('../infra/admin');
+const ai    = require('../infra/ai');
 
 dbmod.init();   // auto-create DB + tables + default master data on first launch
 
@@ -50,11 +51,22 @@ function serveStatic(req, res, pathname) {
     ? path.join(ROOT, 'data', rel)
     : path.join(ROOT, rel);
   if (!full.startsWith(ROOT)) return send(res, 403, 'Forbidden', 'text/plain');
+  const isUpload = rel.startsWith('/uploads/');
   fs.stat(full, (err, st) => {
     if (err || !st.isFile()) return send(res, 404, 'Not found', 'text/plain');
+    // Uploaded files have content-unique / versioned names (UUID or _v{n}), so they
+    // never change once written → cache them hard. This is the single biggest win
+    // for slow document/photo loading: the browser stops re-downloading every view.
+    // The app shell (HTML/JS/CSS) stays no-cache so code updates take effect at once.
+    const etag = isUpload ? '"' + st.size.toString(16) + '-' + st.mtimeMs.toString(16) + '"' : null;
+    if (etag && req.headers['if-none-match'] === etag) {
+      res.writeHead(304, { 'ETag': etag, 'Cache-Control': 'public, max-age=31536000, immutable' });
+      return res.end();
+    }
     res.writeHead(200, {
       'Content-Type': MIME[path.extname(full).toLowerCase()] || 'application/octet-stream',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': isUpload ? 'public, max-age=31536000, immutable' : 'no-cache',
+      ...(etag ? { 'ETag': etag } : {}),
     });
     fs.createReadStream(full).pipe(res);
   });
@@ -132,6 +144,17 @@ async function handleApi(req, res, pathname) {
       if (method === 'DELETE' && seg[1]) return json(res, 200, { ok: true, status: repo.deleteUser(seg[1]) });
     }
 
+    // App settings (server-persisted key-value) — POST /api/settings { key, value }
+    if (seg[0] === 'settings' && method === 'POST') {
+      return json(res, 200, { ok: true, status: repo.setSetting(body.key, body.value) });
+    }
+
+    // AI document extraction (Gemini) — POST /api/ai/extract { image, docType }
+    if (seg[0] === 'ai' && seg[1] === 'extract' && method === 'POST') {
+      const r = await ai.extract(body.image, body.docType);
+      return json(res, 200, r);
+    }
+
     // Admin
     if (seg[0] === 'admin') {
       if (method === 'POST' && seg[1] === 'backup')  return json(res, 200, { ok: true, file: admin.backup() });
@@ -159,3 +182,20 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log('KD Database server  →  http://localhost:' + PORT);
   console.log('SQLite file         →  ' + dbmod.DB_PATH);
 });
+
+// Periodically fold the WAL back into kd.db so the main file never lags far
+// behind and the WAL can't grow without bound during a long-running session.
+const _ckpt = setInterval(() => dbmod.checkpoint('PASSIVE'), 60 * 1000);
+if (_ckpt.unref) _ckpt.unref();
+
+// Flush everything to disk and close cleanly on shutdown (Ctrl+C / host stop),
+// so a restart never appears to lose the most recent writes.
+let _closing = false;
+function shutdown() {
+  if (_closing) return; _closing = true;
+  clearInterval(_ckpt);
+  try { dbmod.close(); } catch (e) {}
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 2000).unref();   // hard stop if sockets linger
+}
+['SIGINT', 'SIGTERM'].forEach(sig => process.on(sig, shutdown));

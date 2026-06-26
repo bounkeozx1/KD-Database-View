@@ -106,6 +106,11 @@ CREATE TABLE IF NOT EXISTS documents (
   created_at   TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_doc_emp ON documents(employee_uid);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT
+);
 `;
 
 // Default master data (so login + dropdowns work on a fresh install).
@@ -139,6 +144,8 @@ function migrate() {
   if (!empCols.includes('languages'))       db.exec("ALTER TABLE employees ADD COLUMN languages TEXT DEFAULT ''");
   if (!empCols.includes('province'))         db.exec("ALTER TABLE employees ADD COLUMN province TEXT DEFAULT ''");
   if (!empCols.includes('district'))         db.exec("ALTER TABLE employees ADD COLUMN district TEXT DEFAULT ''");
+  // Keep the un-cropped original photo so a bad crop can always be reverted.
+  if (!empCols.includes('photo_orig'))       db.exec("ALTER TABLE employees ADD COLUMN photo_orig TEXT DEFAULT ''");
 
   db.exec(`CREATE TABLE IF NOT EXISTS activity_log (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -183,9 +190,22 @@ function reopen() {
   return db;
 }
 
+// Fold the write-ahead log back into kd.db. Without this the WAL keeps growing
+// and the main file lags behind — so a hard kill (or copying the data/ folder)
+// could appear to "lose" recent writes. TRUNCATE also resets the WAL file size.
+function checkpoint(mode) {
+  try { db.exec('PRAGMA wal_checkpoint(' + (mode || 'PASSIVE') + ');'); } catch (e) {}
+}
+
+// Clean shutdown: checkpoint everything into kd.db, then close the handle.
+function close() {
+  checkpoint('TRUNCATE');
+  try { db.close(); } catch (e) {}
+}
+
 module.exports = {
   get db() { return db; },
-  init, reopen, seedDefaults,
+  init, reopen, seedDefaults, checkpoint, close,
   DB_PATH, DB_DIR, UPLOADS_DIR, ROOT,
   DEFAULT_USERS, DEFAULT_CITIES,
 };

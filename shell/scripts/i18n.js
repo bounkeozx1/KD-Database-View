@@ -1143,8 +1143,24 @@ function applyTranslations() {
   document.querySelectorAll('[data-i18n-title]').forEach(el => {
     el.title = t(el.dataset.i18nTitle);
   });
+  // Bilingual labels (redesign): show ONE language only — Lao when 'lo', else English.
+  const useLo = currentLang === 'lo';
+  document.querySelectorAll('[data-en]').forEach(el => {
+    const en = el.getAttribute('data-en');
+    const lo = el.getAttribute('data-lo') || en;
+    el.textContent = useLo ? lo : en;
+  });
+  document.querySelectorAll('[data-ph-en]').forEach(el => {
+    const en = el.getAttribute('data-ph-en');
+    const lo = el.getAttribute('data-ph-lo') || en;
+    el.placeholder = useLo ? lo : en;
+  });
+
   // Update active lang button
   document.querySelectorAll('.lang-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.lang === currentLang);
   });
 }
+
+// Helper for JS-generated bilingual strings: bi('ລາວ','English') → one language.
+function bi(lo, en) { return (typeof currentLang !== 'undefined' && currentLang === 'lo') ? lo : en; }

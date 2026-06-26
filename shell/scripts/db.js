@@ -87,6 +87,7 @@ const DB = (() => {
     if (!Array.isArray(d.cities.kr)) d.cities.kr = [];
     if (!Array.isArray(d.cities.la)) d.cities.la = [];
     if (!Array.isArray(d.users))     d.users = [];
+    if (!d.settings || typeof d.settings !== 'object') d.settings = {};
     d.groups.forEach(g => { if (!Array.isArray(g.workers)) g.workers = []; });
     return d;
   }
@@ -189,6 +190,17 @@ const DB = (() => {
         }
       });
       return prefix + String(max + 1).padStart(3, '0');
+    },
+
+    /* ── App settings (server-persisted key-value) ── */
+    getSetting(key, fallback) {
+      const v = _data.settings ? _data.settings[key] : undefined;
+      return (v === undefined || v === null) ? fallback : v;
+    },
+    setSetting(key, value) {
+      if (!_data.settings) _data.settings = {};
+      _data.settings[key] = value;
+      _push('POST', '/settings', { key, value });
     },
 
     /* ── Cities ── */
@@ -295,6 +307,12 @@ const DB = (() => {
     },
     async deleteDocument(docId) {
       return _api('DELETE', '/documents/' + docId);
+    },
+
+    /* ── AI document extraction (Gemini) ── */
+    async aiExtract(imageDataUrl, docType) {
+      try { return await _api('POST', '/ai/extract', { image: imageDataUrl, docType: docType || 'passport' }); }
+      catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
     },
 
     /* ── Activity Log ── */
