@@ -135,6 +135,9 @@ function migrate() {
   if (!groupCols.includes('province_code')) db.exec("ALTER TABLE groups ADD COLUMN province_code TEXT DEFAULT ''");
   if (!groupCols.includes('assigned'))     db.exec('ALTER TABLE groups ADD COLUMN assigned INTEGER DEFAULT 0');
   if (!groupCols.includes('arrivals'))     db.exec('ALTER TABLE groups ADD COLUMN arrivals INTEGER DEFAULT 0');
+  // Soft-delete ("Trash"): deleted rows keep their data and only set deleted_at,
+  // so they can be restored. NULL = live (the normal, untouched state).
+  if (!groupCols.includes('deleted_at'))   db.exec('ALTER TABLE groups ADD COLUMN deleted_at TEXT');
 
   const empCols = db.prepare('PRAGMA table_info(employees)').all().map(c => c.name);
   if (!empCols.includes('grade'))           db.exec("ALTER TABLE employees ADD COLUMN grade TEXT DEFAULT ''");
@@ -146,6 +149,8 @@ function migrate() {
   if (!empCols.includes('district'))         db.exec("ALTER TABLE employees ADD COLUMN district TEXT DEFAULT ''");
   // Keep the un-cropped original photo so a bad crop can always be reverted.
   if (!empCols.includes('photo_orig'))       db.exec("ALTER TABLE employees ADD COLUMN photo_orig TEXT DEFAULT ''");
+  // Soft-delete ("Trash") — NULL = live. Set when a worker is moved to trash.
+  if (!empCols.includes('deleted_at'))       db.exec('ALTER TABLE employees ADD COLUMN deleted_at TEXT');
 
   db.exec(`CREATE TABLE IF NOT EXISTS activity_log (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,

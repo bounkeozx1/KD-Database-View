@@ -397,6 +397,59 @@ function _fileToDataUrlImport(file) {
   });
 }
 
+/* ── Full database bundle (.kdb) — receive what _doDatabaseBundle exported ──
+ * Reads manifest.json + media/ binaries back, re-embedding photos & documents
+ * as data: URLs so DB.addWorker rebuilds the group with images intact on this
+ * server. Marked `full:true` so the importer keeps EVERY worker (no field is
+ * required and duplicates are not dropped — it is a faithful restore). */
+const _KDB_MIME = { jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', webp:'image/webp', pdf:'application/pdf' };
+function _kdbMime(p) { return _KDB_MIME[(p.split('.').pop() || '').toLowerCase()] || 'application/octet-stream'; }
+
+async function _parseKdbBundle(arrayBuffer) {
+  if (typeof JSZip === 'undefined') await _loadJSZip();
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const mf = zip.file('manifest.json');
+  if (!mf) throw new Error('ไม่พบ manifest.json — ไฟล์นี้ไม่ใช่ฐานข้อมูล KD (.kdb)');
+  const manifest = JSON.parse(await mf.async('text'));
+  if (manifest.kind !== 'kd-database') throw new Error('ไฟล์ .kdb ไม่ถูกต้อง');
+
+  async function toDataUrl(relPath) {
+    if (!relPath) return '';
+    const f = zip.file(relPath);
+    if (!f) return '';
+    const buf = await f.async('arraybuffer');
+    const blob = new Blob([buf], { type: _kdbMime(relPath) });
+    return await new Promise(resolve => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => resolve('');
+      r.readAsDataURL(blob);
+    });
+  }
+
+  const workers = [];
+  for (const rec of (manifest.workers || [])) {
+    const w = { ...rec };
+    delete w.photo_file; delete w.photo_orig_file; delete w.documents_manifest;
+    delete w.uid;   // let this server mint a fresh uid (avoid cross-server collisions)
+    if (rec.photo_file)      w.photo      = await toDataUrl(rec.photo_file);
+    if (rec.photo_orig_file) w.photo_orig = await toDataUrl(rec.photo_orig_file);
+    if (Array.isArray(rec.documents_manifest) && rec.documents_manifest.length) {
+      const docs = {};
+      for (const dm of rec.documents_manifest) {
+        const data = await toDataUrl(dm.file);
+        if (!data) continue;
+        (docs[dm.category] = docs[dm.category] || []).push({ name: dm.name || '', type: dm.type || 'image', data });
+      }
+      if (Object.keys(docs).length) w.documents = docs;
+    }
+    workers.push(w);
+  }
+
+  const gm = manifest.group || {};
+  return { groupMeta: { name: gm.name, departure: gm.departure, route: gm.route }, workers, full: true };
+}
+
 async function handleImportFile(input) {
   const file = input.files[0];
   if (!file) return;
@@ -408,7 +461,10 @@ async function handleImportFile(input) {
   const name = (file.name || '').toLowerCase();
 
   try {
-    if (name.endsWith('.csv')) {
+    if (name.endsWith('.kdb') || name.endsWith('.zip')) {
+      if (typeof JSZip === 'undefined') { statusEl.textContent = 'กำลังโหลด JSZip…'; await _loadJSZip(); }
+      _importData = await _parseKdbBundle(await file.arrayBuffer());
+    } else if (name.endsWith('.csv')) {
       _importData = { groupMeta: {}, workers: _csvToWorkers(await file.text()) };
     } else if (name.endsWith('.json')) {
       _importData = _jsonToImport(JSON.parse(await file.text()));
@@ -428,7 +484,12 @@ async function handleImportFile(input) {
     if (!workers || !workers.length) { statusEl.textContent = 'ไม่พบข้อมูลในไฟล์นี้'; return; }
 
     _fillImportTargets(groupMeta.name);
-    statusEl.textContent = 'พบข้อมูล ' + workers.length + ' รายการ';
+    // A full .kdb restore rebuilds a whole group → default to a fresh group.
+    if (_importData.full) {
+      const sel = document.getElementById('import-target-group');
+      if (sel && [...sel.options].some(o => o.value === '__new')) { sel.value = '__new'; onImportTargetChange(); }
+    }
+    statusEl.textContent = 'พบข้อมูล ' + workers.length + ' รายการ' + (_importData.full ? ' (ฐานข้อมูล + รูป)' : '');
     previewEl.innerHTML = _buildPreviewTable(workers);
     document.getElementById('import-btn-go').disabled = false;
   } catch (err) {
@@ -499,6 +560,7 @@ async function doImport() {
     });
   }
 
+  const isFull = !!_importData.full;
   let added = 0, skipped = 0;
   const existingPassports = new Set(
     DB.getWorkers(groupId).map(w => w.passport_no).filter(Boolean)
@@ -507,11 +569,18 @@ async function doImport() {
   for (const w of workers) {
     const doc = w._doc;
     const copy = { ...w };
-    delete copy._type; delete copy._doc;
-    if (!doc && !copy.en_name && !copy.passport_no) { skipped++; continue; }
-    if (!doc && copy.passport_no && existingPassports.has(copy.passport_no)) { skipped++; continue; }
+    delete copy._type; delete copy._doc; delete copy.full;
+    // Keep anyone who carries ANY identifying data — previously a worker with
+    // only a Lao name or only a Worker ID was silently dropped (59→55 problem).
+    const hasIdentity = copy.en_name || copy.lo_name || copy.worker_id ||
+                        copy.passport_no || copy.tel || copy.photo || copy.documents;
+    if (!doc && !hasIdentity) { skipped++; continue; }
+    // De-dupe by passport only for partial imports (CSV/PPTX merges). A full
+    // .kdb restore is faithful — it keeps every record, duplicates included.
+    if (!isFull && !doc && copy.passport_no && existingPassports.has(copy.passport_no)) { skipped++; continue; }
     if (doc) copy.documents = { [doc.cat]: [{ name: doc.name, type: doc.type, data: doc.data }] };
     DB.addWorker(groupId, copy);
+    if (copy.passport_no) existingPassports.add(copy.passport_no);
     added++;
   }
 

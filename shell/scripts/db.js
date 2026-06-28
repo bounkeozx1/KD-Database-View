@@ -320,6 +320,22 @@ const DB = (() => {
       return (await _api('GET', '/employees/' + encodeURIComponent(uid) + '/activity')).log || [];
     },
 
+    /* ── Trash (soft-delete bin) ── */
+    // deleteWorker/deleteGroup above already move rows to the trash server-side
+    // (the DELETE endpoints are soft) and drop them from the local cache, so a
+    // trashed item disappears from views at once. These manage the bin itself.
+    async getTrash() {
+      await _queue;   // make sure any just-queued deletes have reached the server
+      return (await _api('GET', '/trash')).trash || { groups: [], employees: [] };
+    },
+    async restoreTrash(type, id) {
+      const r = await _api('POST', '/trash/restore', { type, id });
+      if (r && r.data) _data = _normalize(r.data);   // restored row reappears in cache
+      return true;
+    },
+    async purgeTrash(type, id) { return _api('POST', '/trash/purge', { type, id }); },
+    async emptyTrash()         { return _api('POST', '/trash/empty'); },
+
     /* ── Admin ── */
     async backup()      { return (await _api('POST', '/admin/backup')).file; },
     async listBackups() { return (await _api('GET', '/admin/backups')).files || []; },

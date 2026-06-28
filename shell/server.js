@@ -101,7 +101,8 @@ async function handleApi(req, res, pathname) {
       if (method === 'POST' && seg.length === 1) return json(res, 200, { ok: true, id: repo.createGroup(body) });
       if (method === 'POST' && seg[2] === 'employees') return json(res, 200, { ok: true, uid: repo.addEmployee(seg[1], body) });
       if (method === 'PATCH'  && seg[1]) { repo.updateGroup(seg[1], body); return json(res, 200, { ok: true }); }
-      if (method === 'DELETE' && seg[1]) { repo.deleteGroup(seg[1]); return json(res, 200, { ok: true }); }
+      // DELETE moves the group to the trash (soft-delete) — restorable.
+      if (method === 'DELETE' && seg[1]) { repo.softDeleteGroup(seg[1]); return json(res, 200, { ok: true }); }
     }
 
     // Employees
@@ -120,7 +121,22 @@ async function handleApi(req, res, pathname) {
         }
       }
       if (method === 'PATCH')  { repo.updateEmployee(seg[1], body); return json(res, 200, { ok: true }); }
-      if (method === 'DELETE') { repo.deleteEmployee(seg[1]); return json(res, 200, { ok: true }); }
+      // DELETE moves the worker to the trash (soft-delete) — restorable.
+      if (method === 'DELETE') { repo.softDeleteEmployee(seg[1]); return json(res, 200, { ok: true }); }
+    }
+
+    // Trash (soft-delete bin)
+    if (seg[0] === 'trash') {
+      if (method === 'GET'  && seg.length === 1)     return json(res, 200, { ok: true, trash: repo.listTrash() });
+      if (method === 'POST' && seg[1] === 'restore') {
+        if (body.type === 'group') repo.restoreGroup(body.id); else repo.restoreEmployee(body.id);
+        return json(res, 200, { ok: true, data: repo.getBootstrap() });
+      }
+      if (method === 'POST' && seg[1] === 'purge') {
+        if (body.type === 'group') repo.deleteGroup(body.id); else repo.deleteEmployee(body.id);
+        return json(res, 200, { ok: true });
+      }
+      if (method === 'POST' && seg[1] === 'empty')   { repo.emptyTrash(); return json(res, 200, { ok: true }); }
     }
 
     // Documents (delete by id)
@@ -188,12 +204,37 @@ server.listen(PORT, '0.0.0.0', () => {
 const _ckpt = setInterval(() => dbmod.checkpoint('PASSIVE'), 60 * 1000);
 if (_ckpt.unref) _ckpt.unref();
 
+// ── Automatic backup every 3 days ─────────────────────────────────
+// Keeps a clean SQLite snapshot under data/backups/. The "last backup" time is
+// read from the newest backup file's mtime, so the 3-day cadence survives server
+// restarts (no extra state to persist) and never double-backs-up on a reboot.
+// Old backups are kept indefinitely (no auto-pruning) — by user preference.
+const BACKUP_EVERY_MS = 3 * 24 * 60 * 60 * 1000;
+function _lastBackupMs() {
+  try {
+    const files = admin.listBackups();            // newest first
+    if (!files.length) return 0;
+    return fs.statSync(path.join(admin.BACKUP_DIR, files[0])).mtimeMs;
+  } catch (e) { return 0; }
+}
+function maybeAutoBackup() {
+  try {
+    if (Date.now() - _lastBackupMs() >= BACKUP_EVERY_MS) {
+      console.log('Auto-backup (3-day) →', admin.backup());
+    }
+  } catch (e) { console.error('[auto-backup] failed:', e && e.message || e); }
+}
+setTimeout(maybeAutoBackup, 15 * 1000).unref();          // catch up shortly after boot
+const _bk = setInterval(maybeAutoBackup, 6 * 60 * 60 * 1000);   // re-check every 6h
+if (_bk.unref) _bk.unref();
+
 // Flush everything to disk and close cleanly on shutdown (Ctrl+C / host stop),
 // so a restart never appears to lose the most recent writes.
 let _closing = false;
 function shutdown() {
   if (_closing) return; _closing = true;
   clearInterval(_ckpt);
+  clearInterval(_bk);
   try { dbmod.close(); } catch (e) {}
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 2000).unref();   // hard stop if sockets linger

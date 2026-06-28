@@ -78,7 +78,7 @@ function employeeToWorker(row, passportMap, docsMap) {
 function getBootstrap() {
   // Batch-load everything in a handful of queries instead of N+1 per employee.
   const empByGroup = {};
-  d().prepare('SELECT * FROM employees ORDER BY group_id, sort_order, created_at').all()
+  d().prepare('SELECT * FROM employees WHERE deleted_at IS NULL ORDER BY group_id, sort_order, created_at').all()
      .forEach(e => { (empByGroup[e.group_id] = empByGroup[e.group_id] || []).push(e); });
   const passportMap = {};
   d().prepare('SELECT employee_uid, passport_no, issue_date, expiry_date FROM passports').all()
@@ -87,7 +87,7 @@ function getBootstrap() {
   d().prepare('SELECT employee_uid, category, file_path, type, name FROM documents ORDER BY id').all()
      .forEach(doc => { (docsMap[doc.employee_uid] = docsMap[doc.employee_uid] || []).push(doc); });
 
-  const groups = d().prepare('SELECT * FROM groups ORDER BY sort_order, created_at').all().map(g => ({
+  const groups = d().prepare('SELECT * FROM groups WHERE deleted_at IS NULL ORDER BY sort_order, created_at').all().map(g => ({
     id: g.id, name: g.name, departure: g.departure || '', route: g.route || '',
     site_code: g.site_code || '',
     province_code: g.province_code || '',
@@ -285,6 +285,51 @@ function deleteEmployee(id) {
   d().prepare('DELETE FROM employees WHERE uid=?').run(id);
 }
 
+/* ── Trash (soft-delete bin) ──────────────────────────────────────────
+ * "Delete" moves a row to the trash (sets deleted_at) instead of destroying it.
+ * Live reads (getBootstrap) filter on `deleted_at IS NULL`, so trashed rows
+ * simply disappear from every normal view but keep all their data + files and
+ * can be restored. Only "Delete forever" / "Empty trash" hard-delete (reusing
+ * deleteEmployee/deleteGroup, which also remove the stored photo/doc files).   */
+function softDeleteEmployee(id) {
+  d().prepare("UPDATE employees SET deleted_at=datetime('now') WHERE uid=? AND deleted_at IS NULL").run(id);
+}
+function softDeleteGroup(id) {
+  // Trash the group only; its employees keep deleted_at=NULL so restoring the
+  // group brings them all back, and the trash list shows one entry, not 100.
+  d().prepare("UPDATE groups SET deleted_at=datetime('now') WHERE id=? AND deleted_at IS NULL").run(id);
+}
+function restoreEmployee(id) { d().prepare('UPDATE employees SET deleted_at=NULL WHERE uid=?').run(id); }
+function restoreGroup(id)    { d().prepare('UPDATE groups SET deleted_at=NULL WHERE id=?').run(id); }
+
+function listTrash() {
+  const groups = d().prepare(
+    'SELECT id, name, deleted_at FROM groups WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC'
+  ).all().map(g => ({
+    id: g.id, name: g.name || '', deletedAt: g.deleted_at,
+    count: d().prepare('SELECT COUNT(*) AS c FROM employees WHERE group_id=? AND deleted_at IS NULL').get(g.id).c,
+  }));
+  // Standalone trashed workers (those trashed individually). Workers that are
+  // merely inside a trashed group are NOT listed here — restore the group instead.
+  const employees = d().prepare(
+    'SELECT e.uid, e.en_name, e.lo_name, e.worker_id, e.deleted_at, e.group_id, g.name AS group_name ' +
+    'FROM employees e LEFT JOIN groups g ON g.id=e.group_id ' +
+    'WHERE e.deleted_at IS NOT NULL ORDER BY e.deleted_at DESC'
+  ).all().map(e => ({
+    uid: e.uid, en_name: e.en_name || '', lo_name: e.lo_name || '', worker_id: e.worker_id || '',
+    groupId: e.group_id, groupName: e.group_name || '', deletedAt: e.deleted_at,
+  }));
+  return { groups, employees };
+}
+
+function emptyTrash() {
+  // Hard-delete everything currently in the trash (files included). Groups first
+  // so their cascade removes contained employees; the employee pass then clears
+  // any individually-trashed workers (already-gone uids are harmless no-ops).
+  d().prepare('SELECT id FROM groups WHERE deleted_at IS NOT NULL').all().forEach(g => deleteGroup(g.id));
+  d().prepare('SELECT uid FROM employees WHERE deleted_at IS NOT NULL').all().forEach(e => deleteEmployee(e.uid));
+}
+
 /* ── Cities ── */
 function addCity(country, c) {
   try { d().prepare('INSERT INTO cities (country,code,name) VALUES (?,?,?)').run(country, (c.code||'').toUpperCase(), c.name||''); return 'ok'; }
@@ -407,6 +452,7 @@ module.exports = {
   getBootstrap, countEmployees,
   createGroup, updateGroup, deleteGroup,
   addEmployee, updateEmployee, deleteEmployee,
+  softDeleteEmployee, softDeleteGroup, restoreEmployee, restoreGroup, listTrash, emptyTrash,
   addCity, deleteCity, addUser, deleteUser, updateUser, login, importAll,
   listDocuments, addDocument, deleteDocument,
   getActivity, getSettings, setSetting,

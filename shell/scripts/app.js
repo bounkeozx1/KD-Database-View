@@ -2193,6 +2193,7 @@ function openView(uid) {
 
   _currentViewUid = uid;
   detailEditMode = false;
+  _docPasteTarget = null;   // clear paste target when switching workers
 
   // Build the ←/→ navigation order: follow the table the user is looking at
   // (filtered + sorted) when it contains this worker, otherwise the group order.
@@ -2338,13 +2339,21 @@ function _ceLoad(src) {
 
 // Crop frame: centred in the stage, sized to `aspect` (or the image's own aspect
 // when free), leaving a small margin so the whole image is visible at zoom 1.
+// In free mode the frame follows the image's CURRENT (post-rotation) aspect, so
+// after a 90° rotation it still fills the frame exactly — no white bars get baked
+// into the saved file.
 function _ceGeom() {
   const canvas = document.getElementById('ce-canvas');
   const SW = canvas.width, SH = canvas.height;
   const M = Math.round(Math.min(SW, SH) * 0.06);
   const avW = SW - 2 * M, avH = SH - 2 * M;
   let a = _ce.aspect;
-  if (!a && _ce.img) a = _ce.img.naturalWidth / _ce.img.naturalHeight;
+  if (!a && _ce.img) {
+    const rot = ((_ce.rot % 360) + 360) % 360;
+    const swap = rot === 90 || rot === 270;
+    a = swap ? _ce.img.naturalHeight / _ce.img.naturalWidth
+             : _ce.img.naturalWidth  / _ce.img.naturalHeight;
+  }
   let CW, CH;
   if (a) { if (avW / avH > a) { CH = avH; CW = a * CH; } else { CW = avW; CH = CW / a; } }
   else   { CW = avW; CH = avH; }
@@ -2672,7 +2681,7 @@ function _renderDocs(uid) {
 
     // Preview thumbnail (monochrome) or a neutral placeholder
     const preview = hasFile
-      ? '<div class="docb-preview" onclick="openDocViewById(' + current.id + ',\'' + esc(current.path) + '\',\'' + current.type + '\',\'' + esc(current.name) + '\',\'' + esc(uid) + '\',\'' + esc(cat.key) + '\')">' +
+      ? '<div class="docb-preview" onclick="event.stopPropagation();openDocViewById(' + current.id + ',\'' + esc(current.path) + '\',\'' + current.type + '\',\'' + esc(current.name) + '\',\'' + esc(uid) + '\',\'' + esc(cat.key) + '\')">' +
           (current.type === 'pdf'
             ? '<div class="docb-pdf">PDF</div>'
             : '<img src="' + esc(current.path) + '" alt="" loading="lazy" decoding="async">') +
@@ -2712,7 +2721,15 @@ function _renderDocs(uid) {
         '</div>'
       : '';
 
-    return '<div class="docb ' + (hasFile ? 'docb-has' : 'docb-no') + '">' +
+    // Admins can click a box to make it the paste target (Ctrl+V) and drop files onto it.
+    const dropAttrs = canEdit
+      ? ' data-cat="' + esc(cat.key) + '"' +
+        ' onclick="_setPasteTarget(\'' + esc(uid) + '\',\'' + esc(cat.key) + '\',this)"' +
+        ' ondragover="event.preventDefault();this.classList.add(\'dragover\')"' +
+        ' ondragleave="this.classList.remove(\'dragover\')"' +
+        ' ondrop="_docDrop(event,\'' + esc(uid) + '\',\'' + esc(cat.key) + '\')"'
+      : '';
+    return '<div class="docb ' + (hasFile ? 'docb-has' : 'docb-no') + '"' + dropAttrs + '>' +
       preview +
       '<div class="docb-body">' +
         '<div class="docb-title">' + esc(cat.label) +
@@ -2725,29 +2742,103 @@ function _renderDocs(uid) {
     '</div>';
   }).join('');
 
-  container.innerHTML = '<div class="vm-docs-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> ' + t('vc_documents') + '</div><div class="docb-grid">' + html + '</div>';
+  const hint = canEdit
+    ? '<div class="docb-paste-hint">' + bi('ຄລິກຊ່ອງ → Ctrl+V ວາງຮູບ · ຫຼື ລາກໄຟລ໌ມາວາງ', 'คลิกช่อง → Ctrl+V วางรูป · หรือลากไฟล์มาวาง') + '</div>'
+    : '';
+  container.innerHTML = '<div class="vm-docs-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> ' + t('vc_documents') + '</div>' + hint + '<div class="docb-grid">' + html + '</div>';
+
+  // Re-apply the paste-target highlight after a re-render (e.g. post-upload).
+  if (_docPasteTarget && _docPasteTarget.uid === uid) {
+    const el = container.querySelector('.docb[data-cat="' + (window.CSS && CSS.escape ? CSS.escape(_docPasteTarget.cat) : _docPasteTarget.cat) + '"]');
+    if (el) el.classList.add('paste-target');
+  }
 }
 
 function handleDocUpload(input, uid, cat) {
   const file = input.files && input.files[0];
   if (!file) return;
   input.value = '';
+  _docUploadFile(file, uid, cat);
+}
+
+// Shared upload entry for a File/Blob — used by the file picker, paste (Ctrl+V)
+// and drag-and-drop. Images go through the crop editor first (consistent format);
+// PDFs upload directly.
+function _docUploadFile(file, uid, cat) {
+  if (!file || !uid || !cat) return;
+  const type = file.type || '';
+  const isPdf = type === 'application/pdf';
+  const isImg = type.startsWith('image/');
+  if (!isPdf && !isImg) { toast(bi('ຮັບສະເພາະຮູບ ຫຼື PDF', 'รองรับเฉพาะรูปหรือ PDF'), 'warn'); return; }
   _fileToDataURL(file, 1600, dataUrl => {
-    const type = file.type === 'application/pdf' ? 'pdf' : 'image';
-    // Optimistic: show the document instantly from the local data URL (no waiting)
-    _docCache[uid] = _docCache[uid] || {};
-    const list = _docCache[uid][cat] = _docCache[uid][cat] || [];
-    const ver  = list.reduce((m, v) => Math.max(m, v.version || 0), 0) + 1;
-    list.forEach(v => { v.isCurrent = false; });
-    list.unshift({ id: 'tmp-' + Date.now(), path: dataUrl, type, name: file.name || '',
-                   version: ver, isCurrent: true, uploadedAt: new Date().toISOString() });
-    _renderDocs(uid);
-    toast('ກຳລັງບັນທຶກ... · uploading', 'ok');
-    // Sync to the server in the background — UI is already updated
-    DB.uploadDocument(uid, activeGroupId, cat, dataUrl, file.name)
-      .then(() => _loadAndRenderDocs(uid))   // silent reconcile (real id/path)
-      .catch(e => toast('Upload failed: ' + (e && e.message || e), 'err'));
+    if (isPdf) { _uploadDocData(uid, cat, dataUrl, 'pdf', file.name || 'document.pdf'); return; }
+    // Photos: let the user zoom / crop / rotate to frame the document the SAME
+    // way every time before it's stored — so documents from any device end up in
+    // a consistent format (no fixed white frame needed at view time).
+    _ceOpen({
+      src: dataUrl, aspect: null, allowPick: false, mode: 'doc',
+      title: bi('ປັບຮູບເອກະສານກ່ອນອັບໂຫລດ', 'ปรับรูปเอกสารก่อนอัปโหลด'),
+      onSave: (out) => _uploadDocData(uid, cat, out, 'image', file.name || ''),
+    });
   });
+}
+
+// ── Paste (Ctrl+V) + drag-and-drop into a document box ──
+// Click a document box to make it the active target, then Ctrl+V to paste a
+// copied image. Dropping a file onto any box uploads straight to it.
+let _docPasteTarget = null;   // { uid, cat }
+function _setPasteTarget(uid, cat, el) {
+  if (!isAdmin()) return;
+  _docPasteTarget = { uid, cat };
+  document.querySelectorAll('.docb.paste-target').forEach(d => d.classList.remove('paste-target'));
+  if (el) el.classList.add('paste-target');
+}
+function _docDrop(e, uid, cat) {
+  e.preventDefault(); e.stopPropagation();
+  const box = e.currentTarget; if (box) box.classList.remove('dragover');
+  if (!isAdmin()) return;
+  const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (file) { _setPasteTarget(uid, cat, box); _docUploadFile(file, uid, cat); }
+}
+// While the detail drawer is open, swallow stray drag/drops so the browser never
+// navigates away to a dropped file (the box handlers still process real drops).
+['dragover', 'drop'].forEach(ev => document.addEventListener(ev, (e) => {
+  const vo = document.getElementById('view-overlay');
+  if (vo && vo.classList.contains('open')) e.preventDefault();
+}));
+document.addEventListener('paste', (e) => {
+  if (!_docPasteTarget || !isAdmin()) return;
+  const vo = document.getElementById('view-overlay');
+  if (!vo || !vo.classList.contains('open')) return;
+  // Skip if a stacked overlay (crop editor / doc viewer / export) is on top.
+  if (document.querySelector('.overlay.open:not(#view-overlay)')) return;
+  // Don't hijack a normal text paste into an input/textarea.
+  const tag = (e.target && e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || (e.target && e.target.isContentEditable)) return;
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  for (const it of items) {
+    if (it.type && it.type.indexOf('image') === 0) {
+      const blob = it.getAsFile();
+      if (blob) { e.preventDefault(); _docUploadFile(blob, _docPasteTarget.uid, _docPasteTarget.cat); return; }
+    }
+  }
+});
+
+// Optimistic insert into the doc cache + background upload (shared by image and
+// PDF paths).
+function _uploadDocData(uid, cat, dataUrl, type, name) {
+  _docCache[uid] = _docCache[uid] || {};
+  const list = _docCache[uid][cat] = _docCache[uid][cat] || [];
+  const ver  = list.reduce((m, v) => Math.max(m, v.version || 0), 0) + 1;
+  list.forEach(v => { v.isCurrent = false; });
+  list.unshift({ id: 'tmp-' + Date.now(), path: dataUrl, type, name: name || '',
+                 version: ver, isCurrent: true, uploadedAt: new Date().toISOString() });
+  _renderDocs(uid);
+  if (_currentViewUid === uid) _refreshCmpBox(uid);
+  toast(bi('ກຳລັງບັນທຶກ...', 'กำลังบันทึก...'), 'ok');
+  DB.uploadDocument(uid, activeGroupId, cat, dataUrl, name || '')
+    .then(() => _loadAndRenderDocs(uid))   // silent reconcile (real id/path)
+    .catch(e => toast('Upload failed: ' + (e && e.message || e), 'err'));
 }
 
 async function deleteDocById(event, docId, uid) {
@@ -2765,14 +2856,41 @@ function openDocViewById(docId, path, type, name, uid, cat) {
   _docView = { docId, path, type, name: name || '', uid: uid || '', cat: cat || '' };
   const body = document.getElementById('docview-body');
   if (!body) return;
+  _docZoom = 0;   // reset zoom cycle for the new document
   body.innerHTML = type === 'pdf'
     ? '<iframe class="docview-pdf" src="' + esc(path) + '"></iframe>'
-    : '<img class="docview-img" src="' + esc(path) + '" alt="' + esc(name || '') + '">';
+    : '<img class="docview-img" src="' + esc(path) + '" alt="' + esc(name || '') + '" onclick="_docZoomCycle(event)" title="' + esc(bi('ຄລິກເພື່ອຊູມ', 'คลิกเพื่อซูม')) + '">';
   // The Edit/crop button only makes sense for an admin editing a real image
   // attached to a known worker + category (so we can upload the result back).
   const editBtn = document.getElementById('docview-edit');
   if (editBtn) editBtn.style.display = (type === 'image' && uid && cat && isAdmin()) ? '' : 'none';
   openOverlay('docview-overlay');
+}
+
+// Click-to-zoom cycle on the document image: fit -> 2x -> 3.5x -> fit. The first
+// zoom centres on the clicked point (zooms toward what they want to read); the
+// next click zooms further on the same spot; the third resets to fit.
+let _docZoom = 0;
+const _DOC_ZOOM = [1, 2, 3.5];
+function _docZoomCycle(e) {
+  e.stopPropagation();
+  const img = e.currentTarget;
+  _docZoom = (_docZoom + 1) % _DOC_ZOOM.length;
+  const scale = _DOC_ZOOM[_docZoom];
+  if (_docZoom === 1) {   // entering zoom from fit -> aim at the clicked point
+    const r = img.getBoundingClientRect();
+    const ox = Math.max(0, Math.min(100, (e.clientX - r.left) / r.width  * 100));
+    const oy = Math.max(0, Math.min(100, (e.clientY - r.top)  / r.height * 100));
+    img.style.transformOrigin = ox + '% ' + oy + '%';
+  }
+  if (scale === 1) {
+    img.style.transform = '';
+    img.style.transformOrigin = '';
+    img.classList.remove('zoomed');
+  } else {
+    img.style.transform = 'scale(' + scale + ')';
+    img.classList.add('zoomed');
+  }
 }
 
 // Re-crop / fix the currently-previewed document, then save it as a new version.
@@ -3387,6 +3505,9 @@ function openExportDialog(scope, uid) {
   // detail-pdf only makes sense for single worker
   const detBtn = document.querySelector('.export-opt[data-fmt="detail-pdf"]');
   if (detBtn) detBtn.style.display = scope === 'worker' ? '' : 'none';
+  // the full-database bundle is a whole-group export only
+  const kdbBtn = document.querySelector('.export-opt[data-fmt="kdb"]');
+  if (kdbBtn) kdbBtn.style.display = scope === 'worker' ? 'none' : '';
 
   // reset + default selection (honours Settings → Data & Backup default)
   document.querySelectorAll('.export-opt').forEach(el => el.classList.remove('sel'));
@@ -3446,7 +3567,9 @@ async function doExport() {
   } else {
     workers = tableFiltered.length ? tableFiltered : DB.getWorkers(activeGroupId);
   }
-  if (!workers.length) { toast('ບໍ່ມີຂໍ້ມູນ', 'warn'); return; }
+  // The .kdb bundle always exports the COMPLETE group (never the filtered view),
+  // so it can run even when the current search/filter shows nothing.
+  if (!workers.length && !fmts.includes('kdb')) { toast('ບໍ່ມີຂໍ້ມູນ', 'warn'); return; }
 
   for (const fmt of fmts) {
     if      (fmt === 'detail-pdf') { exportWorkerPDF(); await new Promise(r => setTimeout(r, 200)); }
@@ -3455,6 +3578,7 @@ async function doExport() {
     else if (fmt === 'pptx')       await _doKdCardPptx(workers, g);
     else if (fmt === 'csv')        _doExportCsv(workers, g);
     else if (fmt === 'docs')       await _doExportDocs(workers);
+    else if (fmt === 'kdb')        await _doDatabaseBundle(g);
   }
 }
 
@@ -3476,6 +3600,9 @@ function _doKdCardPdf(workers, g) {
 
 async function _doKdCardPng(workers, g) {
   if (!window.html2canvas) { toast('html2canvas ບໍ່ໄດ້ໂຫລດ', 'warn'); return; }
+  const showProg = workers.length > 3;
+  if (showProg) _progressShow(bi('ກຳລັງສ້າງຮູບ KD Card', 'กำลังสร้างรูป KD Card'));
+  try {
   for (let i = 0; i < workers.length; i++) {
     const w = workers[i];
     const wrap = document.createElement('div');
@@ -3491,11 +3618,13 @@ async function _doKdCardPng(workers, g) {
       a.download = _safeFile(w.en_name || w.lo_name, 'worker') + '_kd_card.png';
       a.click();
       URL.revokeObjectURL(url);
+      if (showProg) _progressSet((i + 1) / workers.length * 100, (i + 1) + '/' + workers.length);
       if (workers.length > 1) await new Promise(r => setTimeout(r, 400));
     } finally {
       document.body.removeChild(wrap);
     }
   }
+  } finally { if (showProg) _progressDone(); }
 }
 
 function _doExportCsv(workers, g) {
@@ -3523,8 +3652,11 @@ function _doExportCsv(workers, g) {
 }
 
 async function _doExportDocs(workers) {
+  _progressShow(bi('ກຳລັງລວບລວມເອກະສານ', 'กำลังรวบรวมเอกสาร'));
+  try {
   const allDocs = [];
-  for (const w of workers) {
+  for (let i = 0; i < workers.length; i++) {
+    const w = workers[i];
     try {
       const docs = await DB.getDocuments(w.uid);
       getDocCats().forEach(cat => {
@@ -3533,6 +3665,8 @@ async function _doExportDocs(workers) {
         if (cur) allDocs.push({ w, cat, doc: cur });
       });
     } catch(e) { /* skip */ }
+    _progressSet(i / workers.length * 40, bi('ກວດເອກະສານ ', 'ตรวจเอกสาร ') + (i + 1) + '/' + workers.length);
+    await _paint();
   }
   if (!allDocs.length) { toast('ບໍ່ມີເອກະສານທີ່ອັບໂຫລດ', 'warn'); return; }
 
@@ -3550,9 +3684,9 @@ async function _doExportDocs(workers) {
     return;
   }
 
-  toast('ກຳລັງສ້າງ ZIP...', 'info');
   const zip = new JSZip();
-  for (const { w, cat, doc } of allDocs) {
+  for (let i = 0; i < allDocs.length; i++) {
+    const { w, cat, doc } = allDocs[i];
     try {
       const resp = await fetch(doc.path);
       const blob = await resp.blob();
@@ -3560,14 +3694,173 @@ async function _doExportDocs(workers) {
       const ext   = doc.type || (doc.name || '').split('.').pop() || 'bin';
       zip.file(wName + '/' + cat.key + '_v' + (doc.version || 1) + '.' + ext, blob);
     } catch(e) { /* skip unavailable file */ }
+    _progressSet(40 + (i + 1) / allDocs.length * 50, bi('ດຶງເອກະສານ ', 'ดึงเอกสาร ') + (i + 1) + '/' + allDocs.length);
+    await _paint();
   }
-  const content = await zip.generateAsync({ type: 'blob' });
+  const content = await zip.generateAsync({ type: 'blob' },
+    m => _progressSet(90 + (m.percent || 0) * 0.1, bi('ບີບອັດໄຟລ໌...', 'บีบอัดไฟล์...')));
   const url = URL.createObjectURL(content);
   const a = document.createElement('a');
   a.href = url;
   a.download = _safeFile((DB.getGroup(activeGroupId) || {}).name, 'workers') + '_docs.zip';
   a.click();
   URL.revokeObjectURL(url);
+  } catch (e) {
+    toast('Export failed: ' + (e && e.message || e), 'warn');
+  } finally {
+    _progressDone();
+  }
+}
+
+// ── PROGRESS overlay ──────────────────────────────────────────────
+// A determinate bar + percentage for long jobs (the .kdb bundle, the documents
+// ZIP, multi-card rasterising) so the user can see it IS working — these can run
+// 20s+ and otherwise look frozen. Not click-outside dismissable.
+function _progressShow(title) {
+  const ov = document.getElementById('progress-overlay'); if (!ov) return;
+  const te = document.getElementById('progress-title');
+  if (te) te.textContent = title || bi('ກຳລັງດຳເນີນການ...', 'กำลังดำเนินการ...');
+  _progressSet(0, '');
+  ov.classList.add('open');
+  document.body.classList.add('no-scroll');
+}
+function _progressSet(pct, sub) {
+  pct = Math.max(0, Math.min(100, Math.round(pct)));
+  const fill = document.getElementById('progress-fill');
+  const pe   = document.getElementById('progress-pct');
+  const se   = document.getElementById('progress-sub');
+  if (fill) fill.style.width = pct + '%';
+  if (pe)   pe.textContent = pct + '%';
+  if (se && sub != null) se.textContent = sub;
+}
+function _progressHide() {
+  const ov = document.getElementById('progress-overlay'); if (!ov) return;
+  ov.classList.remove('open');
+  if (!document.querySelector('.overlay.open')) document.body.classList.remove('no-scroll');
+}
+// Snap to 100% briefly so the bar visibly completes, then close.
+function _progressDone() { _progressSet(100, ''); setTimeout(_progressHide, 280); }
+// Let the browser paint the latest bar state between awaited steps.
+function _paint() { return new Promise(r => requestAnimationFrame(() => setTimeout(r, 0))); }
+
+// ── FULL DATABASE BUNDLE (.kdb) export ────────────────────────────
+// A portable, self-contained ZIP of an ENTIRE group — every worker (no field
+// is required, nobody is dropped) plus the real binary of every photo and
+// document. Another KD Database instance (different machine / server) can
+// receive it via Import and rebuild the group with images intact.
+//
+//   <group>.kdb (zip)
+//   ├── manifest.json          { kind:'kd-database', version, group, workers[] }
+//   └── media/<uid>/…          photo / photo_orig / <category> binaries
+//
+// Photos & documents are stored on the server as /uploads/… paths, which are
+// meaningless on another box — so we fetch each one and pack the bytes.
+async function _doDatabaseBundle(g) {
+  if (!g) { toast('ບໍ່ມີກຸ່ມ · No group', 'warn'); return; }
+  if (typeof _loadJSZip === 'function') { try { await _loadJSZip(); } catch (e) {} }
+  if (!window.JSZip) { toast('JSZip ບໍ່ໄດ້ໂຫລດ', 'warn'); return; }
+
+  // ALWAYS the full group — the active table filter must never shrink a backup.
+  const workers = DB.getWorkers(g.id);
+  if (!workers.length) { toast('ບໍ່ມີຂໍ້ມູນ', 'warn'); return; }
+
+  _progressShow(bi('ກຳລັງສ້າງໄຟລ໌ຖານຂໍ້ມູນ', 'กำลังสร้างไฟล์ฐานข้อมูล'));
+  try {
+
+  const _extFor = (p, mime) => {
+    const m = (p || '').match(/\.([a-z0-9]+)(?:[?#].*)?$/i);
+    if (m) return m[1].toLowerCase();
+    if (/png/.test(mime))  return 'png';
+    if (/webp/.test(mime)) return 'webp';
+    if (/pdf/.test(mime))  return 'pdf';
+    return 'jpg';
+  };
+  // Fetch a /uploads path (or data: URL) → raw bytes, or null if unavailable.
+  const _grab = async (src) => {
+    if (!src) return null;
+    try {
+      const resp = await fetch(src);
+      if (!resp.ok) return null;
+      const blob = await resp.blob();
+      return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type || '' };
+    } catch (e) { return null; }
+  };
+
+  const zip = new JSZip();
+  const media = zip.folder('media');
+  const out = [];
+  let nPhotos = 0, nDocs = 0;
+
+  for (let wi = 0; wi < workers.length; wi++) {
+    const w = workers[wi];
+    const rec = { ...w };
+    delete rec.photo; delete rec.photo_orig; delete rec.documents;
+
+    if (w.photo) {
+      const got = await _grab(w.photo);
+      if (got) {
+        const fp = w.uid + '/photo.' + _extFor(w.photo, got.mime);
+        media.file(fp, got.bytes); rec.photo_file = 'media/' + fp; nPhotos++;
+      }
+    }
+    if (w.photo_orig && w.photo_orig !== w.photo) {
+      const got = await _grab(w.photo_orig);
+      if (got) {
+        const fp = w.uid + '/photo_orig.' + _extFor(w.photo_orig, got.mime);
+        media.file(fp, got.bytes); rec.photo_orig_file = 'media/' + fp;
+      }
+    }
+
+    rec.documents_manifest = [];
+    let docs = {};
+    try { docs = await DB.getDocuments(w.uid); } catch (e) {}
+    for (const cat of Object.keys(docs)) {
+      const versions = docs[cat] || [];
+      const cur = versions.find(v => v.isCurrent) || versions[0];
+      if (!cur || !cur.path) continue;
+      const got = await _grab(cur.path);
+      if (!got) continue;
+      const idx = rec.documents_manifest.length;
+      const fp = w.uid + '/' + _safeFile(cat, 'doc') + '_' + idx + '.' + _extFor(cur.path, got.mime);
+      media.file(fp, got.bytes); nDocs++;
+      rec.documents_manifest.push({
+        category: cat, name: cur.name || '', type: cur.type || 'image',
+        version: cur.version || 1, file: 'media/' + fp,
+      });
+    }
+    out.push(rec);
+    // Gathering media is the slow phase → map it to 0–90% of the bar.
+    _progressSet((wi + 1) / workers.length * 90,
+      bi('ລວບລວມຂໍ້ມູນ ', 'รวบรวมข้อมูล ') + (wi + 1) + '/' + workers.length);
+    await _paint();
+  }
+
+  const manifest = {
+    kind: 'kd-database', version: 1,
+    exported_at: new Date().toISOString(),
+    app: 'KD Database',
+    group: { id: g.id, name: g.name || '', departure: g.departure || '', route: g.route || '' },
+    counts: { workers: out.length, photos: nPhotos, documents: nDocs },
+    workers: out,
+  };
+  zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+
+  // Zipping/compression is the final 90–100%.
+  const content = await zip.generateAsync({ type: 'blob' },
+    m => _progressSet(90 + (m.percent || 0) * 0.1, bi('ບີບອັດໄຟລ໌...', 'บีบอัดไฟล์...')));
+  const url = URL.createObjectURL(content);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = _safeFile(g.name, 'database') + '.kdb';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast(bi('ສ້າງໄຟລ໌ຖານຂໍ້ມູນສຳເລັດ · ' + out.length + ' ຄົນ, ' + (nPhotos + nDocs) + ' ຮູບ',
+           'สร้างไฟล์ฐานข้อมูลสำเร็จ · ' + out.length + ' คน, ' + (nPhotos + nDocs) + ' รูป'), 'ok');
+  } catch (e) {
+    toast('Export failed: ' + (e && e.message || e), 'warn');
+  } finally {
+    _progressDone();
+  }
 }
 
 // ── PowerPoint (.pptx) export ─────────────────────────────────────
@@ -3715,7 +4008,8 @@ async function _buildPptx(slides) {
 async function _doKdCardPptx(workers, g) {
   if (!window.html2canvas) { toast('html2canvas ບໍ່ໄດ້ໂຫລດ', 'warn'); return; }
   if (!window.JSZip)       { toast('JSZip ບໍ່ໄດ້ໂຫລດ', 'warn'); return; }
-  toast(bi('ກຳລັງສ້າງ PowerPoint...', 'กำลังสร้าง PowerPoint...'), 'info');
+  _progressShow(bi('ກຳລັງສ້າງ PowerPoint', 'กำลังสร้าง PowerPoint'));
+  try {
   const slides = [];
   for (let i = 0; i < workers.length; i++) {
     const wrap = document.createElement('div');
@@ -3728,8 +4022,11 @@ async function _doKdCardPptx(workers, g) {
     } finally {
       document.body.removeChild(wrap);
     }
+    _progressSet((i + 1) / workers.length * 90, bi('ສ້າງສະໄລ້ ', 'สร้างสไลด์ ') + (i + 1) + '/' + workers.length);
+    await _paint();
   }
   if (!slides.length) { toast('ບໍ່ມີຂໍ້ມູນ', 'warn'); return; }
+  _progressSet(95, bi('ປະກອບໄຟລ໌...', 'ประกอบไฟล์...'));
   const blob = await _buildPptx(slides);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -3738,6 +4035,11 @@ async function _doKdCardPptx(workers, g) {
   a.click();
   URL.revokeObjectURL(url);
   toast('PowerPoint ✓', 'ok');
+  } catch (e) {
+    toast('Export failed: ' + (e && e.message || e), 'warn');
+  } finally {
+    _progressDone();
+  }
 }
 
 // ── OVERLAY HELPERS ───────────────────────────────────────────────
@@ -3767,8 +4069,95 @@ document.addEventListener('keydown', e => {
   }
 });
 
+// ── TRASH (soft-delete bin) ───────────────────────────────────────
+let _trashCache = { groups: [], employees: [] };
+async function openTrash() {
+  if (!isAdmin()) return;
+  openOverlay('trash-overlay');
+  const body = document.getElementById('trash-body');
+  body.innerHTML = '<div class="trash-empty">' + bi('ກຳລັງໂຫລດ...', 'กำลังโหลด...') + '</div>';
+  try { _trashCache = await DB.getTrash(); }
+  catch (e) { body.innerHTML = '<div class="trash-empty">' + esc(bi('ໂຫລດບໍ່ສຳເລັດ', 'โหลดไม่สำเร็จ') + ': ' + (e.message || e)) + '</div>'; return; }
+  renderTrash();
+}
+function _trashFmtDate(s) {
+  if (!s) return '';
+  const d = new Date(String(s).replace(' ', 'T') + 'Z');   // server time is UTC
+  if (isNaN(d)) return s;
+  const p = n => String(n).padStart(2, '0');
+  return p(d.getDate()) + '/' + p(d.getMonth() + 1) + '/' + d.getFullYear() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function renderTrash() {
+  const body = document.getElementById('trash-body');
+  const groups = _trashCache.groups || [], employees = _trashCache.employees || [];
+  const total = groups.length + employees.length;
+  const emptyBtn = document.getElementById('trash-empty-btn');
+  if (emptyBtn) emptyBtn.style.display = total ? '' : 'none';
+  if (!total) {
+    body.innerHTML = '<div class="trash-empty">'
+      + '<svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" style="opacity:.35;margin-bottom:10px"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'
+      + '<div>' + bi('ຖັງຂີ້ເຫຍື້ອວ່າງ', 'ถังขยะว่างเปล่า') + '</div></div>';
+    return;
+  }
+  const restoreLbl = bi('ກູ້ຄືນ', 'กู้คืน'), delTitle = bi('ລຶບຖາວອນ', 'ลบถาวร');
+  let h = '';
+  if (groups.length) {
+    h += '<div class="trash-sec-label">' + bi('ກຸ່ມ', 'กลุ่ม') + ' (' + groups.length + ')</div>';
+    h += groups.map(g =>
+      '<div class="trash-item">'
+      + '<div class="trash-item-main"><div class="trash-item-name">📁 ' + esc(g.name || '—') + '</div>'
+      + '<div class="trash-item-sub">' + g.count + ' ' + bi('ຄົນ', 'คน') + ' · ' + bi('ລຶບເມື່ອ ', 'ลบเมื่อ ') + esc(_trashFmtDate(g.deletedAt)) + '</div></div>'
+      + '<button class="trash-btn trash-btn-restore" onclick="restoreTrashItem(\'group\',\'' + esc(g.id) + '\')">↩ ' + restoreLbl + '</button>'
+      + '<button class="trash-btn trash-btn-del" title="' + delTitle + '" onclick="purgeTrashItem(\'group\',\'' + esc(g.id) + '\',\'' + esc(g.name || '') + '\')">&#128465;</button>'
+      + '</div>').join('');
+  }
+  if (employees.length) {
+    h += '<div class="trash-sec-label">' + bi('ແຮງງານ', 'แรงงาน') + ' (' + employees.length + ')</div>';
+    h += employees.map(e => {
+      const nm = e.en_name || e.lo_name || e.worker_id || e.uid;
+      return '<div class="trash-item">'
+      + '<div class="trash-item-main"><div class="trash-item-name">👤 ' + esc(nm) + '</div>'
+      + '<div class="trash-item-sub">' + (e.groupName ? esc(e.groupName) + ' · ' : '') + bi('ລຶບເມື່ອ ', 'ลบเมื่อ ') + esc(_trashFmtDate(e.deletedAt)) + '</div></div>'
+      + '<button class="trash-btn trash-btn-restore" onclick="restoreTrashItem(\'employee\',\'' + esc(e.uid) + '\')">↩ ' + restoreLbl + '</button>'
+      + '<button class="trash-btn trash-btn-del" title="' + delTitle + '" onclick="purgeTrashItem(\'employee\',\'' + esc(e.uid) + '\',\'' + esc(nm) + '\')">&#128465;</button>'
+      + '</div>';
+    }).join('');
+  }
+  body.innerHTML = h;
+}
+async function restoreTrashItem(type, id) {
+  try { await DB.restoreTrash(type, id); }
+  catch (e) { toast('Restore failed', 'warn'); return; }
+  toast(bi('ກູ້ຄືນສຳເລັດ', 'กู้คืนสำเร็จ'), 'ok');
+  try { _trashCache = await DB.getTrash(); } catch (e) {}
+  renderTrash();
+  refreshAll();
+}
+function purgeTrashItem(type, id, name) {
+  showConfirm(bi('ລຶບຖາວອນ', 'ลบถาวร'),
+    bi('ລຶບ "' + name + '" ຖາວອນ? ກູ້ຄືນບໍ່ໄດ້ອີກ.', 'ลบ "' + name + '" ถาวร? กู้คืนไม่ได้อีก'),
+    async () => {
+      try { await DB.purgeTrash(type, id); } catch (e) { toast('Delete failed', 'warn'); return; }
+      try { _trashCache = await DB.getTrash(); } catch (e) {}
+      renderTrash();
+      toast(bi('ລຶບຖາວອນແລ້ວ', 'ลบถาวรแล้ว'), 'ok');
+    });
+}
+function confirmEmptyTrash() {
+  const total = (_trashCache.groups || []).length + (_trashCache.employees || []).length;
+  if (!total) return;
+  showConfirm(bi('ລ້າງຖັງຂີ້ເຫຍື້ອ', 'ล้างถังขยะ'),
+    bi('ລຶບທຸກລາຍການໃນຖັງຖາວອນ? ກູ້ຄືນບໍ່ໄດ້ອີກ.', 'ลบทุกรายการในถังถาวร? กู้คืนไม่ได้อีก'),
+    async () => {
+      try { await DB.emptyTrash(); } catch (e) { toast('Empty failed', 'warn'); return; }
+      _trashCache = { groups: [], employees: [] };
+      renderTrash();
+      toast(bi('ລ້າງຖັງແລ້ວ', 'ล้างถังแล้ว'), 'ok');
+    });
+}
+
 // Click outside to close
-['view-overlay','form-overlay','group-overlay','confirm-overlay','settings-overlay','import-overlay','scan-overlay','docview-overlay','photo-editor-overlay','export-overlay','create-overlay','customize-overlay'].forEach(id => {
+['view-overlay','form-overlay','group-overlay','confirm-overlay','settings-overlay','import-overlay','scan-overlay','docview-overlay','photo-editor-overlay','export-overlay','create-overlay','customize-overlay','trash-overlay'].forEach(id => {
   document.getElementById(id).addEventListener('click', e => {
     if (e.target.id !== id) return;
     // Worker form: clicking outside / accidental close → auto-save so data isn't lost
