@@ -447,7 +447,11 @@ async function _parseKdbBundle(arrayBuffer) {
   }
 
   const gm = manifest.group || {};
-  return { groupMeta: { name: gm.name, departure: gm.departure, route: gm.route }, workers, full: true };
+  return {
+    groupMeta: { name: gm.name, departure: gm.departure, route: gm.route },
+    workers, full: true,
+    docCats: Array.isArray(manifest.doc_cats) ? manifest.doc_cats : null,
+  };
 }
 
 async function handleImportFile(input) {
@@ -539,6 +543,43 @@ function _buildPreviewTable(workers) {
     '<tbody>' + rows + '</tbody></table></div>';
 }
 
+/* Merge document-category definitions carried inside a .kdb bundle into the
+ * local (server-persisted) list. Non-destructive by design — importing one
+ * group can only ADD categories, never strip another group's:
+ *   • every existing category and its order is kept,
+ *   • categories present only in the file are appended,
+ *   • a missing or auto-derived "Document …" placeholder label is upgraded to
+ *     the imported human label (mirrors _migrateDocCatsToServer's rules).
+ * doc_cats is a single system-wide setting (not per-group), which is exactly why
+ * we never overwrite or delete here. */
+function _mergeImportedDocCats(incoming) {
+  if (!Array.isArray(incoming) || !incoming.length) return false;
+  if (typeof getDocCats !== 'function' || typeof DB === 'undefined') return false;
+  let current = [];
+  try { current = getDocCats(); } catch (e) {}
+  const merged = (Array.isArray(current) ? current : []).slice();
+  const byKey = new Map(merged.map((c, i) => [c && c.key, i]));
+  let changed = false;
+  incoming.forEach(ic => {
+    if (!ic || !ic.key) return;
+    if (byKey.has(ic.key)) {
+      const idx = byKey.get(ic.key);
+      const cur = merged[idx] || {};
+      if (ic.label && ic.label !== cur.label &&
+          (!cur.label || /^Document /.test(cur.label))) {
+        merged[idx] = { ...cur, label: ic.label };
+        changed = true;
+      }
+    } else {
+      merged.push({ key: ic.key, label: ic.label || ic.key });
+      byKey.set(ic.key, merged.length - 1);
+      changed = true;
+    }
+  });
+  if (changed) { try { DB.setSetting('doc_cats', merged); } catch (e) {} }
+  return changed;
+}
+
 async function doImport() {
   if (!isAdmin() || !_importData) return;
   const statusEl = document.getElementById('import-status');
@@ -561,6 +602,11 @@ async function doImport() {
   }
 
   const isFull = !!_importData.full;
+  // Restore custom document-category definitions FIRST, so each worker's
+  // documents land under a category that already carries its real (custom) label
+  // and order — and so the server-side self-heal never overwrites them with an
+  // auto-derived "Document …" placeholder.
+  _mergeImportedDocCats(_importData.docCats);
   let added = 0, skipped = 0;
   const existingPassports = new Set(
     DB.getWorkers(groupId).map(w => w.passport_no).filter(Boolean)

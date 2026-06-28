@@ -1704,8 +1704,11 @@ function doSort() {
 function renderTable() {
   const tbody  = document.getElementById('tbl-body');
   const noData = document.getElementById('no-data');
-  const ws     = activeGroupId ? DB.getWorkers(activeGroupId) : _allWorkersFlat();
+  // One clone of the group covers both the count and the cards — getGroup already
+  // returns its workers, so there's no need for a second full deep-clone via
+  // getWorkers (each clone is the whole group, documents and all).
   const g      = DB.getGroup(activeGroupId);
+  const ws     = activeGroupId ? (g ? g.workers : []) : _allWorkersFlat();
 
   // Count bar — just the result count (group name/route already in the page header)
   const alertTag = quickFilter === 'alerts'
@@ -1729,8 +1732,18 @@ function renderTable() {
   }
   noData.style.display = 'none';
 
-  renderCards();
   applyViewMode();
+
+  // Only build the view the user is actually looking at. Rendering BOTH the
+  // table rows AND every KD card on each pass (then hiding one) doubled the DOM
+  // and image-decode work — the main cause of the jank on larger groups.
+  if (currentView() === 'kdcard') {
+    renderCards(g);
+    if (tbody) tbody.innerHTML = '';
+    return;
+  }
+  const cg = document.getElementById('cards-grid');
+  if (cg) cg.innerHTML = '';
 
   tbody.innerHTML = tableFiltered.map(w => {
     const age = calcAge(w.dob);
@@ -1781,15 +1794,19 @@ function applyViewMode() {
 }
 
 // ── KD FORM GRID ──────────────────────────────────────────────────
-function renderCards() {
+function renderCards(g) {
   const grid = document.getElementById('cards-grid');
   if (!grid) return;
-  const g = DB.getGroup(activeGroupId);
+  g = g || DB.getGroup(activeGroupId);
+  // The group summary (gender tally, assigned/arrivals) is identical on every
+  // card — compute it ONCE and pass it in, instead of re-scanning all workers
+  // inside _renderKdCard for each card (that was an O(n²) hot spot).
+  const gc = _kdGenderCounts(g);
   grid.className = 'cards-grid kd-grid';
   grid.innerHTML = tableFiltered.map(w =>
     '<div class="idc-cell" onclick="openView(\'' + esc(w.uid) + '\')">' +
       _completenessChip(w) +
-      _renderKdCard(w, g) +
+      _renderKdCard(w, g, false, gc) +
     '</div>'
   ).join('');
 }
@@ -1800,11 +1817,11 @@ function _kdGenderCounts(g) {
   ((g && g.workers) || []).forEach(w => { if (w.sex === 'F') f++; else if (w.sex === 'M') m++; });
   return { f, m };
 }
-function _renderKdCard(w, g, editable) {
+function _renderKdCard(w, g, editable, gc) {
   const seq    = w.worker_id ? w.worker_id.split('-').pop() : '';
   const bloods = ['A', 'B', 'O', 'AB'];
   const bloodRow = bloods.map(b => '<span class="kd-blood' + (w.blood === b ? ' on' : '') + '">' + b + '</span>').join('');
-  const gc = _kdGenderCounts(g);
+  gc = gc || _kdGenderCounts(g);   // callers rendering a single card can omit it
   const assigned = (g && g.assigned != null && g.assigned !== '') ? g.assigned : 0;
   const arrivals = (g && g.arrivals != null && g.arrivals !== '') ? g.arrivals : 0;
   const cell = (label, sub, val) =>
@@ -2657,11 +2674,42 @@ function renderDocuments(w) {
 
 const _docCache = {};   // uid → docs map (instant render + optimistic upload)
 
+// Normalize the bootstrap snapshot's documents map ({cat:[{name,type,data}]})
+// into the richer shape _renderDocs expects ({cat:[{path,type,name,isCurrent…}]}).
+// The list outside already trusts this snapshot to decide "has documents", so we
+// reuse it as an instant + offline fallback: the drawer should never look empty
+// for a worker the list says has files just because the live fetch is slow/fails.
+function _docsFromSnapshot(documents) {
+  const out = {};
+  Object.keys(documents || {}).forEach(cat => {
+    (documents[cat] || []).forEach(d => {
+      const path = d.path || d.data || '';
+      if (!path) return;
+      (out[cat] = out[cat] || []).push({
+        id: d.id || null, path, type: d.type || 'image',
+        name: d.name || '', version: d.version || 1, isCurrent: true,
+      });
+    });
+  });
+  return out;
+}
+
 async function _loadAndRenderDocs(uid) {
   if (!document.getElementById('vm-docs-content') && !document.getElementById('vm-docs-' + uid)) return;
-  let docs = _docCache[uid] || {};
-  try { docs = await DB.getDocuments(uid); } catch (e) { /* keep cache */ }
-  _docCache[uid] = docs;
+  // Paint immediately from whatever we already know (prior cache, or the
+  // bootstrap snapshot) so documents show at once and survive a slow or failed
+  // live request — previously a thrown/timed-out fetch left the section blank
+  // even though the list outside still showed the worker as having files.
+  if (!_docCache[uid]) {
+    const w = _findWorker(uid);
+    if (w && w.documents && Object.keys(w.documents).length) _docCache[uid] = _docsFromSnapshot(w.documents);
+  }
+  if (_docCache[uid]) _renderDocs(uid);
+  // The server's versioned list is authoritative whenever it's reachable; only
+  // overwrite the snapshot when the fetch actually succeeds.
+  let live = null;
+  try { live = await DB.getDocuments(uid); } catch (e) { live = null; }
+  if (live) _docCache[uid] = live;
   _renderDocs(uid);
   _refreshCmpBox(uid);   // docs% is now accurate → update the completeness box
 }
@@ -3840,6 +3888,11 @@ async function _doDatabaseBundle(g) {
     exported_at: new Date().toISOString(),
     app: 'KD Database',
     group: { id: g.id, name: g.name || '', departure: g.departure || '', route: g.route || '' },
+    // Custom document-category definitions (labels + order, incl. types beyond
+    // the default six and ones with no uploaded files). Without these, a restore
+    // on another box can only self-heal placeholder labels from document keys and
+    // would drop any empty custom category — so the .kdb is the full DB or nothing.
+    doc_cats: getDocCats(),
     counts: { workers: out.length, photos: nPhotos, documents: nDocs },
     workers: out,
   };
