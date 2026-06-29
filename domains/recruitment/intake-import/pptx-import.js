@@ -580,6 +580,38 @@ function _mergeImportedDocCats(incoming) {
   return changed;
 }
 
+// ── Import upload helpers ─────────────────────────────────────────
+// Upload ONE document with a few retries. Because each request now carries a
+// single file (not every base64 image of a worker at once), it stays well under
+// the client's 20s abort even on a slow remote like Railway — that all-in-one
+// payload was exactly what used to time out, fail and stall the page.
+async function _importUploadDoc(uid, groupId, cat, file, attempts) {
+  attempts = attempts || 6;
+  for (let i = 1; ; i++) {
+    try { await DB.uploadDocument(uid, groupId, cat, file.data, file.name || ''); return true; }
+    catch (e) {
+      if (i >= attempts) return false;
+      await new Promise(r => setTimeout(r, Math.min(8000, 500 * Math.pow(2, i))));
+    }
+  }
+}
+// Run `task` over `items` with at most `conc` in flight, calling onDone(n,ok,fail)
+// as each settles so the progress bar can advance.
+async function _importPool(items, conc, task, onDone) {
+  let idx = 0, ok = 0, fail = 0;
+  async function runner() {
+    while (idx < items.length) {
+      const it = items[idx++];
+      if (await task(it)) ok++; else fail++;
+      if (onDone) await onDone(ok + fail, ok, fail);
+    }
+  }
+  const rs = [];
+  for (let i = 0; i < Math.min(conc, items.length); i++) rs.push(runner());
+  await Promise.all(rs);
+  return { ok, fail };
+}
+
 async function doImport() {
   if (!isAdmin() || !_importData) return;
   const statusEl = document.getElementById('import-status');
@@ -607,11 +639,16 @@ async function doImport() {
   // and order — and so the server-side self-heal never overwrites them with an
   // auto-derived "Document …" placeholder.
   _mergeImportedDocCats(_importData.docCats);
-  let added = 0, skipped = 0;
   const existingPassports = new Set(
     DB.getWorkers(groupId).map(w => w.passport_no).filter(Boolean)
   );
 
+  // ── Plan who to add, and peel each record's documents off into a separate
+  // upload list. Creating employees WITHOUT their base64 documents keeps every
+  // create request tiny; sending one worker's whole image set in a single POST
+  // is what blew past the 20s timeout and stalled the page on Railway.
+  let added = 0, skipped = 0;
+  const toCreate = [];   // { copy, docs:{cat:[file…]} }
   for (const w of workers) {
     const doc = w._doc;
     const copy = { ...w };
@@ -624,18 +661,80 @@ async function doImport() {
     // De-dupe by passport only for partial imports (CSV/PPTX merges). A full
     // .kdb restore is faithful — it keeps every record, duplicates included.
     if (!isFull && !doc && copy.passport_no && existingPassports.has(copy.passport_no)) { skipped++; continue; }
-    if (doc) copy.documents = { [doc.cat]: [{ name: doc.name, type: doc.type, data: doc.data }] };
-    DB.addWorker(groupId, copy);
+
+    const docs = {};
+    if (copy.documents && typeof copy.documents === 'object') {
+      Object.keys(copy.documents).forEach(cat =>
+        (copy.documents[cat] || []).forEach(f => { if (f && f.data) (docs[cat] = docs[cat] || []).push(f); }));
+    }
+    if (doc && doc.data) (docs[doc.cat] = docs[doc.cat] || []).push({ name: doc.name, type: doc.type, data: doc.data });
+    delete copy.documents;   // documents are uploaded separately in phase 2
+
+    toCreate.push({ copy, docs });
     if (copy.passport_no) existingPassports.add(copy.passport_no);
     added++;
   }
 
+  const totalDocs  = toCreate.reduce((n, r) => n + Object.values(r.docs).reduce((m, a) => m + a.length, 0), 0);
+  const totalUnits = (toCreate.length + totalDocs) || 1;
+  let done = 0, docFail = 0;
+
+  // Block the UI + warn against closing the tab until everything is uploaded
+  // (a media-heavy import can't be resumed after a reload — the base64 lives
+  // only in this page — so the safest "survive a refresh" is to prevent one).
   closeOverlay('import-overlay');
+  _progressShow(bi('ກຳລັງນຳເຂົ້າຂໍ້ມູນ', 'กำลังนำเข้าข้อมูล'));
+  const _warn = (e) => { e.preventDefault(); e.returnValue = ''; return ''; };
+  window.addEventListener('beforeunload', _warn);
+
+  try {
+    // ── Phase 1: create employees (tiny payloads) in batches, so the bar moves
+    // and every row exists server-side before its documents go up.
+    const BATCH = 15;
+    for (let i = 0; i < toCreate.length; i += BATCH) {
+      const slice = toCreate.slice(i, i + BATCH);
+      slice.forEach(r => { r.uid = DB.addWorker(groupId, r.copy); });
+      await DB.flush();   // wait for this batch's POSTs to actually reach the server
+      done += slice.length;
+      _progressSet(done / totalUnits * 100,
+        bi('ສ້າງພະນັກງານ ', 'สร้างพนักงาน ') + Math.min(i + BATCH, toCreate.length) + '/' + toCreate.length);
+      await _paint();
+    }
+
+    // ── Phase 2: upload documents one file at a time, a few in parallel, each
+    // with its own retries. Slow/failed files retry on their own; survivors
+    // never block the rest.
+    const jobs = [];
+    toCreate.forEach(r => Object.keys(r.docs).forEach(cat =>
+      r.docs[cat].forEach(file => jobs.push({ uid: r.uid, cat, file }))));
+    if (jobs.length) {
+      const res = await _importPool(jobs, 4,
+        job => _importUploadDoc(job.uid, groupId, job.cat, job.file),
+        async (n) => {
+          _progressSet((toCreate.length + n) / totalUnits * 100,
+            bi('ອັບໂຫລດເອກະສານ ', 'อัปโหลดเอกสาร ') + n + '/' + jobs.length);
+          if (n % 4 === 0) await _paint();
+        });
+      docFail = res.fail;
+    }
+
+    // ── Phase 3: pull the authoritative server state back (now with documents).
+    _progressSet(99, bi('ກຳລັງໂຫລດຄືນ...', 'กำลังโหลดใหม่...'));
+    try { await DB.init(); } catch (e) {}
+  } finally {
+    window.removeEventListener('beforeunload', _warn);
+    _progressDone();
+  }
+
   activeGroupId = groupId;
   refreshAll();
-  statusEl.textContent = '';
-  if (typeof toast === 'function')
-    toast('✔ Import เสร็จ — เพิ่ม ' + added + ' รายการ' + (skipped ? ', ข้าม ' + skipped : ''), 'ok');
+  if (statusEl) statusEl.textContent = '';
+  if (typeof toast === 'function') {
+    let msg = '✔ Import เสร็จ — เพิ่ม ' + added + ' รายการ';
+    if (skipped) msg += ', ข้าม ' + skipped;
+    if (docFail) msg += ', เอกสารพลาด ' + docFail;
+    toast(msg, docFail ? 'warn' : 'ok');
+  }
 }
 
 /* Load JSZip from the bundled vendor/ copy (offline — no CDN) */
