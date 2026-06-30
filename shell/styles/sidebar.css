@@ -305,11 +305,13 @@
 .pm-logout { color: #f87171; }
 .pm-logout svg { color: #f87171; }
 
-/* Language flyout — floats out to the side (fixed → never clipped).
-   left/top set by togglePmLang(). Shows only the 4 supported languages. */
+/* Language flyout — floats out to the side. togglePmLang() re-parents it to
+   <body> and sets left/top in viewport coords: position:fixed alone is NOT
+   enough because the profile menu's transform captures fixed children and
+   .sidebar's overflow:hidden would clip them. z-index sits above the menu. */
 .pm-lang-wrap { position: relative; }
 .pm-lang-list {
-  display: none; position: fixed; left: 0; top: 0; z-index: 640;
+  display: none; position: fixed; left: 0; top: 0; z-index: 1000;
   min-width: 190px; background: #1e1e1e;
   border: 1px solid var(--sb-border); border-radius: 12px;
   box-shadow: 0 14px 36px -10px rgba(0,0,0,0.6); padding: 6px;

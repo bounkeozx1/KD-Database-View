@@ -104,8 +104,45 @@ const DB = (() => {
   }
   const _newGroupId = () => 'g-' + Date.now().toString(36);
   const _newUid     = () => 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  const _newLocId   = () => 'L' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+
+  /* ── Location Dictionary (hierarchical, stored in app_settings) ──
+   * Up to 3 levels (e.g. Province → District → Village). Each item carries a
+   * short code + optional parent link. Kept additive & fully removable:
+   * clearing the setting restores the original behaviour.                 */
+  function _normalizeLocDict(d) {
+    d = (d && typeof d === 'object') ? d : {};
+    const levels = (Array.isArray(d.levels) ? d.levels : []).slice(0, 3).map((l, i) => ({
+      id:    l && l.id ? String(l.id) : _newLocId(),
+      name:  String((l && l.name) || '').trim() || ('Level ' + (i + 1)),
+      order: typeof (l && l.order) === 'number' ? l.order : i,
+    })).sort((a, b) => a.order - b.order).map((l, i) => ({ ...l, order: i }));
+    const levelIds = new Set(levels.map(l => l.id));
+    const items = (Array.isArray(d.items) ? d.items : [])
+      .filter(it => it && levelIds.has(it.levelId))
+      .map((it, i) => ({
+        id:       it.id ? String(it.id) : _newLocId(),
+        levelId:  String(it.levelId),
+        parentId: it.parentId ? String(it.parentId) : null,
+        name:     String(it.name || '').trim(),
+        code:     String(it.code || '').trim().toUpperCase(),
+        order:    typeof it.order === 'number' ? it.order : i,
+      }));
+    const ic = (d.idConfig && typeof d.idConfig === 'object') ? d.idConfig : {};
+    return {
+      enabled: !!d.enabled && levels.length > 0,
+      levels, items,
+      idConfig: {
+        source:   ic.source || 'la',                                       // 'la' | levelId
+        seqPad:   Math.min(6, Math.max(1, parseInt(ic.seqPad,  10) || 3)),
+        seqStart: Math.max(1, parseInt(ic.seqStart, 10) || 1),
+      },
+    };
+  }
 
   return {
+
+    _newLocId,
 
     /* ── Boot ── */
     async init() {
@@ -219,6 +256,26 @@ const DB = (() => {
       if (!_data.cities[country]) return;
       _data.cities[country] = _data.cities[country].filter(c => c.code !== code);
       _push('DELETE', '/cities/' + encodeURIComponent(country) + '/' + encodeURIComponent(code));
+    },
+
+    /* ── Location Dictionary (settings-backed, hierarchical) ── */
+    getLocDict() { return _normalizeLocDict(this.getSetting('loc_dict', null)); },
+    saveLocDict(obj) {
+      const norm = _normalizeLocDict(obj);
+      this.setSetting('loc_dict', norm);
+      return norm;
+    },
+    clearLocDict() { this.setSetting('loc_dict', null); },
+    // Next running number for a worker_id prefix, honouring a user-set start.
+    workerSeqForPrefix(prefix, start) {
+      let max = (start && start > 1) ? start - 1 : 0;
+      _allWorkers().forEach(w => {
+        if (w.worker_id && w.worker_id.indexOf(prefix) === 0) {
+          const n = parseInt(w.worker_id.slice(prefix.length), 10);
+          if (!isNaN(n) && n > max) max = n;
+        }
+      });
+      return max + 1;
     },
 
     /* ── Auth ── */

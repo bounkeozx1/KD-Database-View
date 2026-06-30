@@ -177,10 +177,16 @@ document.addEventListener('keydown', e => {
 document.addEventListener('click', e => {
   const more = document.getElementById('sb-more');
   if (more && more.classList.contains('open') && !more.contains(e.target)) more.classList.remove('open');
+  const langDd = document.getElementById('set-lang-dd');
+  if (langDd && langDd.classList.contains('open') && !langDd.contains(e.target)) closeSetLangDD();
   const pm = document.getElementById('sb-profile-menu');
   const footer = document.getElementById('sidebar-footer');
-  if (pm && pm.classList.contains('open') && !pm.contains(e.target) && !(footer && footer.contains(e.target)))
+  const langList = document.getElementById('pm-lang-list');   // lives in <body> once opened
+  const insideLang = langList && langList.contains(e.target);
+  if (pm && pm.classList.contains('open') && !pm.contains(e.target) && !insideLang && !(footer && footer.contains(e.target))) {
     pm.classList.remove('open');
+    if (langList) langList.classList.remove('open');
+  }
 });
 
 function doLogout() {
@@ -640,7 +646,8 @@ function _groupRowHtml(g, s, totalGroups) {
 
 function renderSidebar() {
   applySidebarPrefs();   // honour Customize-sidebar visibility choices
-  const groups = DB.getGroups();
+  const allGroups = DB.getGroups();
+  const groups = _orderGroups(allGroups.filter(g => !g.archived));   // active list, manual order
   const stats  = DB.getAllStats();
   const q = sidebarSearchQ.toLowerCase();
   const statsMap = {};
@@ -669,6 +676,23 @@ function renderSidebar() {
 
   const gc = document.getElementById('groups-count');
   if (gc) gc.textContent = groups.length;
+
+  // Archived section — only visible when there is something archived
+  const archived  = _orderGroups(allGroups.filter(g => g.archived))
+                      .filter(g => !q || g.name.toLowerCase().includes(q));
+  const archSec   = document.getElementById('sb-archived-section');
+  const archTree  = document.getElementById('archived-tree');
+  const archCount = document.getElementById('archived-count');
+  if (archSec && archTree) {
+    if (archived.length) {
+      archSec.style.display = '';
+      archTree.innerHTML = archived.map(g => _groupRowHtml(g, statsMap[g.id] || {}, allGroups.length)).join('');
+      if (archCount) archCount.textContent = archived.length;
+    } else {
+      archSec.style.display = 'none';
+      archTree.innerHTML = '';
+    }
+  }
 }
 
 // ── Pin / unpin a group ───────────────────────────────────────────
@@ -688,12 +712,16 @@ function openGroupMenu(id, ev) {
   const menu = document.getElementById('row-menu');
   if (!menu) return;
   const pinned = pinnedGroups.has(id);
+  const g = DB.getGroup(id);
+  const isArch = !!(g && g.archived);
   const I = {
     share:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/></svg>',
     rename: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>',
-    move:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>',
+    moveup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>',
+    movedn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>',
     pin:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14l-1.5-4V5a2 2 0 0 0-2-2h-5a2 2 0 0 0-2 2v8z"/></svg>',
     archive:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><line x1="10" y1="12" x2="14" y2="12"/></svg>',
+    unarchive:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><polyline points="9 13 12 10 15 13"/><line x1="12" y1="10" x2="12" y2="17"/></svg>',
     del:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'
   };
   const item = (act, icon, label, danger) =>
@@ -703,10 +731,12 @@ function openGroupMenu(id, ev) {
     item('share',  I.share,  t('gm_share')) +
     item('pin',    I.pin,    pinned ? t('unpin') : t('gm_pin')) +
     (isAdmin() ?
-      item('rename',  I.rename,  t('gm_rename')) +
-      item('move',    I.move,    t('gm_move')) +
-      item('archive', I.archive, t('gm_archive')) +
-      item('del',     I.del,     t('gm_delete'), true)
+      item('rename',    I.rename,  t('gm_rename')) +
+      item('move_up',   I.moveup,  t('gm_move_up')) +
+      item('move_down', I.movedn,  t('gm_move_down')) +
+      (isArch ? item('unarchive', I.unarchive, t('gm_unarchive'))
+              : item('archive',   I.archive,   t('gm_archive'))) +
+      item('del',       I.del,     t('gm_delete'), true)
       : '');
 
   const btn = ev ? ev.currentTarget : null;
@@ -723,12 +753,72 @@ function openGroupMenu(id, ev) {
 function groupMenuAct(action) {
   const id = groupMenuId;
   closeRowMenu();
-  if (action === 'pin')    togglePin(id);
-  else if (action === 'rename') openGroupForm(id);
-  else if (action === 'del')    confirmDeleteGroup(id);
-  else if (action === 'share')  showInfo(t('gm_share'),   t('gm_soon'));
-  else if (action === 'move')   showInfo(t('gm_move'),    t('gm_soon'));
-  else if (action === 'archive')showInfo(t('gm_archive'), t('gm_soon'));
+  if (action === 'pin')            togglePin(id);
+  else if (action === 'rename')    openGroupForm(id);
+  else if (action === 'del')       confirmDeleteGroup(id);
+  else if (action === 'share')     shareGroup(id);
+  else if (action === 'move_up')   moveGroup(id, -1);
+  else if (action === 'move_down') moveGroup(id, +1);
+  else if (action === 'archive')   setGroupArchived(id, true);
+  else if (action === 'unarchive') setGroupArchived(id, false);
+}
+
+// "Share" a group = open it and bring up the Export dialog, where the user
+// picks a file format (.kdb / CSV / PDF) to send on.
+function shareGroup(id) {
+  switchGroup(id);
+  openExportDialog('group');
+}
+
+// Archive / unarchive a group (server-persisted `archived` flag). Archived
+// groups drop out of the main lists into the sidebar's "Archived" section.
+function setGroupArchived(id, on) {
+  if (!isAdmin()) return;
+  DB.updateGroup(id, { archived: on });
+  if (on && activeGroupId === id) {
+    const next = DB.getGroups().find(x => !x.archived && x.id !== id);
+    if (next) { switchGroup(next.id); }
+    else { activeGroupId = ''; navTo('workers'); }
+  } else {
+    refreshAll();
+  }
+  toast(t(on ? 'gm_archived_done' : 'gm_unarchived_done'), 'ok');
+}
+
+// ── Manual group ordering (Move up / Move down, per-device) ───────
+function _loadGroupOrder() {
+  try { return JSON.parse(localStorage.getItem('kd_group_order')) || []; } catch (e) { return []; }
+}
+function _saveGroupOrder(ids) {
+  try { localStorage.setItem('kd_group_order', JSON.stringify(ids)); } catch (e) {}
+}
+// Sort groups by the saved order; ids not in the list keep their original
+// relative position at the end (stable).
+function _orderGroups(groups) {
+  const order = _loadGroupOrder();
+  const pos = {};
+  order.forEach((gid, i) => { pos[gid] = i; });
+  return groups.slice().sort((a, b) => {
+    const pa = (a.id in pos) ? pos[a.id] : Infinity;
+    const pb = (b.id in pos) ? pos[b.id] : Infinity;
+    return pa - pb;
+  });
+}
+// Move a group up/down among its own section siblings (pinned vs unpinned).
+function moveGroup(id, dir) {
+  const ordered = _orderGroups(DB.getGroups().filter(g => !g.archived));
+  const ids = ordered.map(g => g.id);
+  const isPin = pinnedGroups.has(id);
+  const secPos = [];                       // indices of same-section groups
+  ordered.forEach((g, i) => { if (pinnedGroups.has(g.id) === isPin) secPos.push(i); });
+  const at = secPos.findIndex(i => ids[i] === id);
+  const to = at + dir;
+  if (at < 0 || to < 0 || to >= secPos.length) return;   // already at section edge
+  const a = secPos[at], b = secPos[to];
+  const tmp = ids[a]; ids[a] = ids[b]; ids[b] = tmp;
+  _saveGroupOrder(ids);
+  renderSidebar();
+  if (document.getElementById('groups-overview')?.style.display !== 'none') renderGroupsOverview();
 }
 
 // ── Sidebar nav (views) ───────────────────────────────────────────
@@ -812,15 +902,15 @@ function closeMoreMenu() { document.getElementById('sb-more')?.classList.remove(
 
 // ── CUSTOMIZE SIDEBAR (choose which items show) ───────────────────
 const SIDEBAR_ITEMS = [
-  { key:'create',    sel:'.sb-create',         lo:'ສ້າງ', en:'Create',
+  { key:'create',    sel:'.sb-create',         lo:'ສ້າງ', en:'Create', th:'สร้าง', ko:'만들기',
     icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>' },
-  { key:'dashboard', sel:'#nav-dashboard',     lo:'ໜ້າຫຼັກ', en:'Dashboard',
+  { key:'dashboard', sel:'#nav-dashboard',     lo:'ໜ້າຫຼັກ', en:'Dashboard', th:'หน้าหลัก', ko:'대시보드',
     icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>' },
-  { key:'workers',   sel:'#nav-workers',       lo:'ກຸ່ມ', en:'Groups',
+  { key:'workers',   sel:'#nav-workers',       lo:'ກຸ່ມ', en:'Groups', th:'กลุ่ม', ko:'그룹',
     icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>' },
-  { key:'alerts',    sel:'#nav-alerts',        lo:'ພາສປອດໃກ້ໝົດ', en:'Alerts',
+  { key:'alerts',    sel:'#nav-alerts',        lo:'ພາສປອດໃກ້ໝົດ', en:'Alerts', th:'พาสปอร์ตใกล้หมด', ko:'여권 만료 임박',
     icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>' },
-  { key:'projects',  sel:'#sb-groups-section', lo:'ໂປຣເຈັກ', en:'Projects',
+  { key:'projects',  sel:'#sb-groups-section', lo:'ໂປຣເຈັກ', en:'Projects', th:'โปรเจกต์', ko:'프로젝트',
     icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>' },
 ];
 function _hiddenSidebar() {
@@ -843,7 +933,7 @@ function openCustomizeSidebar() {
     return '<button class="cz-item ' + (on ? 'on' : '') + '" onclick="toggleSidebarItem(\'' + it.key + '\', this)">' +
       '<span class="cz-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>' +
       '<span class="cz-item-ic">' + it.icon + '</span>' +
-      '<span class="cz-item-label">' + esc(bi(it.lo, it.en)) + '</span>' +
+      '<span class="cz-item-label">' + esc(bi(it.lo, it.en, it.th, it.ko)) + '</span>' +
     '</button>';
   }).join('');
   openOverlay('customize-overlay');
@@ -885,21 +975,23 @@ function togglePmLang(e) {
   if (e) e.stopPropagation();
   const list = document.getElementById('pm-lang-list');
   const btn  = (e && e.currentTarget) || document.querySelector('.pm-lang-wrap > .pm-item');
-  if (!list) return;
+  if (!list || !btn) return;
   const willOpen = !list.classList.contains('open');
-  list.classList.toggle('open');
-  if (willOpen && btn) {
-    _pmMarkLang();
-    const r  = btn.getBoundingClientRect();
-    const mw = list.offsetWidth || 200;
-    let left = r.right + 6;                                   // flyout to the right (like the reference)
-    if (left + mw > window.innerWidth - 8) left = Math.max(8, r.left - mw - 6);  // flip left if no room
-    let top = r.top - 6;
-    const mh = list.offsetHeight || 180;
-    if (top + mh > window.innerHeight - 8) top = Math.max(8, window.innerHeight - mh - 8);
-    list.style.left = left + 'px';
-    list.style.top  = top + 'px';
-  }
+  if (!willOpen) { list.classList.remove('open'); return; }
+  // Re-parent to <body>: the profile menu's transform would otherwise capture
+  // this position:fixed flyout, and .sidebar's overflow:hidden would clip it.
+  if (list.parentElement !== document.body) document.body.appendChild(list);
+  list.classList.add('open');
+  _pmMarkLang();
+  const r  = btn.getBoundingClientRect();
+  const mw = list.offsetWidth  || 200;
+  const mh = list.offsetHeight || 180;
+  let left = r.right + 6;                                     // flyout to the right (like the reference)
+  if (left + mw > window.innerWidth - 8) left = Math.max(8, r.left - mw - 6);  // flip left if no room
+  let top = r.top - 6;
+  if (top + mh > window.innerHeight - 8) top = Math.max(8, window.innerHeight - mh - 8);
+  list.style.left = left + 'px';
+  list.style.top  = top + 'px';
 }
 function _pmMarkLang() {
   const cur = (typeof currentLang !== 'undefined' ? currentLang : 'en');
@@ -982,7 +1074,7 @@ function renderTopHeader() {
 
 // ── Dashboard render (Donezo-style) ───────────────────────────────
 function renderDashboard() {
-  const groups     = DB.getGroups();
+  const groups     = DB.getGroups().filter(g => !g.archived);
   const allWorkers = groups.flatMap(g => g.workers || []);
   const total      = groups.length;
   const active     = groups.filter(g => (g.workers || []).length > 0).length;
@@ -1014,7 +1106,7 @@ function renderDashboard() {
   });
   const avgData = workers ? Math.round(dataSum / workers) : 0;
   if (el('dz-cmp-num'))  el('dz-cmp-num').textContent  = avgData + '%';
-  if (el('dz-cmp-foot')) el('dz-cmp-foot').textContent = bi('ຄົບສົມບູນ ', 'ครบสมบูรณ์ ') + fullDone + '/' + workers + bi(' ຄົນ', ' คน');
+  if (el('dz-cmp-foot')) el('dz-cmp-foot').textContent = bi('ຄົບສົມບູນ ', 'Complete ', 'ครบสมบูรณ์ ', '완료 ') + fullDone + '/' + workers + bi(' ຄົນ', ' people', ' คน', '명');
 
   // Notification badge in header
   const nb = el('th-notif-badge');
@@ -1533,7 +1625,7 @@ function _ensureGroupFor(uid) {
 function renderGroupsOverview() {
   const el = document.getElementById('go-grid');
   if (!el) return;
-  const groups = DB.getGroups();
+  const groups = _orderGroups(DB.getGroups().filter(g => !g.archived));
   if (!groups.length) {
     el.innerHTML = '<div class="go-empty">' + (t('dz_no_projects') || 'ຍັງບໍ່ມີກຸ່ມ') + '</div>';
     return;
@@ -2590,16 +2682,31 @@ async function _migrateDocCatsToServer() {
 const _DEFAULT_REQ_FIELDS = ['worker_id','en_name','lo_name','dob','sex','nationality',
   'passport_no','passport_expiry','tel','province','village','employer_code'];
 // Every field that can be marked "required" (key → bilingual label).
-const _REQ_FIELD_CATALOG = [
-  ['worker_id','Worker ID'], ['en_name','EN Name'], ['lo_name','ຊື່ ລາວ'],
-  ['dob','ວັນເກີດ / DOB'], ['sex','ເພດ / Sex'], ['nationality','ສັນຊາດ'],
-  ['blood','ກຸ່ມເລືອດ'], ['grade','Grade'],
-  ['passport_no','ເລກພາສປอด'], ['passport_issue','ວັນອອກ'], ['passport_expiry','ວັນໝົດອາຍຸ'],
-  ['visa_status','Visa'], ['tel','ໂທ'], ['emg_tel','ໂທສຸກເສີນ'],
-  ['province','ແຂວງ'], ['district','ເມືອງ'], ['village','ບ້ານ'],
-  ['employer_code','ນາຍຈ້າງ'], ['group_supervisor','Supervisor'],
-  ['weight','ນ້ຳໜັກ'], ['height','ສ່ວນສູງ'], ['size','ຂະໜາດ'], ['couple','ຄູ່'],
-];
+function _reqFieldCatalog() { return [
+  ['worker_id', bi('ລະຫັດ','Worker ID','รหัสแรงงาน','근로자 ID')],
+  ['en_name', bi('ຊື່ EN','EN Name','ชื่อ EN','영문 이름')],
+  ['lo_name', bi('ຊື່ ລາວ','Lao Name','ชื่อลาว','라오어 이름')],
+  ['dob', bi('ວັນເກີດ','Date of birth','วันเกิด','생년월일')],
+  ['sex', bi('ເພດ','Sex','เพศ','성별')],
+  ['nationality', bi('ສັນຊາດ','Nationality','สัญชาติ','국적')],
+  ['blood', bi('ກຸ່ມເລືອດ','Blood type','กรุ๊ปเลือด','혈액형')],
+  ['grade', bi('ເກຣດ','Grade','เกรด','등급')],
+  ['passport_no', bi('ເລກພາສປອດ','Passport No','เลขพาสปอร์ต','여권번호')],
+  ['passport_issue', bi('ວັນອອກ','Issue date','วันออก','발급일')],
+  ['passport_expiry', bi('ວັນໝົດອາຍຸ','Expiry date','วันหมดอายุ','만료일')],
+  ['visa_status', bi('ວີຊ່າ','Visa','วีซ่า','비자')],
+  ['tel', bi('ໂທ','Tel','โทร','전화')],
+  ['emg_tel', bi('ໂທສຸກເສີນ','Emergency tel','โทรฉุกเฉิน','비상 전화')],
+  ['province', bi('ແຂວງ','Province','แขวง','주')],
+  ['district', bi('ເມືອງ','District','เมือง','군')],
+  ['village', bi('ບ້ານ','Village','หมู่บ้าน','마을')],
+  ['employer_code', bi('ນາຍຈ້າງ','Employer','นายจ้าง','고용주')],
+  ['group_supervisor', bi('ຫົວໜ້າ','Supervisor','หัวหน้า','관리자')],
+  ['weight', bi('ນ້ຳໜັກ','Weight','น้ำหนัก','체중')],
+  ['height', bi('ສ່ວນສູງ','Height','ส่วนสูง','신장')],
+  ['size', bi('ຂະໜາດ','Size','ขนาด','사이즈')],
+  ['couple', bi('ຄູ່','Couple','คู่','부부')],
+]; }
 function getReqFields() {
   try { const c = DB.getSetting('req_fields', null); if (Array.isArray(c) && c.length) return c; } catch (e) {}
   return _DEFAULT_REQ_FIELDS;
@@ -2638,9 +2745,9 @@ function _completenessBox(w) {
       '<span class="cmp-pct" style="color:' + col + '">' + right + '</span>' +
     '</div>';
   return '<div class="cmp-box" id="cmp-box-' + esc(w.uid) + '"' + (allDone ? ' data-done="1"' : '') + '>' +
-    '<div class="cmp-head">' + bi('ຄວາມຄົບຖ້ວນ', 'ความครบถ้วน') + (allDone ? ' <span class="cmp-check">✓</span>' : '') + '</div>' +
-    bar(bi('ຂໍ້ມູນ', 'ข้อมูล'), d.pct, d.pct + '%', _pctColor(d.pct)) +
-    bar(bi('ເອກະສານ', 'เอกสาร'), k.pct, k.have + '/' + k.total, _pctColor(k.pct)) +
+    '<div class="cmp-head">' + bi('ຄວາມຄົບຖ້ວນ', 'Completeness', 'ความครบถ้วน', '완성도') + (allDone ? ' <span class="cmp-check">✓</span>' : '') + '</div>' +
+    bar(bi('ຂໍ້ມູນ', 'Data', 'ข้อมูล', '데이터'), d.pct, d.pct + '%', _pctColor(d.pct)) +
+    bar(bi('ເອກະສານ', 'Documents', 'เอกสาร', '문서'), k.pct, k.have + '/' + k.total, _pctColor(k.pct)) +
   '</div>';
 }
 // Replace the detail box in place (after docs finish loading, so docs% is fresh).
@@ -2659,7 +2766,7 @@ function _findWorker(uid) {
 // Compact corner chip for list / KD-card cells.
 function _completenessChip(w) {
   const d = dataCompleteness(w), k = docsCompleteness(w);
-  const title = bi('ຂໍ້ມູນ ', 'ข้อมูล ') + d.pct + '% · ' + bi('ເອກະສານ ', 'เอกสาร ') + k.have + '/' + k.total;
+  const title = bi('ຂໍ້ມູນ ', 'Data ', 'ข้อมูล ', '데이터 ') + d.pct + '% · ' + bi('ເອກະສານ ', 'Documents ', 'เอกสาร ', '문서 ') + k.have + '/' + k.total;
   return '<div class="cmp-chip" title="' + esc(title) + '">' +
     '<span class="cmp-chip-dot" style="background:' + _pctColor(d.pct) + '"></span>' + d.pct + '%' +
     '<span class="cmp-chip-sep">·</span>' +
@@ -2791,7 +2898,7 @@ function _renderDocs(uid) {
   }).join('');
 
   const hint = canEdit
-    ? '<div class="docb-paste-hint">' + bi('ຄລິກຊ່ອງ → Ctrl+V ວາງຮູບ · ຫຼື ລາກໄຟລ໌ມາວາງ', 'คลิกช่อง → Ctrl+V วางรูป · หรือลากไฟล์มาวาง') + '</div>'
+    ? '<div class="docb-paste-hint">' + bi('ຄລິກຊ່ອງ → Ctrl+V ວາງຮູບ · ຫຼື ລາກໄຟລ໌ມາວາງ', 'Click a box → Ctrl+V to paste · or drag a file in', 'คลิกช่อง → Ctrl+V วางรูป · หรือลากไฟล์มาวาง', '칸 클릭 → Ctrl+V로 붙여넣기 · 또는 파일 끌어다 놓기') + '</div>'
     : '';
   container.innerHTML = '<div class="vm-docs-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> ' + t('vc_documents') + '</div>' + hint + '<div class="docb-grid">' + html + '</div>';
 
@@ -2817,7 +2924,7 @@ function _docUploadFile(file, uid, cat) {
   const type = file.type || '';
   const isPdf = type === 'application/pdf';
   const isImg = type.startsWith('image/');
-  if (!isPdf && !isImg) { toast(bi('ຮັບສະເພາະຮູບ ຫຼື PDF', 'รองรับเฉพาะรูปหรือ PDF'), 'warn'); return; }
+  if (!isPdf && !isImg) { toast(bi('ຮັບສະເພາະຮູບ ຫຼື PDF', 'Images or PDF only', 'รองรับเฉพาะรูปหรือ PDF', '이미지 또는 PDF만 지원'), 'warn'); return; }
   _fileToDataURL(file, 1600, dataUrl => {
     if (isPdf) { _uploadDocData(uid, cat, dataUrl, 'pdf', file.name || 'document.pdf'); return; }
     // Photos: let the user zoom / crop / rotate to frame the document the SAME
@@ -2825,7 +2932,7 @@ function _docUploadFile(file, uid, cat) {
     // a consistent format (no fixed white frame needed at view time).
     _ceOpen({
       src: dataUrl, aspect: null, allowPick: false, mode: 'doc',
-      title: bi('ປັບຮູບເອກະສານກ່ອນອັບໂຫລດ', 'ปรับรูปเอกสารก่อนอัปโหลด'),
+      title: bi('ປັບຮູບເອກະສານກ່ອນອັບໂຫລດ', 'Adjust the document image before uploading', 'ปรับรูปเอกสารก่อนอัปโหลด', '업로드 전 문서 이미지 조정'),
       onSave: (out) => _uploadDocData(uid, cat, out, 'image', file.name || ''),
     });
   });
@@ -2883,7 +2990,7 @@ function _uploadDocData(uid, cat, dataUrl, type, name) {
                  version: ver, isCurrent: true, uploadedAt: new Date().toISOString() });
   _renderDocs(uid);
   if (_currentViewUid === uid) _refreshCmpBox(uid);
-  toast(bi('ກຳລັງບັນທຶກ...', 'กำลังบันทึก...'), 'ok');
+  toast(bi('ກຳລັງບັນທຶກ...', 'Saving…', 'กำลังบันทึก...', '저장 중…'), 'ok');
   DB.uploadDocument(uid, activeGroupId, cat, dataUrl, name || '')
     .then(() => _loadAndRenderDocs(uid))   // silent reconcile (real id/path)
     .catch(e => toast('Upload failed: ' + (e && e.message || e), 'err'));
@@ -2907,7 +3014,7 @@ function openDocViewById(docId, path, type, name, uid, cat) {
   _docZoom = 0;   // reset zoom cycle for the new document
   body.innerHTML = type === 'pdf'
     ? '<iframe class="docview-pdf" src="' + esc(path) + '"></iframe>'
-    : '<img class="docview-img" src="' + esc(path) + '" alt="' + esc(name || '') + '" onclick="_docZoomCycle(event)" title="' + esc(bi('ຄລິກເພື່ອຊູມ', 'คลิกเพื่อซูม')) + '">';
+    : '<img class="docview-img" src="' + esc(path) + '" alt="' + esc(name || '') + '" onclick="_docZoomCycle(event)" title="' + esc(bi('ຄລິກເພື່ອຊູມ', 'Click to zoom', 'คลิกเพื่อซูม', '클릭하여 확대')) + '">';
   // The Edit/crop button only makes sense for an admin editing a real image
   // attached to a known worker + category (so we can upload the result back).
   const editBtn = document.getElementById('docview-edit');
@@ -2947,12 +3054,12 @@ function editCurrentDoc() {
   const { path, uid, cat, name } = _docView;
   _ceOpen({
     src: path, aspect: null, allowPick: false, mode: 'doc',   // free crop; whole doc visible by default
-    title: bi('ແກ້ໄຂເອກະສານ', 'แก้ไขเอกสาร'),
+    title: bi('ແກ້ໄຂເອກະສານ', 'Edit document', 'แก้ไขเอกสาร', '문서 편집'),
     onSave: (dataUrl) => {
       closeOverlay('docview-overlay');
-      toast(bi('ກຳລັງບັນທຶກ...', 'กำลังบันทึก...'), 'ok');
+      toast(bi('ກຳລັງບັນທຶກ...', 'Saving…', 'กำลังบันทึก...', '저장 중…'), 'ok');
       DB.uploadDocument(uid, activeGroupId, cat, dataUrl, name || (cat + '.jpg'))
-        .then(() => { _loadAndRenderDocs(uid); toast(bi('ບັນທຶກແລ້ວ', 'บันทึกแล้ว'), 'ok'); })
+        .then(() => { _loadAndRenderDocs(uid); toast(bi('ບັນທຶກແລ້ວ', 'Saved', 'บันทึกแล้ว', '저장됨'), 'ok'); })
         .catch(e => toast('Save failed: ' + (e && e.message || e), 'err'));
     },
   });
@@ -2968,12 +3075,15 @@ function openDocView(uid, cat, idx) {
 }
 
 // ── DOCUMENT SCAN (icon menu in the worker form) ──────────────────
-const _SCAN_LABELS = {
-  form_1:   'ແບບຟอร์มสมัคร · Application form',
-  id_card:  'ID card · ບັດປະຈำตัว',
-  passport: 'Passport · พาสปอร์ต',
-  land_doc: 'ໂฉนดที่ดิน · Land deed',
-};
+function _scanLabel(cat) {
+  const M = {
+    form_1:   bi('ແບບຟອມສະໝັກ','Application form','แบบฟอร์มสมัคร','신청서'),
+    id_card:  bi('ບັດປະຈຳຕົວ','ID card','บัตรประชาชน','신분증'),
+    passport: bi('ພາສປອດ','Passport','พาสปอร์ต','여권'),
+    land_doc: bi('ໃບຕາດິນ','Land deed','โฉนดที่ดิน','토지 증서'),
+  };
+  return M[cat];
+}
 
 function toggleScanMenu(e) { if (e) e.stopPropagation(); document.getElementById('scan-type-menu')?.classList.toggle('open'); }
 function closeScanMenu()   { document.getElementById('scan-type-menu')?.classList.remove('open'); }
@@ -3002,16 +3112,16 @@ function _genericDocScan(cat) {
       window._pendingScanDocs = window._pendingScanDocs || [];
       window._pendingScanDocs.push({ cat, name: cat + '-scan.' + (type === 'pdf' ? 'pdf' : 'jpg'), type, data: dataUrl });
       if (typeof renderFormDocList === 'function') renderFormDocList();
-      toast((_SCAN_LABELS[cat] || cat) + ' — ແนบแล้ว', 'ok');
+      toast((_scanLabel(cat) || cat) + bi(' — ແນບແລ້ວ',' — attached',' — แนบแล้ว',' — 첨부됨'), 'ok');
 
       // Try AI extraction (server holds the API key)
       try {
         const r = await DB.aiExtract(dataUrl, cat);
         if (r && r.mock) {
-          toast('🤖 AI extraction: mockup — ໃສ່ GEMINI_API_KEY ເພື່ອเปิดใช้', 'info');
+          toast(bi('🤖 AI extraction: mockup — ໃສ່ GEMINI_API_KEY ເພື່ອໃຊ້ງານ','🤖 AI extraction: mockup — set GEMINI_API_KEY to enable','🤖 AI extraction: ตัวอย่าง — ใส่ GEMINI_API_KEY เพื่อเปิดใช้','🤖 AI 추출: 목업 — GEMINI_API_KEY를 설정하면 활성화'), 'info');
         } else if (r && r.ok && r.data) {
           _applyAiToForm(cat, r.data);
-          toast('🤖 AI ກรอกข้อมูลให้แล้ว · auto-filled', 'ok');
+          toast(bi('🤖 AI ຕື່ມຂໍ້ມູນໃຫ້ແລ້ວ','🤖 AI auto-filled','🤖 AI กรอกข้อมูลให้แล้ว','🤖 AI가 자동 입력함'), 'ok');
         } else if (r && r.error) {
           toast('AI: ' + r.error, 'warn');
         }
@@ -3117,6 +3227,8 @@ function openWorkerForm(editUid) {
   renderFormDocList();
   renderFormPhoto();
   document.getElementById('fm-title').textContent = t('fm_add_worker');
+  _widManual    = false;
+  _editLocNames = null;
 
   if (!editUid) {
     document.getElementById('f-worker-id').value = _genWorkerId();
@@ -3142,6 +3254,7 @@ function openWorkerForm(editUid) {
     document.getElementById('f-province').value        = w.province || '';
     document.getElementById('f-district').value        = w.district || '';
     document.getElementById('f-village').value         = w.village || '';
+    _editLocNames = { 0: w.province || '', 1: w.district || '', 2: w.village || '' };
     document.getElementById('f-nationality').value     = w.nationality || '';
     document.getElementById('f-sex').value              = w.sex || '';
     document.getElementById('f-blood').value           = w.blood || '';
@@ -3161,6 +3274,8 @@ function openWorkerForm(editUid) {
     document.getElementById('f-work-experience').value = w.work_experience || '';
     document.getElementById('f-languages').value       = w.languages || '';
   }
+  renderFormLocation();
+  if (!editUid) regenWorkerId();
   updateIdPreview();
   openOverlay('form-overlay');
 }
@@ -3177,9 +3292,35 @@ function populateCityDropdowns() {
 }
 
 function updateIdPreview() {}
-function regenerateId() {}
+function regenerateId() { regenWorkerId(true); }
 
+// Which short code feeds the auto worker_id, read from the form's selection.
+function _idSourceCode(ld) {
+  const src = (ld && ld.idConfig && ld.idConfig.source) || 'la';
+  if (src === 'la' || src === 'kr') {
+    const el = document.getElementById('f-' + src + '-city');
+    return el ? (el.value || '').trim().toUpperCase() : '';
+  }
+  const sel = document.getElementById('locsel-' + src);   // a level id
+  if (sel && sel.value) {
+    const it = ld.items.find(x => x.id === sel.value);
+    return it ? it.code : '';
+  }
+  return '';
+}
+
+// Build the next worker_id. Prefers the configurable CODE-YY-NNN format
+// (Location Dictionary); otherwise the legacy group-based format.
 function _genWorkerId() {
+  const ld = DB.getLocDict();
+  const code = _idSourceCode(ld);
+  if (code) {
+    const yy = String(new Date().getFullYear()).slice(-2);
+    const prefix = code + '-' + yy + '-';
+    const seq = DB.workerSeqForPrefix(prefix, ld.idConfig.seqStart);
+    return prefix + String(seq).padStart(ld.idConfig.seqPad, '0');
+  }
+  // ── Legacy fallback: SITE-PROV-DDMMYY-NNN scoped to the group ──
   const g = DB.getGroup(activeGroupId);
   const dist = ((g && g.site_code)     || '').trim().toUpperCase();
   const prov = ((g && g.province_code) || '').trim().toUpperCase();
@@ -3188,9 +3329,7 @@ function _genWorkerId() {
   const dd = String(now.getDate()).padStart(2, '0');
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const yy = String(now.getFullYear()).slice(-2);
-  const dateStr = dd + mm + yy;
-  const parts = [dist, prov, dateStr].filter(Boolean);
-  const prefix = parts.join('-') + '-';
+  const prefix = [dist, prov, dd + mm + yy].filter(Boolean).join('-') + '-';
   let max = 0;
   DB.getWorkers(activeGroupId).forEach(w => {
     if (w.worker_id && w.worker_id.startsWith(prefix)) {
@@ -3199,6 +3338,89 @@ function _genWorkerId() {
     }
   });
   return prefix + String(max + 1).padStart(3, '0');
+}
+
+// Re-fill the Worker ID unless the user has typed their own (force overrides).
+let _widManual = false;
+function regenWorkerId(force) {
+  const idEl = document.getElementById('f-worker-id');
+  if (!idEl) return;
+  if (document.getElementById('f-edit-uid').value) return;   // never overwrite when editing
+  if (_widManual && !force) return;
+  const v = _genWorkerId();
+  if (v) idEl.value = v;
+  if (force) _widManual = false;
+  checkWorkerIdDup(idEl.value);
+}
+function onWorkerIdInput(v) { _widManual = true; checkWorkerIdDup(v); }
+
+// ── WORKER FORM: cascading Location Dictionary selects ────────────
+let _editLocNames = null;
+const _LOC_INPUTS = ['f-province', 'f-district', 'f-village'];   // level 0,1,2 → columns
+
+function renderFormLocation() {
+  const ld        = DB.getLocDict();
+  const selBlock  = document.getElementById('loc-select-block');
+  const comboBlock= document.getElementById('loc-combo-block');
+  if (!selBlock || !comboBlock) return;
+  if (!ld.enabled || !ld.levels.length) {            // feature off → free-text address
+    selBlock.style.display = 'none'; selBlock.innerHTML = '';
+    comboBlock.style.display = '';
+    return;
+  }
+  comboBlock.style.display = 'none';
+  selBlock.style.display = '';
+  selBlock.innerHTML = ld.levels.map((lv, i) =>
+    '<div class="addr-field">' +
+      '<label class="addr-lbl">' + esc(lv.name) + '</label>' +
+      '<select class="addr-input loc-select" id="locsel-' + esc(lv.id) + '" onchange="onLocSelect(' + i + ')"></select>' +
+    '</div>'
+  ).join('');
+  for (let i = 0; i < ld.levels.length; i++) {
+    _fillLocSelect(i, _editLocNames ? (_editLocNames[i] || '') : '');
+  }
+}
+
+function _fillLocSelect(i, preselectName) {
+  const ld = DB.getLocDict();
+  const lv = ld.levels[i];
+  if (!lv) return;
+  const sel = document.getElementById('locsel-' + lv.id);
+  if (!sel) return;
+  let parentId = null;
+  if (i > 0) {
+    const pl = ld.levels[i - 1];
+    const ps = pl && document.getElementById('locsel-' + pl.id);
+    parentId = ps ? ps.value : '';
+  }
+  const items = ld.items
+    .filter(it => it.levelId === lv.id && (i === 0 || it.parentId === parentId))
+    .sort((a, b) => a.order - b.order);
+  sel.innerHTML = '<option value="">' + t('fm_select') + '</option>' +
+    items.map(it => '<option value="' + esc(it.id) + '">' +
+      esc(it.name) + (it.code ? ' (' + esc(it.code) + ')' : '') + '</option>').join('');
+  if (preselectName) {
+    const match = items.find(it => it.name === preselectName);
+    if (match) sel.value = match.id;
+  }
+  _writeLocInput(i);
+}
+
+function _writeLocInput(i) {
+  const ld  = DB.getLocDict();
+  const lv  = ld.levels[i];
+  const inp = document.getElementById(_LOC_INPUTS[i]);
+  if (!lv || !inp) return;
+  const sel = document.getElementById('locsel-' + lv.id);
+  const it  = sel && ld.items.find(x => x.id === sel.value);
+  inp.value = it ? it.name : '';
+}
+
+function onLocSelect(i) {
+  const ld = DB.getLocDict();
+  _writeLocInput(i);
+  for (let j = i + 1; j < ld.levels.length; j++) _fillLocSelect(j, '');   // reset children
+  regenWorkerId();
 }
 
 function checkWorkerIdDup(val) {
@@ -3442,14 +3664,14 @@ function openCreate() {
   const sub = document.getElementById('create-worker-sub');
   if (sub) {
     const g = activeGroupId ? DB.getGroup(activeGroupId) : null;
-    sub.textContent = g ? ('ເພີ່ມເຂົ້າ: ' + (g.name || 'ກຸ່ມປັດຈຸບັນ')) : 'ເປີດກຸ່ມກ່ອນ · open a group first';
+    sub.textContent = g ? (bi('ເພີ່ມເຂົ້າ: ','Add to: ','เพิ่มเข้า: ','추가 대상: ') + (g.name || bi('ກຸ່ມປັດຈຸບັນ','current group','กลุ่มปัจจุบัน','현재 그룹'))) : bi('ເປີດກຸ່ມກ່ອນ','Open a group first','เปิดกลุ่มก่อน','먼저 그룹을 여세요');
   }
   openOverlay('create-overlay');
 }
 function createNewGroup()  { closeOverlay('create-overlay'); openGroupForm(null); }
 function createAddWorker() {
   closeOverlay('create-overlay');
-  if (!activeGroupId) { toast('ເປີດກຸ່ມກ່ອນເພີ່ມແຮງງານ · Open a group first', 'warn'); return; }
+  if (!activeGroupId) { toast(bi('ເປີດກຸ່ມກ່ອນເພີ່ມແຮງງານ','Open a group first','เปิดกลุ่มก่อนเพิ่มแรงงาน','먼저 그룹을 여세요'), 'warn'); return; }
   openWorkerForm(null);
 }
 function createImport()    { closeOverlay('create-overlay'); openImport(); }
@@ -3457,7 +3679,7 @@ function createExport()    { closeOverlay('create-overlay'); openExportDialog('g
 
 // ── IMPORT (PPTX stub — feature not yet implemented) ──────────────
 function openImport() { openOverlay('import-overlay'); }
-function doImport()   { toast('ຍັງບໍ່ທັນ implement ຟີເຈີ Import PPTX', 'warn'); }
+function doImport()   { toast(bi('ຍັງບໍ່ທັນ implement Import PPTX','PPTX import not implemented yet','ยังไม่ได้ทำฟีเจอร์นำเข้า PPTX','PPTX 가져오기는 아직 구현되지 않았습니다'), 'warn'); }
 
 // ── EXPORT CSV ────────────────────────────────────────────────────
 // Safe download filename: keep Unicode letters (Lao/Thai/…), strip only the
@@ -3547,7 +3769,7 @@ function openExportDialog(scope, uid) {
     const w = ws[0];
     subjEl.textContent = w ? (w.en_name || w.lo_name || 'Worker') : 'Worker';
   } else {
-    subjEl.textContent = (g ? g.name : '') + (ws.length ? ' · ' + ws.length + ' ຄົນ' : '');
+    subjEl.textContent = (g ? g.name : '') + (ws.length ? ' · ' + ws.length + ' ' + bi('ຄົນ','people','คน','명') : '');
   }
 
   // detail-pdf only makes sense for single worker
@@ -3601,7 +3823,7 @@ function exportFieldsAll(on) {
 
 async function doExport() {
   const fmts = [...document.querySelectorAll('.export-opt.sel')].map(el => el.dataset.fmt);
-  if (!fmts.length) { toast('ກະລຸນາເລືອກຢ່າງໜ້ອຍ 1 ຮູບແບບ', 'warn'); return; }
+  if (!fmts.length) { toast(bi('ກະລຸນາເລືອກຢ່າງໜ້ອຍ 1 ຮູບແບບ','Please select at least 1 format','โปรดเลือกอย่างน้อย 1 รูปแบบ','형식을 1개 이상 선택하세요'), 'warn'); return; }
 
   closeOverlay('export-overlay');
   await new Promise(r => setTimeout(r, 150));
@@ -3617,7 +3839,7 @@ async function doExport() {
   }
   // The .kdb bundle always exports the COMPLETE group (never the filtered view),
   // so it can run even when the current search/filter shows nothing.
-  if (!workers.length && !fmts.includes('kdb')) { toast('ບໍ່ມີຂໍ້ມູນ', 'warn'); return; }
+  if (!workers.length && !fmts.includes('kdb')) { toast(bi('ບໍ່ມີຂໍ້ມູນ','No data','ไม่มีข้อมูล','데이터 없음'), 'warn'); return; }
 
   for (const fmt of fmts) {
     if      (fmt === 'detail-pdf') { exportWorkerPDF(); await new Promise(r => setTimeout(r, 200)); }
@@ -3647,9 +3869,9 @@ function _doKdCardPdf(workers, g) {
 }
 
 async function _doKdCardPng(workers, g) {
-  if (!window.html2canvas) { toast('html2canvas ບໍ່ໄດ້ໂຫລດ', 'warn'); return; }
+  if (!window.html2canvas) { toast(bi('html2canvas ບໍ່ໄດ້ໂຫລດ','html2canvas not loaded','html2canvas ยังไม่โหลด','html2canvas가 로드되지 않음'), 'warn'); return; }
   const showProg = workers.length > 3;
-  if (showProg) _progressShow(bi('ກຳລັງສ້າງຮູບ KD Card', 'กำลังสร้างรูป KD Card'));
+  if (showProg) _progressShow(bi('ກຳລັງສ້າງຮູບ KD Card', 'Creating KD Card image', 'กำลังสร้างรูป KD Card', 'KD 카드 이미지 생성 중'));
   try {
   for (let i = 0; i < workers.length; i++) {
     const w = workers[i];
@@ -3683,7 +3905,7 @@ function _doExportCsv(workers, g) {
       if (el && el.checked) selFields.push(f);
     });
   });
-  if (!selFields.length) { toast('ກະລຸນາເລືອກ field ຢ່າງໜ້ອຍ 1 ອັນ', 'warn'); return; }
+  if (!selFields.length) { toast(bi('ກະລຸນາເລືອກ field ຢ່າງໜ້ອຍ 1 ອັນ','Please select at least 1 field','โปรดเลือกฟิลด์อย่างน้อย 1 ช่อง','항목을 1개 이상 선택하세요'), 'warn'); return; }
   const gName = g ? g.name : '';
   const rows = workers.map(w => selFields.map(f => {
     let v = '';
@@ -3700,7 +3922,7 @@ function _doExportCsv(workers, g) {
 }
 
 async function _doExportDocs(workers) {
-  _progressShow(bi('ກຳລັງລວບລວມເອກະສານ', 'กำลังรวบรวมเอกสาร'));
+  _progressShow(bi('ກຳລັງລວບລວມເອກະສານ', 'Collecting documents', 'กำลังรวบรวมเอกสาร', '문서 수집 중'));
   try {
   const allDocs = [];
   for (let i = 0; i < workers.length; i++) {
@@ -3713,10 +3935,10 @@ async function _doExportDocs(workers) {
         if (cur) allDocs.push({ w, cat, doc: cur });
       });
     } catch(e) { /* skip */ }
-    _progressSet(i / workers.length * 40, bi('ກວດເອກະສານ ', 'ตรวจเอกสาร ') + (i + 1) + '/' + workers.length);
+    _progressSet(i / workers.length * 40, bi('ກວດເອກະສານ ', 'Checking documents ', 'ตรวจเอกสาร ', '문서 확인 중 ') + (i + 1) + '/' + workers.length);
     await _paint();
   }
-  if (!allDocs.length) { toast('ບໍ່ມີເອກະສານທີ່ອັບໂຫລດ', 'warn'); return; }
+  if (!allDocs.length) { toast(bi('ບໍ່ມີເອກະສານທີ່ອັບໂຫລດ','No uploaded documents','ไม่มีเอกสารที่อัปโหลด','업로드된 문서가 없음'), 'warn'); return; }
 
   if (!window.JSZip || allDocs.length <= 3) {
     for (const { doc } of allDocs) {
@@ -3742,11 +3964,11 @@ async function _doExportDocs(workers) {
       const ext   = doc.type || (doc.name || '').split('.').pop() || 'bin';
       zip.file(wName + '/' + cat.key + '_v' + (doc.version || 1) + '.' + ext, blob);
     } catch(e) { /* skip unavailable file */ }
-    _progressSet(40 + (i + 1) / allDocs.length * 50, bi('ດຶງເອກະສານ ', 'ดึงเอกสาร ') + (i + 1) + '/' + allDocs.length);
+    _progressSet(40 + (i + 1) / allDocs.length * 50, bi('ດຶງເອກະສານ ', 'Fetching documents ', 'ดึงเอกสาร ', '문서 가져오는 중 ') + (i + 1) + '/' + allDocs.length);
     await _paint();
   }
   const content = await zip.generateAsync({ type: 'blob' },
-    m => _progressSet(90 + (m.percent || 0) * 0.1, bi('ບີບອັດໄຟລ໌...', 'บีบอัดไฟล์...')));
+    m => _progressSet(90 + (m.percent || 0) * 0.1, bi('ບີບອັດໄຟລ໌...', 'Compressing files…', 'บีบอัดไฟล์...', '파일 압축 중…')));
   const url = URL.createObjectURL(content);
   const a = document.createElement('a');
   a.href = url;
@@ -3767,7 +3989,7 @@ async function _doExportDocs(workers) {
 function _progressShow(title) {
   const ov = document.getElementById('progress-overlay'); if (!ov) return;
   const te = document.getElementById('progress-title');
-  if (te) te.textContent = title || bi('ກຳລັງດຳເນີນການ...', 'กำลังดำเนินการ...');
+  if (te) te.textContent = title || bi('ກຳລັງດຳເນີນການ...', 'Working…', 'กำลังดำเนินการ...', '처리 중…');
   _progressSet(0, '');
   ov.classList.add('open');
   document.body.classList.add('no-scroll');
@@ -3804,15 +4026,15 @@ function _paint() { return new Promise(r => requestAnimationFrame(() => setTimeo
 // Photos & documents are stored on the server as /uploads/… paths, which are
 // meaningless on another box — so we fetch each one and pack the bytes.
 async function _doDatabaseBundle(g) {
-  if (!g) { toast('ບໍ່ມີກຸ່ມ · No group', 'warn'); return; }
+  if (!g) { toast(bi('ບໍ່ມີກຸ່ມ','No group','ไม่มีกลุ่ม','그룹 없음'), 'warn'); return; }
   if (typeof _loadJSZip === 'function') { try { await _loadJSZip(); } catch (e) {} }
-  if (!window.JSZip) { toast('JSZip ບໍ່ໄດ້ໂຫລດ', 'warn'); return; }
+  if (!window.JSZip) { toast(bi('JSZip ບໍ່ໄດ້ໂຫລດ','JSZip not loaded','JSZip ยังไม่โหลด','JSZip가 로드되지 않음'), 'warn'); return; }
 
   // ALWAYS the full group — the active table filter must never shrink a backup.
   const workers = DB.getWorkers(g.id);
-  if (!workers.length) { toast('ບໍ່ມີຂໍ້ມູນ', 'warn'); return; }
+  if (!workers.length) { toast(bi('ບໍ່ມີຂໍ້ມູນ','No data','ไม่มีข้อมูล','데이터 없음'), 'warn'); return; }
 
-  _progressShow(bi('ກຳລັງສ້າງໄຟລ໌ຖານຂໍ້ມູນ', 'กำลังสร้างไฟล์ฐานข้อมูล'));
+  _progressShow(bi('ກຳລັງສ້າງໄຟລ໌ຖານຂໍ້ມູນ', 'Building database file', 'กำลังสร้างไฟล์ฐานข้อมูล', '데이터베이스 파일 생성 중'));
   try {
 
   const _extFor = (p, mime) => {
@@ -3879,7 +4101,7 @@ async function _doDatabaseBundle(g) {
     out.push(rec);
     // Gathering media is the slow phase → map it to 0–90% of the bar.
     _progressSet((wi + 1) / workers.length * 90,
-      bi('ລວບລວມຂໍ້ມູນ ', 'รวบรวมข้อมูล ') + (wi + 1) + '/' + workers.length);
+      bi('ລວບລວມຂໍ້ມູນ ', 'Gathering data ', 'รวบรวมข้อมูล ', '데이터 수집 중 ') + (wi + 1) + '/' + workers.length);
     await _paint();
   }
 
@@ -3900,7 +4122,7 @@ async function _doDatabaseBundle(g) {
 
   // Zipping/compression is the final 90–100%.
   const content = await zip.generateAsync({ type: 'blob' },
-    m => _progressSet(90 + (m.percent || 0) * 0.1, bi('ບີບອັດໄຟລ໌...', 'บีบอัดไฟล์...')));
+    m => _progressSet(90 + (m.percent || 0) * 0.1, bi('ບີບອັດໄຟລ໌...', 'Compressing files…', 'บีบอัดไฟล์...', '파일 압축 중…')));
   const url = URL.createObjectURL(content);
   const a = document.createElement('a');
   a.href = url;
@@ -3908,7 +4130,9 @@ async function _doDatabaseBundle(g) {
   a.click();
   URL.revokeObjectURL(url);
   toast(bi('ສ້າງໄຟລ໌ຖານຂໍ້ມູນສຳເລັດ · ' + out.length + ' ຄົນ, ' + (nPhotos + nDocs) + ' ຮູບ',
-           'สร้างไฟล์ฐานข้อมูลสำเร็จ · ' + out.length + ' คน, ' + (nPhotos + nDocs) + ' รูป'), 'ok');
+           'Database file created · ' + out.length + ' people, ' + (nPhotos + nDocs) + ' images',
+           'สร้างไฟล์ฐานข้อมูลสำเร็จ · ' + out.length + ' คน, ' + (nPhotos + nDocs) + ' รูป',
+           '데이터베이스 파일 생성 완료 · ' + out.length + '명, ' + (nPhotos + nDocs) + '개 이미지'), 'ok');
   } catch (e) {
     toast('Export failed: ' + (e && e.message || e), 'warn');
   } finally {
@@ -4059,9 +4283,9 @@ async function _buildPptx(slides) {
 }
 
 async function _doKdCardPptx(workers, g) {
-  if (!window.html2canvas) { toast('html2canvas ບໍ່ໄດ້ໂຫລດ', 'warn'); return; }
-  if (!window.JSZip)       { toast('JSZip ບໍ່ໄດ້ໂຫລດ', 'warn'); return; }
-  _progressShow(bi('ກຳລັງສ້າງ PowerPoint', 'กำลังสร้าง PowerPoint'));
+  if (!window.html2canvas) { toast(bi('html2canvas ບໍ່ໄດ້ໂຫລດ','html2canvas not loaded','html2canvas ยังไม่โหลด','html2canvas가 로드되지 않음'), 'warn'); return; }
+  if (!window.JSZip)       { toast(bi('JSZip ບໍ່ໄດ້ໂຫລດ','JSZip not loaded','JSZip ยังไม่โหลด','JSZip가 로드되지 않음'), 'warn'); return; }
+  _progressShow(bi('ກຳລັງສ້າງ PowerPoint', 'Creating PowerPoint', 'กำลังสร้าง PowerPoint', 'PowerPoint 생성 중'));
   try {
   const slides = [];
   for (let i = 0; i < workers.length; i++) {
@@ -4075,11 +4299,11 @@ async function _doKdCardPptx(workers, g) {
     } finally {
       document.body.removeChild(wrap);
     }
-    _progressSet((i + 1) / workers.length * 90, bi('ສ້າງສະໄລ້ ', 'สร้างสไลด์ ') + (i + 1) + '/' + workers.length);
+    _progressSet((i + 1) / workers.length * 90, bi('ສ້າງສະໄລ້ ', 'Creating slide ', 'สร้างสไลด์ ', '슬라이드 생성 중 ') + (i + 1) + '/' + workers.length);
     await _paint();
   }
-  if (!slides.length) { toast('ບໍ່ມີຂໍ້ມູນ', 'warn'); return; }
-  _progressSet(95, bi('ປະກອບໄຟລ໌...', 'ประกอบไฟล์...'));
+  if (!slides.length) { toast(bi('ບໍ່ມີຂໍ້ມູນ','No data','ไม่มีข้อมูล','데이터 없음'), 'warn'); return; }
+  _progressSet(95, bi('ປະກອບໄຟລ໌...', 'Assembling file…', 'ประกอบไฟล์...', '파일 조합 중…'));
   const blob = await _buildPptx(slides);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -4128,9 +4352,9 @@ async function openTrash() {
   if (!isAdmin()) return;
   openOverlay('trash-overlay');
   const body = document.getElementById('trash-body');
-  body.innerHTML = '<div class="trash-empty">' + bi('ກຳລັງໂຫລດ...', 'กำลังโหลด...') + '</div>';
+  body.innerHTML = '<div class="trash-empty">' + bi('ກຳລັງໂຫລດ...', 'Loading…', 'กำลังโหลด...', '불러오는 중…') + '</div>';
   try { _trashCache = await DB.getTrash(); }
-  catch (e) { body.innerHTML = '<div class="trash-empty">' + esc(bi('ໂຫລດບໍ່ສຳເລັດ', 'โหลดไม่สำเร็จ') + ': ' + (e.message || e)) + '</div>'; return; }
+  catch (e) { body.innerHTML = '<div class="trash-empty">' + esc(bi('ໂຫລດບໍ່ສຳເລັດ', 'Failed to load', 'โหลดไม่สำเร็จ', '불러오기 실패') + ': ' + (e.message || e)) + '</div>'; return; }
   renderTrash();
 }
 function _trashFmtDate(s) {
@@ -4149,28 +4373,28 @@ function renderTrash() {
   if (!total) {
     body.innerHTML = '<div class="trash-empty">'
       + '<svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" style="opacity:.35;margin-bottom:10px"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'
-      + '<div>' + bi('ຖັງຂີ້ເຫຍື້ອວ່າງ', 'ถังขยะว่างเปล่า') + '</div></div>';
+      + '<div>' + bi('ຖັງຂີ້ເຫຍື້ອວ່າງ', 'Trash is empty', 'ถังขยะว่างเปล่า', '휴지통이 비어 있음') + '</div></div>';
     return;
   }
-  const restoreLbl = bi('ກູ້ຄືນ', 'กู้คืน'), delTitle = bi('ລຶບຖາວອນ', 'ลบถาวร');
+  const restoreLbl = bi('ກູ້ຄືນ', 'Restore', 'กู้คืน', '복원'), delTitle = bi('ລຶບຖາວອນ', 'Delete permanently', 'ลบถาวร', '영구 삭제');
   let h = '';
   if (groups.length) {
-    h += '<div class="trash-sec-label">' + bi('ກຸ່ມ', 'กลุ่ม') + ' (' + groups.length + ')</div>';
+    h += '<div class="trash-sec-label">' + bi('ກຸ່ມ', 'Groups', 'กลุ่ม', '그룹') + ' (' + groups.length + ')</div>';
     h += groups.map(g =>
       '<div class="trash-item">'
       + '<div class="trash-item-main"><div class="trash-item-name">📁 ' + esc(g.name || '—') + '</div>'
-      + '<div class="trash-item-sub">' + g.count + ' ' + bi('ຄົນ', 'คน') + ' · ' + bi('ລຶບເມື່ອ ', 'ลบเมื่อ ') + esc(_trashFmtDate(g.deletedAt)) + '</div></div>'
+      + '<div class="trash-item-sub">' + g.count + ' ' + bi('ຄົນ', 'people', 'คน', '명') + ' · ' + bi('ລຶບເມື່ອ ', 'Deleted ', 'ลบเมื่อ ', '삭제일 ') + esc(_trashFmtDate(g.deletedAt)) + '</div></div>'
       + '<button class="trash-btn trash-btn-restore" onclick="restoreTrashItem(\'group\',\'' + esc(g.id) + '\')">↩ ' + restoreLbl + '</button>'
       + '<button class="trash-btn trash-btn-del" title="' + delTitle + '" onclick="purgeTrashItem(\'group\',\'' + esc(g.id) + '\',\'' + esc(g.name || '') + '\')">&#128465;</button>'
       + '</div>').join('');
   }
   if (employees.length) {
-    h += '<div class="trash-sec-label">' + bi('ແຮງງານ', 'แรงงาน') + ' (' + employees.length + ')</div>';
+    h += '<div class="trash-sec-label">' + bi('ແຮງງານ', 'Workers', 'แรงงาน', '근로자') + ' (' + employees.length + ')</div>';
     h += employees.map(e => {
       const nm = e.en_name || e.lo_name || e.worker_id || e.uid;
       return '<div class="trash-item">'
       + '<div class="trash-item-main"><div class="trash-item-name">👤 ' + esc(nm) + '</div>'
-      + '<div class="trash-item-sub">' + (e.groupName ? esc(e.groupName) + ' · ' : '') + bi('ລຶບເມື່ອ ', 'ลบเมื่อ ') + esc(_trashFmtDate(e.deletedAt)) + '</div></div>'
+      + '<div class="trash-item-sub">' + (e.groupName ? esc(e.groupName) + ' · ' : '') + bi('ລຶບເມື່ອ ', 'Deleted ', 'ลบเมื่อ ', '삭제일 ') + esc(_trashFmtDate(e.deletedAt)) + '</div></div>'
       + '<button class="trash-btn trash-btn-restore" onclick="restoreTrashItem(\'employee\',\'' + esc(e.uid) + '\')">↩ ' + restoreLbl + '</button>'
       + '<button class="trash-btn trash-btn-del" title="' + delTitle + '" onclick="purgeTrashItem(\'employee\',\'' + esc(e.uid) + '\',\'' + esc(nm) + '\')">&#128465;</button>'
       + '</div>';
@@ -4181,31 +4405,31 @@ function renderTrash() {
 async function restoreTrashItem(type, id) {
   try { await DB.restoreTrash(type, id); }
   catch (e) { toast('Restore failed', 'warn'); return; }
-  toast(bi('ກູ້ຄືນສຳເລັດ', 'กู้คืนสำเร็จ'), 'ok');
+  toast(bi('ກູ້ຄືນສຳເລັດ', 'Restored', 'กู้คืนสำเร็จ', '복원됨'), 'ok');
   try { _trashCache = await DB.getTrash(); } catch (e) {}
   renderTrash();
   refreshAll();
 }
 function purgeTrashItem(type, id, name) {
-  showConfirm(bi('ລຶບຖາວອນ', 'ลบถาวร'),
-    bi('ລຶບ "' + name + '" ຖາວອນ? ກູ້ຄືນບໍ່ໄດ້ອີກ.', 'ลบ "' + name + '" ถาวร? กู้คืนไม่ได้อีก'),
+  showConfirm(bi('ລຶບຖາວອນ', 'Delete permanently', 'ลบถาวร', '영구 삭제'),
+    bi('ລຶບ "' + name + '" ຖາວອນ? ກູ້ຄືນບໍ່ໄດ້ອີກ.', 'Delete "' + name + '" permanently? This cannot be undone.', 'ลบ "' + name + '" ถาวร? กู้คืนไม่ได้อีก', '"' + name + '"을(를) 영구 삭제할까요? 되돌릴 수 없습니다.'),
     async () => {
       try { await DB.purgeTrash(type, id); } catch (e) { toast('Delete failed', 'warn'); return; }
       try { _trashCache = await DB.getTrash(); } catch (e) {}
       renderTrash();
-      toast(bi('ລຶບຖາວອນແລ້ວ', 'ลบถาวรแล้ว'), 'ok');
+      toast(bi('ລຶບຖາວອນແລ້ວ', 'Permanently deleted', 'ลบถาวรแล้ว', '영구 삭제됨'), 'ok');
     });
 }
 function confirmEmptyTrash() {
   const total = (_trashCache.groups || []).length + (_trashCache.employees || []).length;
   if (!total) return;
-  showConfirm(bi('ລ້າງຖັງຂີ້ເຫຍື້ອ', 'ล้างถังขยะ'),
-    bi('ລຶບທຸກລາຍການໃນຖັງຖາວອນ? ກູ້ຄືນບໍ່ໄດ້ອີກ.', 'ลบทุกรายการในถังถาวร? กู้คืนไม่ได้อีก'),
+  showConfirm(bi('ລ້າງຖັງຂີ້ເຫຍື້ອ', 'Empty trash', 'ล้างถังขยะ', '휴지통 비우기'),
+    bi('ລຶບທຸກລາຍການໃນຖັງຖາວອນ? ກູ້ຄືນບໍ່ໄດ້ອີກ.', 'Permanently delete everything in the trash? This cannot be undone.', 'ลบทุกรายการในถังถาวร? กู้คืนไม่ได้อีก', '휴지통의 모든 항목을 영구 삭제할까요? 되돌릴 수 없습니다.'),
     async () => {
       try { await DB.emptyTrash(); } catch (e) { toast('Empty failed', 'warn'); return; }
       _trashCache = { groups: [], employees: [] };
       renderTrash();
-      toast(bi('ລ້າງຖັງແລ້ວ', 'ล้างถังแล้ว'), 'ok');
+      toast(bi('ລ້າງຖັງແລ້ວ', 'Trash emptied', 'ล้างถังแล้ว', '휴지통을 비웠습니다'), 'ok');
     });
 }
 
@@ -4229,7 +4453,7 @@ function autoSaveWorkerForm() {
     (window._pendingScanDocs && window._pendingScanDocs.length);
   if (hasData && typeof saveWorker === 'function') {
     saveWorker();   // saves + closes + refreshes
-    toast('💾 ບັນທຶກອັດຕະໂນมัติ · auto-saved', 'ok');
+    toast(bi('💾 ບັນທຶກອັດຕະໂນມັດ','💾 Auto-saved','💾 บันทึกอัตโนมัติ','💾 자동 저장됨'), 'ok');
   } else {
     closeOverlay('form-overlay');
   }
@@ -4315,9 +4539,33 @@ function renderAppearance() {
   document.querySelectorAll('.theme-opt').forEach(b => {
     b.classList.toggle('active', b.dataset.themeVal === pref);
   });
-  const langSel = document.getElementById('set-lang-select');
-  if (langSel) langSel.value = (typeof currentLang !== 'undefined' ? currentLang : 'en');
+  _syncSetLangDD();
   updateLogoDisplay();
+}
+
+// ── Custom language dropdown (Settings → Appearance) ──────────────
+const _LANG_NAMES = { en: 'English', th: 'ไทย', lo: 'ລາວ', ko: '한국어' };
+function _syncSetLangDD() {
+  const cur = (typeof currentLang !== 'undefined' ? currentLang : 'en');
+  const lbl = document.getElementById('set-lang-cur');
+  if (lbl) lbl.textContent = _LANG_NAMES[cur] || 'English';
+  document.querySelectorAll('#set-lang-menu button').forEach(b => b.classList.toggle('on', b.dataset.lang === cur));
+}
+function toggleSetLangDD(e) {
+  if (e) e.stopPropagation();
+  const dd = document.getElementById('set-lang-dd');
+  if (!dd) return;
+  const open = dd.classList.toggle('open');
+  document.getElementById('set-lang-btn')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) _syncSetLangDD();
+}
+function closeSetLangDD() {
+  document.getElementById('set-lang-dd')?.classList.remove('open');
+  document.getElementById('set-lang-btn')?.setAttribute('aria-expanded', 'false');
+}
+function setLangFromDD(lang) {
+  closeSetLangDD();
+  changeLangFromSettings(lang);   // switch + live re-render (renderSettings → _syncSetLangDD)
 }
 
 // Language dropdown in Settings → Appearance
@@ -4380,21 +4628,21 @@ async function toggleRestoreList() {
   if (!box) return;
   if (box.style.display !== 'none') { box.style.display = 'none'; return; }
   box.style.display = 'block';
-  box.innerHTML = '<div class="set-card-label">ກຳລັງໂຫລດ...</div>';
+  box.innerHTML = '<div class="set-card-label">' + bi('ກຳລັງໂຫລດ...','Loading…','กำลังโหลด...','불러오는 중…') + '</div>';
   let files = [];
   try { files = await DB.listBackups(); } catch (e) {}
-  if (!files.length) { box.innerHTML = '<div class="set-card-label">ບໍ່ມີໄຟລ໌ສຳຮອງ · No backups</div>'; return; }
-  box.innerHTML = '<div class="set-card-label">ເລືອກໄຟລ໌ເພື່ອກູ້ຄືນ · Choose a backup</div>' +
+  if (!files.length) { box.innerHTML = '<div class="set-card-label">' + bi('ບໍ່ມີໄຟລ໌ສຳຮອງ','No backups','ไม่มีไฟล์สำรอง','백업 없음') + '</div>'; return; }
+  box.innerHTML = '<div class="set-card-label">' + bi('ເລືອກໄຟລ໌ເພື່ອກູ້ຄືນ','Choose a backup','เลือกไฟล์เพื่อกู้คืน','복원할 백업 선택') + '</div>' +
     '<div class="set-card"><div class="set-list" style="padding:5px 10px">' +
     files.map(f => {
       const name = typeof f === 'string' ? f : (f.file || f.name || JSON.stringify(f));
       return '<div class="set-item"><span class="set-name" style="flex:1">' + esc(name) + '</span>' +
-        '<button class="btn btn-sm" onclick="doRestore(\'' + esc(name) + '\')">ກູ້ຄືນ</button></div>';
+        '<button class="btn btn-sm" onclick="doRestore(\'' + esc(name) + '\')">' + bi('ກູ້ຄືນ','Restore','กู้คืน','복원') + '</button></div>';
     }).join('') + '</div></div>';
 }
 function doRestore(file) {
-  showConfirm('ກູ້ຄືນຂໍ້ມູນ', 'ກູ້ຄືນຈາກ ' + file + '? ຂໍ້ມູນປັດຈຸບັນຈະຖືກແທນທີ່.', async () => {
-    try { await DB.restore(file); toast('ກູ້ຄືນສຳເລັດ', 'ok'); closeOverlay('settings-overlay'); refreshAll(); }
+  showConfirm(bi('ກູ້ຄືນຂໍ້ມູນ','Restore data','กู้คืนข้อมูล','데이터 복원'), bi('ກູ້ຄືນຈາກ ','Restore from ','กู้คืนจาก ','복원: ') + file + bi('? ຂໍ້ມູນປັດຈຸບັນຈະຖືກແທນທີ່.','? Current data will be replaced.','? ข้อมูลปัจจุบันจะถูกแทนที่','? 현재 데이터가 대체됩니다.'), async () => {
+    try { await DB.restore(file); toast(bi('ກູ້ຄືນສຳເລັດ','Restored','กู้คืนสำเร็จ','복원됨'), 'ok'); closeOverlay('settings-overlay'); refreshAll(); }
     catch (e) { toast('Restore failed: ' + (e.message || e), 'warn'); }
   });
 }
@@ -4409,7 +4657,7 @@ function exportAllData() {
   URL.revokeObjectURL(url);
 }
 function confirmHardReset() {
-  showConfirm(t('confirm_delete') || 'Reset', 'ລ້າງຂໍ້ມູນທັງໝົດຖາວອນ? ບໍ່ສາມາດກູ້ຄືນໄດ້ (ນອກຈາກມີສຳຮອງ).', () => {
+  showConfirm(t('confirm_delete') || 'Reset', bi('ລ້າງຂໍ້ມູນທັງໝົດຖາວອນ? ບໍ່ສາມາດກູ້ຄືນໄດ້ (ນອກຈາກມີສຳຮອງ).','Permanently erase ALL data? Cannot be undone (unless you have a backup).','ล้างข้อมูลทั้งหมดถาวร? ไม่สามารถกู้คืนได้ (นอกจากมีสำรอง)','모든 데이터를 영구 삭제할까요? 되돌릴 수 없습니다 (백업이 없으면).'), () => {
     DB.hardReset();
     setTimeout(() => location.reload(), 400);
   });
@@ -4424,10 +4672,10 @@ function renderAbout() {
   const cities = DB.getCities();
   const cityCount = (cities.kr || []).length + (cities.la || []).length;
   const rows = [
-    [bi('ກຸ່ມ', 'Groups'), groups.length],
-    [bi('ແຮງງານ', 'Workers'), workers],
-    [bi('ເມືອງ', 'Cities'), cityCount],
-    [bi('ຜູ້ໃຊ້', 'Users'), DB.getUsers().length],
+    [bi('ກຸ່ມ', 'Groups', 'กลุ่ม', '그룹'), groups.length],
+    [bi('ແຮງງານ', 'Workers', 'แรงงาน', '근로자'), workers],
+    [bi('ເມືອງ', 'Cities', 'เมือง', '도시'), cityCount],
+    [bi('ຜູ້ໃຊ້', 'Users', 'ผู้ใช้', '사용자'), DB.getUsers().length],
   ];
   el.innerHTML = rows.map(([k, v]) =>
     '<div class="set-item"><span class="set-name" style="flex:1">' + k + '</span>' +
@@ -4441,6 +4689,7 @@ function renderSettings() {
     renderCompany();
     renderCityList('kr');
     renderCityList('la');
+    renderLocDictSettings();
     renderDocCatsSettings();
     renderReqFields();
     renderNotifPrefs();
@@ -4479,7 +4728,7 @@ function renderDocCatsSettings(editIdx) {
 function renderReqFields() {
   const el = document.getElementById('set-reqfields-list'); if (!el) return;
   const sel = new Set(getReqFields());
-  el.innerHTML = _REQ_FIELD_CATALOG.map(([key, label]) =>
+  el.innerHTML = _reqFieldCatalog().map(([key, label]) =>
     '<label class="reqf-item">' +
       '<input type="checkbox"' + (sel.has(key) ? ' checked' : '') + (isAdmin() ? '' : ' disabled') +
         ' onchange="toggleReqField(\'' + key + '\',this.checked)">' +
@@ -4529,7 +4778,7 @@ function delDocCat(i) {
   const cats = getDocCats().slice();
   const c = cats[i]; if (!c) return;
   showConfirm(t('confirm_delete') || 'Delete',
-    bi('ລຶບປະເພດເອກະສານ ', 'Remove document type ') + '"' + c.label + '"?',
+    bi('ລຶບປະເພດເອກະສານ ', 'Remove document type ', 'ลบประเภทเอกสาร ', '문서 유형 제거 ') + '"' + c.label + '"?',
     () => { cats.splice(i, 1); _saveDocCats(cats); renderDocCatsSettings(); });
 }
 
@@ -4603,7 +4852,190 @@ function delCity(country, code) {
   );
 }
 
-const _SVG_SWAP  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3l4 4-4 4M20 7H4M8 21l-4-4 4-4M4 17h16"/></svg>';
+// ── LOCATION DICTIONARY — Settings manager ────────────────────────
+let _locEditLevel  = 0;
+let _locEditParent = '';
+
+function renderLocDictSettings() {
+  const host = document.getElementById('set-locdict');
+  if (!host) return;
+  const ld = DB.getLocDict();
+
+  let html = '<div class="set-col-title" style="margin-top:24px">' +
+    esc(bi('ວັດຈະນານຸກົມສະຖານທີ່ (ກຳນົດເອງ)','Location dictionary (custom)','พจนานุกรมสถานที่ (กำหนดเอง)','위치 사전 (사용자 지정)')) + '</div>' +
+    '<div class="set-row-desc" style="margin:-4px 0 12px">' +
+    esc(bi('ສ້າງໝວດສະຖານທີ່ເປັນຊັ້ນ (ແຂວງ → ເມືອງ → ບ້ານ) ພ້ອມລະຫັດສັ້ນ. ບໍ່ມັກ? ລຶບໄດ້.','Build hierarchical place categories (Province → District → Village) with short codes. Don\'t like it? Delete it.','สร้างหมวดสถานที่เป็นชั้น (จังหวัด → เมือง → บ้าน) พร้อมรหัสสั้น ไม่ชอบ? ลบได้','계층형 위치 범주 (도 → 시·군 → 마을) 단축 코드 포함. 마음에 안 들면 삭제하세요.')) + '</div>';
+
+  // ── Levels (categories) ──
+  html += '<div class="locdict-card"><div class="locdict-sub">' +
+    esc(bi('ໝວດ (ຊັ້ນ) — ສູງສຸດ 3','Categories (levels) — max 3','หมวด (ชั้น) — สูงสุด 3','범주 (단계) — 최대 3')) + '</div>';
+  html += ld.levels.length
+    ? ld.levels.map((lv, i) =>
+        '<div class="locdict-row">' +
+          '<span class="locdict-lvl-no">' + (i + 1) + '</span>' +
+          '<input class="locdict-name-in" value="' + esc(lv.name) + '" onchange="locRenameLevel(\'' + lv.id + '\', this.value)">' +
+          '<button class="locdict-ic" onclick="locMoveLevel(\'' + lv.id + '\',-1)"' + (i === 0 ? ' disabled' : '') + '>&#9650;</button>' +
+          '<button class="locdict-ic" onclick="locMoveLevel(\'' + lv.id + '\',1)"' + (i === ld.levels.length - 1 ? ' disabled' : '') + '>&#9660;</button>' +
+          '<button class="locdict-ic danger" onclick="locDelLevel(\'' + lv.id + '\')">&#10005;</button>' +
+        '</div>')
+      .join('')
+    : '<div class="set-empty">—</div>';
+  if (ld.levels.length < 3) {
+    html += '<div class="set-add-row" style="margin-top:8px">' +
+      '<input id="locdict-newlevel" placeholder="' + esc(bi('ຊື່ໝວດ ເຊັ່ນ ແຂວງ','Category e.g. Province','ชื่อหมวด เช่น จังหวัด','범주 예: 도')) + '">' +
+      '<button class="btn btn-add btn-sm" onclick="locAddLevel()">' + esc(bi('ເພີ່ມ','Add','เพิ่ม','추가')) + '</button></div>';
+  }
+  html += '</div>';
+
+  // ── Items (per level, hierarchical) ──
+  if (ld.levels.length) {
+    if (_locEditLevel >= ld.levels.length) _locEditLevel = 0;
+    const lv = ld.levels[_locEditLevel];
+    html += '<div class="locdict-card"><div class="locdict-sub">' + esc(bi('ລາຍການ','Items','รายการ','항목')) + '</div>';
+    html += '<div class="locdict-tabs">' + ld.levels.map((l, i) =>
+      '<button class="locdict-tab' + (i === _locEditLevel ? ' active' : '') + '" onclick="locSelectEditLevel(' + i + ')">' + esc(l.name) + '</button>').join('') + '</div>';
+
+    let parentOk = true;
+    if (_locEditLevel > 0) {
+      const pl = ld.levels[_locEditLevel - 1];
+      const parents = ld.items.filter(it => it.levelId === pl.id).sort((a, b) => a.order - b.order);
+      if (!parents.some(p => p.id === _locEditParent)) _locEditParent = parents[0] ? parents[0].id : '';
+      parentOk = !!_locEditParent;
+      html += '<div class="locdict-parent"><span class="locdict-parent-lbl">' + esc(pl.name) + '</span>' +
+        '<select class="addr-input" onchange="locSelectEditParent(this.value)">' +
+        (parents.length ? '' : '<option value="">—</option>') +
+        parents.map(p => '<option value="' + esc(p.id) + '"' + (p.id === _locEditParent ? ' selected' : '') + '>' +
+          esc(p.name) + (p.code ? ' (' + esc(p.code) + ')' : '') + '</option>').join('') + '</select></div>';
+    }
+
+    if (!parentOk) {
+      html += '<div class="set-empty">' + esc(bi('ເພີ່ມລາຍການຊັ້ນເທິງກ່ອນ','Add a parent item first','เพิ่มรายการชั้นบนก่อน','상위 항목을 먼저 추가하세요')) + '</div>';
+    } else {
+      const items = ld.items.filter(it => it.levelId === lv.id && (_locEditLevel === 0 || it.parentId === _locEditParent)).sort((a, b) => a.order - b.order);
+      html += items.length ? items.map((it, idx) =>
+        '<div class="locdict-row">' +
+          '<span class="set-code">' + esc(it.code || '—') + '</span>' +
+          '<span class="set-name" style="flex:1">' + esc(it.name) + '</span>' +
+          '<button class="locdict-ic" onclick="locMoveItem(\'' + it.id + '\',-1)"' + (idx === 0 ? ' disabled' : '') + '>&#9650;</button>' +
+          '<button class="locdict-ic" onclick="locMoveItem(\'' + it.id + '\',1)"' + (idx === items.length - 1 ? ' disabled' : '') + '>&#9660;</button>' +
+          '<button class="locdict-ic danger" onclick="locDelItem(\'' + it.id + '\')">&#10005;</button>' +
+        '</div>').join('') : '<div class="set-empty">—</div>';
+      html += '<div class="set-add-row" style="margin-top:8px">' +
+        '<input id="locdict-item-name" placeholder="' + esc(bi('ຊື່','Name','ชื่อ','이름')) + '">' +
+        '<input id="locdict-item-code" class="code-in" maxlength="6" placeholder="Code">' +
+        '<button class="btn btn-add btn-sm" onclick="locAddItem()">' + esc(bi('ເພີ່ມ','Add','เพิ่ม','추가')) + '</button></div>';
+    }
+    html += '</div>';
+
+    // ── Worker ID format ──
+    const yy = String(new Date().getFullYear()).slice(-2);
+    const srcOpts = [['la', bi('ເມືອງລາວ (ຕົ້ນທາງ)','Lao city (origin)','เมืองลาว (ต้นทาง)','라오스 도시')]]
+      .concat(ld.levels.map(l => [l.id, l.name]));
+    const sampleCode = (ld.idConfig.source === 'la')
+      ? 'PHI'
+      : ((ld.items.find(it => it.levelId === ld.idConfig.source) || {}).code || 'XXX');
+    const preview = sampleCode + '-' + yy + '-' + String(ld.idConfig.seqStart).padStart(ld.idConfig.seqPad, '0');
+    html += '<div class="locdict-card"><div class="locdict-sub">' + esc(bi('ຮູບແບບລະຫັດ Worker ID','Worker ID format','รูปแบบรหัส Worker ID','근로자 ID 형식')) + '</div>';
+    html += '<div class="locdict-cfg"><label>' + esc(bi('ດຶງລະຫັດຈາກ','Code from','ดึงรหัสจาก','코드 출처')) + '</label>' +
+      '<select class="addr-input" onchange="locSetIdSource(this.value)">' +
+      srcOpts.map(([v, lab]) => '<option value="' + esc(v) + '"' + (v === ld.idConfig.source ? ' selected' : '') + '>' + esc(lab) + '</option>').join('') + '</select></div>';
+    html += '<div class="locdict-cfg"><label>' + esc(bi('ເລີ່ມລຳດັບ','Start no.','เริ่มลำดับ','시작 번호')) + '</label>' +
+      '<input class="set-num-input" type="number" min="1" value="' + ld.idConfig.seqStart + '" onchange="locSetSeqStart(this.value)">' +
+      '<label style="margin-left:12px">' + esc(bi('ຫຼັກ','Digits','หลัก','자릿수')) + '</label>' +
+      '<input class="set-num-input" type="number" min="1" max="6" value="' + ld.idConfig.seqPad + '" onchange="locSetSeqPad(this.value)"></div>';
+    html += '<div class="locdict-preview">' + esc(bi('ຕົວຢ່າງ','Example','ตัวอย่าง','예시')) + ': <b>' + esc(preview) + '</b></div></div>';
+
+    html += '<button class="btn btn-ghost btn-sm locdict-clear" onclick="locClearAll()">' +
+      esc(bi('ລຶບວັດຈະນານຸກົມສະຖານທີ່ທັງໝົດ','Delete entire location dictionary','ลบพจนานุกรมสถานที่ทั้งหมด','위치 사전 전체 삭제')) + '</button>';
+  }
+
+  host.innerHTML = html;
+}
+
+function _locMutate(fn) {
+  const ld = DB.getLocDict();
+  fn(ld);
+  DB.saveLocDict(ld);
+  renderLocDictSettings();
+}
+function locAddLevel() {
+  const inp = document.getElementById('locdict-newlevel');
+  const name = inp ? inp.value.trim() : '';
+  if (!name) return;
+  _locMutate(ld => {
+    if (ld.levels.length >= 3) return;
+    ld.enabled = true;
+    ld.levels.push({ id: DB._newLocId(), name, order: ld.levels.length });
+  });
+}
+function locRenameLevel(id, val) {
+  _locMutate(ld => { const l = ld.levels.find(x => x.id === id); if (l) l.name = String(val || '').trim() || l.name; });
+}
+function locDelLevel(id) {
+  showConfirm(t('confirm_delete'),
+    bi('ລຶບໝວດນີ້ ແລະ ລາຍການທັງໝົດໃນນັ້ນ?','Delete this category and all its items?','ลบหมวดนี้และรายการทั้งหมดในนั้น?','이 범주와 모든 항목을 삭제할까요?'),
+    () => _locMutate(ld => {
+      ld.levels = ld.levels.filter(l => l.id !== id);
+      const ids = new Set(ld.levels.map(l => l.id));
+      ld.items = ld.items.filter(it => ids.has(it.levelId));
+      if (!ld.levels.length) ld.enabled = false;
+    }));
+}
+function locMoveLevel(id, dir) {
+  _locMutate(ld => {
+    const i = ld.levels.findIndex(l => l.id === id), j = i + dir;
+    if (i < 0 || j < 0 || j >= ld.levels.length) return;
+    const tmp = ld.levels[i]; ld.levels[i] = ld.levels[j]; ld.levels[j] = tmp;
+    ld.levels.forEach((l, k) => { l.order = k; });
+  });
+}
+function locSelectEditLevel(i) { _locEditLevel = i; _locEditParent = ''; renderLocDictSettings(); }
+function locSelectEditParent(v) { _locEditParent = v; renderLocDictSettings(); }
+function locAddItem() {
+  const nameEl = document.getElementById('locdict-item-name');
+  const codeEl = document.getElementById('locdict-item-code');
+  const name = nameEl ? nameEl.value.trim() : '';
+  const code = codeEl ? codeEl.value.trim().toUpperCase() : '';
+  if (!name) return;
+  _locMutate(ld => {
+    const lv = ld.levels[_locEditLevel]; if (!lv) return;
+    const parentId = _locEditLevel > 0 ? (_locEditParent || null) : null;
+    const sibs = ld.items.filter(it => it.levelId === lv.id && it.parentId === parentId).length;
+    ld.items.push({ id: DB._newLocId(), levelId: lv.id, parentId, name, code, order: sibs });
+  });
+}
+function locDelItem(id) {
+  _locMutate(ld => {
+    ld.items = ld.items.filter(it => it.id !== id);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      const ids = new Set(ld.items.map(it => it.id));
+      const before = ld.items.length;
+      ld.items = ld.items.filter(it => !it.parentId || ids.has(it.parentId));
+      if (ld.items.length !== before) changed = true;
+    }
+  });
+}
+function locMoveItem(id, dir) {
+  _locMutate(ld => {
+    const it = ld.items.find(x => x.id === id); if (!it) return;
+    const sibs = ld.items.filter(x => x.levelId === it.levelId && x.parentId === it.parentId).sort((a, b) => a.order - b.order);
+    const i = sibs.findIndex(x => x.id === id), j = i + dir;
+    if (j < 0 || j >= sibs.length) return;
+    const o = sibs[i].order; sibs[i].order = sibs[j].order; sibs[j].order = o;
+  });
+}
+function locSetIdSource(v) { _locMutate(ld => { ld.idConfig.source = v; }); }
+function locSetSeqStart(v) { _locMutate(ld => { ld.idConfig.seqStart = Math.max(1, parseInt(v, 10) || 1); }); }
+function locSetSeqPad(v)   { _locMutate(ld => { ld.idConfig.seqPad = Math.min(6, Math.max(1, parseInt(v, 10) || 3)); }); }
+function locClearAll() {
+  showConfirm(t('confirm_delete'),
+    bi('ລຶບວັດຈະນານຸກົມສະຖານທີ່ທັງໝົດ? ກັບໄປໃຊ້ການພິມທີ່ຢູ່ແບບເດີມ.','Delete the whole location dictionary? Reverts to free-text address.','ลบพจนานุกรมสถานที่ทั้งหมด? กลับไปใช้การพิมพ์ที่อยู่แบบเดิม','위치 사전 전체를 삭제할까요? 자유 입력 주소로 되돌립니다.'),
+    () => { DB.clearLocDict(); _locEditLevel = 0; _locEditParent = ''; renderLocDictSettings(); });
+}
+
+const _SVG_SWAP  ='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3l4 4-4 4M20 7H4M8 21l-4-4 4-4M4 17h16"/></svg>';
 const _SVG_KEY   = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.5 12.5L20 3M16 7l3 3"/></svg>';
 const _SVG_EDIT  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 const _SVG_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
@@ -4621,14 +5053,14 @@ function renderUserList() {
     return '<div class="set-user-row">' +
       '<div class="set-user-av">' + initial + '</div>' +
       '<div class="set-user-info">' +
-        '<div class="set-user-name">' + esc(u.name || u.username) + (self ? ' <span class="set-user-sub">(ທ່ານ)</span>' : '') + '</div>' +
+        '<div class="set-user-name">' + esc(u.name || u.username) + (self ? ' <span class="set-user-sub">(' + bi('ທ່ານ','you','คุณ','나') + ')</span>' : '') + '</div>' +
         '<div class="set-user-sub">@' + uesc + ' · <span class="role-badge ' + roleCls + '">' + roleLbl + '</span></div>' +
       '</div>' +
       '<div class="set-user-actions">' +
-        '<button class="set-icon-btn" title="ປ່ຽນບົດບາດ · Role" onclick="toggleUserRole(\'' + uesc + '\')">' + _SVG_SWAP + '</button>' +
-        '<button class="set-icon-btn" title="ຣີເຊັດລະຫັດ · Reset password" onclick="resetUserPw(\'' + uesc + '\')">' + _SVG_KEY + '</button>' +
-        '<button class="set-icon-btn" title="ແກ້ໄຂຊື່ · Rename" onclick="renameUser(\'' + uesc + '\')">' + _SVG_EDIT + '</button>' +
-        (self ? '' : '<button class="set-icon-btn danger" title="ລຶບ · Delete" onclick="delUser(\'' + uesc + '\')">' + _SVG_TRASH + '</button>') +
+        '<button class="set-icon-btn" title="' + esc(bi('ປ່ຽນບົດບາດ','Change role','เปลี่ยนบทบาท','역할 변경')) + '" onclick="toggleUserRole(\'' + uesc + '\')">' + _SVG_SWAP + '</button>' +
+        '<button class="set-icon-btn" title="' + esc(bi('ຣີເຊັດລະຫັດ','Reset password','รีเซ็ตรหัสผ่าน','비밀번호 재설정')) + '" onclick="resetUserPw(\'' + uesc + '\')">' + _SVG_KEY + '</button>' +
+        '<button class="set-icon-btn" title="' + esc(bi('ແກ້ໄຂຊື່','Rename','เปลี่ยนชื่อ','이름 변경')) + '" onclick="renameUser(\'' + uesc + '\')">' + _SVG_EDIT + '</button>' +
+        (self ? '' : '<button class="set-icon-btn danger" title="' + esc(bi('ລຶບ','Delete','ลบ','삭제')) + '" onclick="delUser(\'' + uesc + '\')">' + _SVG_TRASH + '</button>') +
       '</div>' +
     '</div>';
   }).join('');
@@ -4640,20 +5072,20 @@ function toggleUserRole(username) {
   if (!u) return;
   const newRole = u.role === 'admin' ? 'viewer' : 'admin';
   const res = DB.updateUser(username, { role: newRole });
-  if (res === 'last-admin') { alert(t('set_last_admin') || 'ຕ້ອງມີ admin ຢ່າງໜ້ອຍ 1 ຄົນ'); return; }
+  if (res === 'last-admin') { alert(t('set_last_admin') || bi('ຕ້ອງມີ admin ຢ່າງໜ້ອຍ 1 ຄົນ','At least 1 admin is required','ต้องมีแอดมินอย่างน้อย 1 คน','관리자가 최소 1명 필요합니다')); return; }
   renderUserList();
 }
 function resetUserPw(username) {
   if (!isAdmin()) return;
-  const pw = prompt('ລະຫັດຜ່ານໃໝ່ສຳລັບ @' + username + ' · New password:');
+  const pw = prompt(bi('ລະຫັດຜ່ານໃໝ່ສຳລັບ @','New password for @','รหัสผ่านใหม่สำหรับ @','새 비밀번호 (@') + username + bi(' · New password:','',' · รหัสผ่านใหม่:','):'));
   if (pw == null || pw === '') return;
   DB.updateUser(username, { password: pw });
-  toast('ປ່ຽນລະຫັດຜ່ານແລ້ວ · Password reset', 'ok');
+  toast(bi('ປ່ຽນລະຫັດຜ່ານແລ້ວ','Password reset','เปลี่ยนรหัสผ่านแล้ว','비밀번호가 재설정됨'), 'ok');
 }
 function renameUser(username) {
   if (!isAdmin()) return;
   const u = DB.getUsers().find(x => x.username === username);
-  const name = prompt('ຊື່ສະແດງ · Display name:', u ? (u.name || '') : '');
+  const name = prompt(bi('ຊື່ສະແດງ · Display name:','Display name:','ชื่อที่แสดง:','표시 이름:'), u ? (u.name || '') : '');
   if (name == null) return;
   DB.updateUser(username, { name });
   renderUserList();

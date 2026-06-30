@@ -44,11 +44,11 @@ async function openPassportScan() {
   openOverlay('scan-overlay');
 
   try {
-    _scanSetStatus('กำลังเปิดกล้อง…', 'idle');
+    _scanSetStatus(bi('ກຳລັງເປີດກ້ອງ…','Opening camera…','กำลังเปิดกล้อง…','카메라 여는 중…'), 'idle');
     await _scanStartCamera();
-    _scanSetStatus('กำลังโหลด OCR engine (ครั้งแรกใช้เวลา ~10 วินาที)…', 'idle');
+    _scanSetStatus(bi('ກຳລັງໂຫລດ OCR engine (ຄັ້ງທຳອິດ ~10 ວິນາທີ)…','Loading OCR engine (first time ~10s)…','กำลังโหลด OCR engine (ครั้งแรกใช้เวลา ~10 วินาที)…','OCR 엔진 로딩 중 (처음엔 ~10초)…'), 'idle');
     await _scanInitWorker();
-    _scanSetStatus('พร้อมแล้ว — กด 📸 ถ่ายภาพ หรือรอให้ระบบ scan อัตโนมัติ', 'scanning');
+    _scanSetStatus(bi('ພ້ອມແລ້ວ — ກົດ 📸 ຖ່າຍຮູບ ຫຼື ລໍຖ້າ scan ອັດຕະໂນມັດ','Ready — tap 📸 to capture, or wait for auto-scan','พร้อมแล้ว — กด 📸 ถ่ายภาพ หรือรอให้ระบบ scan อัตโนมัติ','준비 완료 — 📸로 촬영하거나 자동 스캔을 기다리세요'), 'scanning');
     _scanStartLoop();
   } catch (err) {
     _scanSetStatus('❌ ' + (err.message || String(err)), 'error');
@@ -64,7 +64,7 @@ function closePassportScan() {
 /** Manual capture button */
 async function scanCaptureNow() {
   if (SCAN.scanning) return;
-  _scanSetStatus('กำลังประมวลผล…', 'scanning');
+  _scanSetStatus(bi('ກຳລັງປະມວນຜົນ…','Processing…','กำลังประมวลผล…','처리 중…'), 'scanning');
   await _scanProcessFrame(true); // forceFullImage = true
 }
 
@@ -72,9 +72,9 @@ async function scanCaptureNow() {
 function scanTogglePause() {
   SCAN.paused = !SCAN.paused;
   const btn = document.getElementById('scan-pause-btn');
-  if (btn) btn.textContent = SCAN.paused ? '▶ เล่นต่อ' : '⏸ หยุด';
+  if (btn) btn.textContent = SCAN.paused ? bi('▶ ຫຼິ້ນຕໍ່','▶ Resume','▶ เล่นต่อ','▶ 계속') : bi('⏸ ຢຸດ','⏸ Pause','⏸ หยุด','⏸ 일시정지');
   if (!SCAN.paused) {
-    _scanSetStatus('กำลังสแกน…', 'scanning');
+    _scanSetStatus(bi('ກຳລັງສະແກນ…','Scanning…','กำลังสแกน…','스캔 중…'), 'scanning');
     _scanStartLoop();
   }
 }
@@ -88,7 +88,7 @@ function applyPassportScan() {
 
   if (!r) {
     console.warn('[Scan] applyPassportScan: SCAN.found is null — nothing to apply');
-    _scanSetStatus('❌ ไม่มีข้อมูลที่จะกรอก — กรุณาสแกนใหม่', 'error');
+    _scanSetStatus(bi('❌ ບໍ່ມີຂໍ້ມູນທີ່ຈະຕື່ມ — ກະລຸນາສະແກນໃໝ່','❌ No data to fill — please scan again','❌ ไม่มีข้อมูลที่จะกรอก — กรุณาสแกนใหม่','❌ 입력할 데이터 없음 — 다시 스캔하세요'), 'error');
     return;
   }
 
@@ -193,15 +193,15 @@ function applyPassportScan() {
     banner.className = 'scan-fill-banner';
     banner.innerHTML = `
       <span style="font-size:1.1rem">✅</span>
-      กรอกข้อมูลจากพาสปอร์ตอัตโนมัติ <strong>${count} ช่อง</strong>
-      ${r.nationality ? `(สัญชาติ: ${esc(r.nationality)})` : ''}
+      ${bi('ຕື່ມຂໍ້ມູນຈາກພາສປອດອັດຕະໂນມັດ','Auto-filled from passport','กรอกข้อมูลจากพาสปอร์ตอัตโนมัติ','여권에서 자동 입력')} <strong>${count} ${bi('ຊ່ອງ','fields','ช่อง','개 항목')}</strong>
+      ${r.nationality ? `(${bi('ສັນຊາດ','nationality','สัญชาติ','국적')}: ${esc(r.nationality)})` : ''}
     `;
     formBody.insertBefore(banner, formBody.firstChild);
     setTimeout(() => banner.remove(), 5000);
   }
 
   if (count === 0) {
-    alert('ไม่สามารถกรอกข้อมูลได้ — กรุณาตรวจสอบ console log');
+    alert(bi('ບໍ່ສາມາດຕື່ມຂໍ້ມູນໄດ້ — ກະລຸນາກວດ console log','Could not fill data — please check the console log','ไม่สามารถกรอกข้อมูลได้ — กรุณาตรวจสอบ console log','데이터를 입력할 수 없음 — 콘솔 로그를 확인하세요'));
   }
 }
 
@@ -355,11 +355,11 @@ async function _scanProcessFrame(forceFullImage) {
       } catch (e) { SCAN.lastImage = SCAN.lastImage || ''; }
       if (SCAN.timer) { clearInterval(SCAN.timer); SCAN.timer = null; }
       document.getElementById('scan-overlay-frame')?.classList.add('found');
-      _scanSetStatus('✅ พบข้อมูล MRZ! ตรวจสอบด้านล่าง แล้วกด "ใช้ข้อมูลนี้"', 'found');
+      _scanSetStatus(bi('✅ ພົບຂໍ້ມູນ MRZ! ກວດດ້ານລຸ່ມ ແລ້ວກົດ "ໃຊ້ຂໍ້ມູນນີ້"','✅ MRZ found! Check below, then tap "Use this data"','✅ พบข้อมูล MRZ! ตรวจสอบด้านล่าง แล้วกด "ใช้ข้อมูลนี้"','✅ MRZ 발견! 아래 확인 후 "이 데이터 사용"을 누르세요'), 'found');
       _scanShowResult(parsed);
     } else {
       const dot = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'][SCAN.attempts % 10];
-      _scanSetStatus(`${dot} กำลังสแกน… (ครั้งที่ ${SCAN.attempts}) — ถ่ายภาพด้วยปุ่มด้านล่าง`, 'scanning');
+      _scanSetStatus(`${dot} ${bi('ກຳລັງສະແກນ…','Scanning…','กำลังสแกน…','스캔 중…')} (${bi('ຄັ້ງທີ','attempt','ครั้งที่','시도')} ${SCAN.attempts}) — ${bi('ຖ່າຍຮູບດ້ວຍປຸ່ມດ້ານລຸ່ມ','capture with the button below','ถ่ายภาพด้วยปุ่มด้านล่าง','아래 버튼으로 촬영')}`, 'scanning');
     }
   } catch (err) {
     console.error('[Scan] process error:', err);
@@ -776,7 +776,7 @@ function _scanUI(action) {
     const dbgBtn = document.getElementById('scan-debug-btn');
     if (dbgBtn) dbgBtn.style.display = 'none';
     const pauseBtn = document.getElementById('scan-pause-btn');
-    if (pauseBtn) pauseBtn.textContent = '⏸ หยุด';
+    if (pauseBtn) pauseBtn.textContent = bi('⏸ ຢຸດ','⏸ Pause','⏸ หยุด','⏸ 일시정지');
   }
 }
 
@@ -802,16 +802,16 @@ function _scanShowResult(r) {
   if (dbgBtn) dbgBtn.style.display = 'inline-flex';
 
   const rows = [
-    ['ชื่อ-นามสกุล (EN)', r.fullName    || '— (ไม่พบ)'],
-    ['เลขพาสปอร์ต',      r.passportNo  || '— (ไม่พบ)'],
-    ['สัญชาติ',           r.nationality || '— (ไม่พบ)'],
-    ['วันเกิด',           r.dob         || '— (ไม่พบ)'],
-    ['เพศ',               r.sex === 'M' ? '♂ Male' : r.sex === 'F' ? '♀ Female' : '— (ไม่พบ)'],
-    ['วันหมดอายุ',        r.expiry      || '— (ไม่พบ)'],
+    [bi('ຊື່-ນາມສະກຸນ (EN)','Full name (EN)','ชื่อ-นามสกุล (EN)','성명 (EN)'), r.fullName    || bi('— (ບໍ່ພົບ)','— (not found)','— (ไม่พบ)','— (없음)')],
+    [bi('ເລກພາສປອດ','Passport No','เลขพาสปอร์ต','여권번호'),      r.passportNo  || bi('— (ບໍ່ພົບ)','— (not found)','— (ไม่พบ)','— (없음)')],
+    [bi('ສັນຊາດ','Nationality','สัญชาติ','국적'),           r.nationality || bi('— (ບໍ່ພົບ)','— (not found)','— (ไม่พบ)','— (없음)')],
+    [bi('ວັນເດືອນປີເກີດ','Date of birth','วันเกิด','생년월일'),           r.dob         || bi('— (ບໍ່ພົບ)','— (not found)','— (ไม่พบ)','— (없음)')],
+    [bi('ເພດ','Sex','เพศ','성별'),               r.sex === 'M' ? '♂ Male' : r.sex === 'F' ? '♀ Female' : bi('— (ບໍ່ພົບ)','— (not found)','— (ไม่พบ)','— (없음)')],
+    [bi('ວັນໝົດອາຍຸ','Expiry date','วันหมดอายุ','만료일'),        r.expiry      || bi('— (ບໍ່ພົບ)','— (not found)','— (ไม่พบ)','— (없음)')],
   ];
 
   box.innerHTML =
-    '<div class="scan-result-title">📄 ข้อมูลที่อ่านได้จาก MRZ</div>' +
+    '<div class="scan-result-title">📄 ' + bi('ຂໍ້ມູນທີ່ອ່ານໄດ້ຈາກ MRZ','Data read from MRZ','ข้อมูลที่อ่านได้จาก MRZ','MRZ에서 읽은 데이터') + '</div>' +
     '<table class="scan-result-tbl">' +
     rows.map(([lbl, val]) =>
       `<tr><td class="sr-label">${lbl}</td><td class="sr-val">${esc(String(val))}</td></tr>`
@@ -821,7 +821,7 @@ function _scanShowResult(r) {
 
 /** Show raw OCR text for debugging */
 function scanShowDebug() {
-  const raw = SCAN.lastRaw || '(ยังไม่มีข้อมูล)';
+  const raw = SCAN.lastRaw || bi('(ຍັງບໍ່ມີຂໍ້ມູນ)','(no data yet)','(ยังไม่มีข้อมูล)','(데이터 없음)');
   const win = window.open('', '_blank', 'width=600,height=400');
   if (win) {
     win.document.write(

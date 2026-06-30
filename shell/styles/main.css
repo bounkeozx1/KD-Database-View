@@ -10,6 +10,14 @@
 /* ── Reset & Base ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Lock vertical metrics across scripts. Form controls don't inherit the body's
+   line-height — they default to `normal`, which the bundled Lao webfont reports
+   taller than the Latin/Thai fonts, so buttons/inputs grew 0–6px when switching
+   to Lao and the whole UI shifted. Pinning a fixed ratio makes the line box
+   depend on font-size only (script-independent). Element-level specificity keeps
+   any component that sets its own line-height (icon buttons, etc.) intact. */
+button, input, select, textarea, optgroup { line-height: 1.2; }
+
 :root {
   /* Green / light SaaS theme */
   --navy:      #1f2937;
@@ -719,13 +727,13 @@ tr:last-child td { border-bottom: none; }
 .form-group.full { grid-column: 1/-1; }
 .form-group label { font-size: 0.76rem; font-weight: 600; color: var(--text-muted); }
 .form-group label .req { color: var(--red); }
-.form-group input, .form-group select {
+.form-group input, .form-group select, .form-photo-id input {
   padding: 9px 12px; border: 1px solid var(--border);
   border-radius: var(--r-sm); font-size: 0.85rem; outline: none;
   width: 100%; font-family: inherit; background: var(--field-bg); color: var(--text);
   transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
-.form-group input:focus, .form-group select:focus {
+.form-group input:focus, .form-group select:focus, .form-photo-id input:focus {
   border-color: var(--green); background: var(--bg-card);
   box-shadow: 0 0 0 3px rgba(45,106,79,0.12);
 }
@@ -1137,6 +1145,63 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 }
 [data-theme="dark"] .set-empty { color: var(--text-faint); }
 
+/* ── Location Dictionary manager (Settings → Dictionaries) ── */
+.locdict-card {
+  background: var(--field-bg); border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px 14px; margin-bottom: 12px;
+}
+.locdict-sub { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; color: var(--text-faint); margin-bottom: 9px; }
+.locdict-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+.locdict-row + .locdict-row { border-top: 1px solid var(--border); }
+.locdict-lvl-no {
+  flex: none; width: 20px; height: 20px; border-radius: 6px; background: var(--green); color: #fff;
+  font-size: 0.72rem; font-weight: 800; display: flex; align-items: center; justify-content: center;
+}
+.locdict-name-in {
+  flex: 1; min-width: 0; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px;
+  font-family: inherit; font-size: 0.84rem; background: var(--bg-card); color: var(--text); outline: none;
+}
+.locdict-name-in:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(45,106,79,0.12); }
+.locdict-ic {
+  flex: none; width: 26px; height: 26px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg-card); color: var(--text-faint); cursor: pointer; font-size: 0.7rem;
+  display: flex; align-items: center; justify-content: center; transition: color .12s, border-color .12s;
+}
+.locdict-ic:hover:not(:disabled) { color: var(--green); border-color: var(--green); }
+.locdict-ic.danger:hover:not(:disabled) { color: #e24b4a; border-color: #e24b4a; }
+.locdict-ic:disabled { opacity: .35; cursor: default; }
+.locdict-tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.locdict-tab {
+  padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-card);
+  color: var(--text-faint); font-family: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+}
+.locdict-tab.active { background: var(--green); border-color: var(--green); color: #fff; }
+.locdict-parent { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.locdict-parent-lbl { font-size: 0.78rem; color: var(--text-faint); font-weight: 600; flex: none; }
+.locdict-parent select { flex: 1; min-width: 0; }
+.locdict-cfg { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; flex-wrap: wrap; }
+.locdict-cfg label { font-size: 0.8rem; color: var(--text-secondary, var(--text-faint)); font-weight: 600; }
+.locdict-cfg select { min-width: 150px; }
+.locdict-preview {
+  font-size: 0.82rem; color: var(--text); background: var(--bg-card); border: 1px dashed var(--border);
+  border-radius: 8px; padding: 8px 11px;
+}
+.locdict-preview b { font-family: 'Courier New', monospace; letter-spacing: .5px; color: var(--green); }
+.locdict-clear { color: #e24b4a !important; border-color: rgba(226,75,74,.4) !important; }
+
+/* Worker ID row: input + regenerate button */
+.wid-row { display: flex; gap: 6px; align-items: stretch; }
+.wid-row > input { flex: 1; min-width: 0; }
+.wid-regen {
+  flex: none; width: 38px; border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--field-bg); color: var(--text-faint); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: color .12s, border-color .12s;
+}
+.wid-regen:hover { color: var(--green); border-color: var(--green); }
+.wid-regen svg { width: 16px; height: 16px; }
+/* Cascading location selects reuse .addr-input sizing */
+.addr-row .loc-select { width: 100%; cursor: pointer; }
+
 /* ── Appearance tab: theme options ── */
 .theme-options { display: flex; gap: 8px; margin-bottom: 20px; }
 .theme-opt {
@@ -1205,16 +1270,40 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 .seg-control.seg-icon button svg { width: 17px; height: 17px; }
 .seg-control.seg-icon button.active { color: var(--green); }
 
-/* Minimal dropdown — right-aligned text + chevron (like "Anthropic Serif ⌄") */
-.set-select-wrap { position: relative; display: inline-flex; align-items: center; }
-.set-select {
-  appearance: none; -webkit-appearance: none;
-  background: transparent; border: none; outline: none; cursor: pointer;
-  font-family: inherit; font-size: 0.88rem; font-weight: 600; color: var(--text);
-  text-align: right; padding: 5px 24px 5px 8px; border-radius: 7px;
+/* ── Custom language dropdown (Settings → Appearance) ── */
+.lang-dd { position: relative; display: inline-block; }
+.lang-dd-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--field-bg); border: 1px solid var(--border); border-radius: 10px;
+  padding: 7px 9px 7px 11px; cursor: pointer;
+  font-family: inherit; font-size: 0.86rem; font-weight: 600; color: var(--text);
+  transition: border-color 0.15s, background 0.15s;
 }
-.set-select:hover { color: var(--green); background: var(--hover); }
-.set-select-chev { position: absolute; right: 4px; width: 15px; height: 15px; color: var(--text-faint); pointer-events: none; }
+.lang-dd-btn:hover { border-color: var(--green); background: var(--hover); }
+.lang-dd-globe { width: 16px; height: 16px; color: var(--text-faint); flex: none; }
+.lang-dd-cur { min-width: 52px; text-align: left; }
+.lang-dd-chev { width: 15px; height: 15px; color: var(--text-faint); transition: transform 0.18s ease; }
+.lang-dd.open .lang-dd-chev { transform: rotate(180deg); }
+
+.lang-dd-menu {
+  display: none; position: absolute; right: 0; top: calc(100% + 7px); z-index: 60;
+  min-width: 190px; background: var(--bg-card);
+  border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 14px 36px -10px rgba(0,0,0,0.45); padding: 6px;
+}
+.lang-dd.open .lang-dd-menu { display: block; animation: langddIn 0.14s ease; }
+@keyframes langddIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+.lang-dd-menu button {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: transparent; border: none; border-radius: 8px; cursor: pointer;
+  padding: 9px 11px; font-family: inherit; font-size: 0.88rem; font-weight: 500; color: var(--text);
+  transition: background 0.12s;
+}
+.lang-dd-menu button span { flex: 1; }
+.lang-dd-menu button:hover { background: var(--hover); }
+.lang-dd-menu button.on { font-weight: 700; }
+.lang-dd-check { width: 16px; height: 16px; flex: none; color: var(--green); opacity: 0; }
+.lang-dd-menu button.on .lang-dd-check { opacity: 1; }
 
 /* Company logo row compact */
 .set-row .logo-upload-row { margin: 0; }
@@ -1871,6 +1960,11 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 .form-photo.has-photo { box-shadow: var(--shadow-md), 0 0 0 2px var(--green); }
 .form-photo img { width: 100%; height: 100%; object-fit: cover; }
 .form-photo-actions { display: flex; flex-direction: column; gap: 8px; }
+/* Worker ID lives in the photo header, next to the photo + upload button */
+.form-photo-row { flex-wrap: wrap; }
+.form-photo-id { flex: 1 1 240px; min-width: 0; max-width: 360px; display: flex; flex-direction: column; gap: 5px; }
+.form-photo-id > label { font-size: 0.76rem; font-weight: 600; color: var(--text-muted); }
+.form-photo-id .wid-row > input { font-family: 'Courier New', monospace; font-weight: 700; letter-spacing: 0.4px; }
 
 /* ════════════════════════════════════════════════════
    RESPONSIVE — mobile-first (primary users on phones)

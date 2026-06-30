@@ -91,7 +91,7 @@
       <nav class="sb-nav">
         <button class="sb-nav-item sb-create admin-only" onclick="openCreate()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          <span data-lo="ສ້າງ" data-en="Create"></span>
+          <span data-lo="ສ້າງ" data-en="Create" data-th="สร้าง" data-ko="만들기"></span>
         </button>
         <button class="sb-nav-item active" id="nav-dashboard" onclick="navTo('dashboard', this)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
@@ -117,19 +117,15 @@
           <div class="sb-submenu" id="more-menu">
             <button class="admin-only" onclick="openCreate();closeMoreMenu()">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              <span data-lo="ສ້າງ" data-en="Create"></span>
+              <span data-lo="ສ້າງ" data-en="Create" data-th="สร้าง" data-ko="만들기"></span>
             </button>
             <button onclick="openExportDialog('group');closeMoreMenu()">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              <span data-lo="ສົ່ງອອກ" data-en="Export"></span>
+              <span data-lo="ສົ່ງອອກ" data-en="Export" data-th="ส่งออก" data-ko="내보내기"></span>
             </button>
             <button onclick="openCustomizeSidebar();closeMoreMenu()">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-              <span data-lo="ປັບแถบข้าง" data-en="Customize sidebar"></span>
-            </button>
-            <button onclick="openCustomizeSidebar();closeMoreMenu()">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-              <span>ປັບแถบข้าง · Customize sidebar</span>
+              <span data-lo="ປັບແຖບຂ້າງ" data-en="Customize sidebar" data-th="ปรับแถบข้าง" data-ko="사이드바 사용자화"></span>
             </button>
           </div>
         </div>
@@ -152,6 +148,15 @@
         </div>
         <div class="sidebar-tree" id="sidebar-tree"></div>
       </div>
+
+      <!-- Archived (only shown when there are archived groups) -->
+      <div class="sb-section" id="sb-archived-section" style="display:none">
+        <div class="sb-section-label sb-section-static">
+          <span data-i18n="sec_archived">Archived</span>
+          <span class="sb-count" id="archived-count"></span>
+        </div>
+        <div class="sidebar-tree" id="archived-tree"></div>
+      </div>
     </div>
 
     <!-- Footer: user (opens profile menu) -->
@@ -166,12 +171,12 @@
 
       <button class="pm-item" onclick="document.getElementById('pm-photo-input').click();closeProfileMenu()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-        <span data-lo="ປ່ຽນຮູບ" data-en="Change photo"></span>
+        <span data-lo="ປ່ຽນຮູບ" data-en="Change photo" data-th="เปลี่ยนรูปโปรไฟล์" data-ko="사진 변경"></span>
       </button>
 
       <button class="pm-item" onclick="openSettings();closeProfileMenu()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        <span data-lo="ການຕັ້ງຄ່າ" data-en="Settings"></span>
+        <span data-lo="ການຕັ້ງຄ່າ" data-en="Settings" data-th="ตั้งค่า" data-ko="설정"></span>
         <span class="pm-hint">Ctrl ,</span>
       </button>
 
@@ -180,7 +185,7 @@
       <div class="pm-lang-wrap">
         <button class="pm-item" onclick="togglePmLang(event)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-          <span data-lo="ພາສາ" data-en="Language"></span>
+          <span data-lo="ພາສາ" data-en="Language" data-th="ภาษา" data-ko="언어"></span>
           <svg class="pm-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
         </button>
         <div class="pm-lang-list" id="pm-lang-list">
@@ -193,7 +198,7 @@
 
       <button class="pm-item" onclick="openSettings();switchSettingsTab('about');closeProfileMenu()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-        <span data-lo="ກ່ຽວກັບ" data-en="About"></span>
+        <span data-lo="ກ່ຽວກັບ" data-en="About" data-th="เกี่ยวกับ" data-ko="정보"></span>
         <svg class="pm-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
       </button>
 
@@ -201,7 +206,7 @@
 
       <button class="pm-item pm-logout" onclick="doLogout()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        <span data-lo="ອອກຈາກລະບົບ" data-en="Log out"></span>
+        <span data-lo="ອອກຈາກລະບົບ" data-en="Log out" data-th="ออกจากระบบ" data-ko="로그아웃"></span>
       </button>
     </div>
     <!-- Hidden file input for profile photo upload -->
@@ -250,7 +255,7 @@
           <div class="dz-stat-foot" id="dz-alerts-foot">—</div>
         </div>
         <div class="dz-stat-card" onclick="navTo('workers', document.getElementById('nav-workers'))" style="cursor:pointer">
-          <div class="dz-stat-top"><span class="dz-stat-label" data-lo="ຄວາມຄົບຖ້ວນ" data-en="ความครบถ้วน">ความครบถ้วน</span><span class="dz-stat-arrow">&#x2197;</span></div>
+          <div class="dz-stat-top"><span data-lo="ຄວາມຄົບຖ້ວນ" data-en="Completeness" data-th="ความครบถ้วน" data-ko="완성도" class="dz-stat-label">ความครบถ้วน</span><span class="dz-stat-arrow">&#x2197;</span></div>
           <div class="dz-stat-num" id="dz-cmp-num">—</div>
           <div class="dz-stat-foot" id="dz-cmp-foot">—</div>
         </div>
@@ -326,13 +331,13 @@
     <div id="groups-overview" style="display:none">
       <div class="page-head">
         <div>
-          <h1 class="page-title" data-lo="ກຸ່ມທັງໝົດ" data-en="Groups"></h1>
-          <p class="page-sub" data-lo="ເລືອກກຸ່ມເພື່ອເບິ່ງລາຍລະອຽດສະມາຊິກ" data-en="Pick a group to view its members"></p>
+          <h1 data-lo="ກຸ່ມ" data-en="Groups" data-th="กลุ่ม" data-ko="그룹" class="page-title"></h1>
+          <p data-lo="ເລືອກກຸ່ມເພື່ອເບິ່ງລາຍລະອຽດສະມາຊິກ" data-en="Pick a group to view its members" data-th="เลือกกลุ่มเพื่อดูสมาชิก" data-ko="멤버를 보려면 그룹을 선택하세요" class="page-sub"></p>
         </div>
         <div class="page-actions">
           <button class="btn btn-add admin-only" onclick="openCreate()">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            <span data-lo="ສ້າງ" data-en="Create"></span>
+            <span data-lo="ສ້າງ" data-en="Create" data-th="สร้าง" data-ko="만들기"></span>
           </button>
         </div>
       </div>
@@ -347,7 +352,7 @@
       <div>
         <button class="back-to-groups" onclick="navTo('workers', document.getElementById('nav-workers'))">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-          <span data-lo="ກຸ່ມທັງໝົດ" data-en="All groups"></span>
+          <span data-lo="ກຸ່ມທັງໝົດ" data-en="All groups" data-th="ทุกกลุ่ม" data-ko="모든 그룹"></span>
         </button>
         <h1 class="page-title" id="page-title-group">Dashboard</h1>
         <p class="page-sub" id="page-sub" data-i18n="app_sub">Worker Management System</p>
@@ -355,7 +360,7 @@
       <div class="page-actions">
         <button class="btn btn-add admin-only" id="btn-create" onclick="openCreate()" title="ສ້າງ / ສົ່ງອອກ / ນຳເຂົ້າ">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          <span data-lo="ເມນູ" data-en="Menu"></span>
+          <span data-lo="ເມນູ" data-en="Menu" data-th="เมนู" data-ko="메뉴"></span>
         </button>
       </div>
     </div>
@@ -516,7 +521,7 @@
 <div class="overlay" id="docview-overlay">
   <div class="docview-modal" onclick="event.stopPropagation()">
     <button class="fm-close" onclick="closeOverlay('docview-overlay')">&#x2715;</button>
-    <button class="docview-edit" id="docview-edit" onclick="editCurrentDoc()" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> <span data-lo="ແກ້ໄຂ" data-en="แก้ไข/ครอป">แก้ไข/ครอป</span></button>
+    <button class="docview-edit" id="docview-edit" onclick="editCurrentDoc()" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> <span data-lo="ແກ້ໄຂ" data-en="Edit / Crop" data-th="แก้ไข/ครอป" data-ko="편집 / 자르기">แก้ไข/ครอป</span></button>
     <div id="docview-body"></div>
   </div>
 </div>
@@ -541,12 +546,12 @@
         <canvas id="ce-canvas" width="680" height="520"></canvas>
       </div>
       <div class="ce-side">
-        <div class="ce-side-cap" data-lo="ຕົວຢ່າງໜ້າຂໍ້ມູນ" data-en="ตัวอย่างหน้าจริง">ตัวอย่างหน้าจริง</div>
+        <div data-lo="ຕົວຢ່າງໜ້າຂໍ້ມູນ" data-en="Live preview" data-th="ตัวอย่างหน้าจริง" data-ko="실시간 미리보기" class="ce-side-cap">ตัวอย่างหน้าจริง</div>
         <div class="ce-prev ce-prev-photo" id="ce-prev"><img id="ce-prev-img" alt=""></div>
-        <div class="ce-side-note" data-lo="ນີ້ຄືສ່ວນທີ່ຈะบันทึก" data-en="ส่วนนี้คือที่จะบันทึก">ส่วนนี้คือที่จะบันทึก</div>
+        <div data-lo="ນີ້ຄືສ່ວນທີ່ຈະບັນທຶກ" data-en="This area will be saved" data-th="ส่วนนี้คือที่จะบันทึก" data-ko="이 영역이 저장됩니다" class="ce-side-note">ส่วนนี้คือที่จะบันทึก</div>
       </div>
     </div>
-    <div class="ce-hint" data-lo="ລາກເພື່ອເລື່ອນ · ໝູນລໍ້/ແຖບເພື່ອຊູມ · ກรอบเขียว = ส่วนที่จะเก็บ" data-en="ลากเพื่อเลื่อน · ล้อ/แถบเพื่อซูม · กรอบเขียว = ส่วนที่จะเก็บ">ลากเพื่อเลื่อน · ล้อ/แถบเพื่อซูม · กรอบเขียว = ส่วนที่จะเก็บ</div>
+    <div data-lo="ລາກເພື່ອເລື່ອນ · ໝູນລໍ້/ແຖບເພື່ອຊູມ · ກອບສີຂຽວ = ສ່ວນທີ່ຈະເກັບ" data-en="Drag to move · wheel/slider to zoom · green frame = saved area" data-th="ลากเพื่อเลื่อน · ล้อ/แถบเพื่อซูม · กรอบเขียว = ส่วนที่จะเก็บ" data-ko="드래그하여 이동 · 휠/슬라이더로 확대 · 녹색 프레임 = 저장 영역" class="ce-hint">ลากเพื่อเลื่อน · ล้อ/แถบเพื่อซูม · กรอบเขียว = ส่วนที่จะเก็บ</div>
     <div class="ce-tools">
       <button class="pe-tool" onclick="_ceRotate(-1)" title="หมุนซ้าย" aria-label="rotate left">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
@@ -563,7 +568,7 @@
       </button>
       <button class="pe-tool pe-tool-reset" onclick="_ceReset()" title="คืนค่าภาพต้นฉบับ" aria-label="reset to original">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2v6h6"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/></svg>
-        <span data-lo="ຕົ້ນฉบับ" data-en="ต้นฉบับ">ต้นฉบับ</span>
+        <span data-lo="ຕົ້ນສະບັບ" data-en="Original" data-th="ต้นฉบับ" data-ko="원본">ต้นฉบับ</span>
       </button>
       <label class="pe-tool pe-pick" id="ce-pick" title="เลือกรูปใหม่">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
@@ -587,22 +592,22 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
         </button>
         <div class="scan-menu" id="scan-type-menu">
-          <div class="scan-menu-label" data-lo="ສแกนเป็น" data-en="Scan as"></div>
+          <div data-lo="ສະແກນເປັນ" data-en="Scan as" data-th="สแกนเป็น" data-ko="스캔 유형" class="scan-menu-label"></div>
           <button type="button" onclick="startScan('form_1')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
-            <span data-lo="ແບບຟອມສະໝັກ" data-en="Application form"></span>
+            <span data-lo="ແບບຟອມສະໝັກ" data-en="Application form" data-th="แบบฟอร์มสมัคร" data-ko="신청서"></span>
           </button>
           <button type="button" onclick="startScan('id_card')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8" cy="11" r="2"/><line x1="13" y1="10" x2="18" y2="10"/><line x1="13" y1="14" x2="18" y2="14"/></svg>
-            <span data-lo="ບັດປະຈຳຕົວ" data-en="ID card"></span>
+            <span data-lo="ບັດປະຈຳຕົວ" data-en="ID card" data-th="บัตรประชาชน" data-ko="신분증"></span>
           </button>
           <button type="button" onclick="startScan('passport')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="10" r="3"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
-            <span data-lo="ໜັງສືຜ່ານແດນ (MRZ)" data-en="Passport (MRZ)"></span>
+            <span data-lo="ພາສປອດ (MRZ)" data-en="Passport (MRZ)" data-th="พาสปอร์ต (MRZ)" data-ko="여권 (MRZ)"></span>
           </button>
           <button type="button" onclick="startScan('land_doc')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/></svg>
-            <span data-lo="ໃບຕາດິນ" data-en="Land deed"></span>
+            <span data-lo="ໃບຕາດິນ" data-en="Land deed" data-th="โฉนดที่ดิน" data-ko="토지 증서"></span>
           </button>
         </div>
       </div>
@@ -612,7 +617,7 @@
       <input type="hidden" id="f-edit-uid">
       <input type="hidden" id="f-photo">
 
-      <!-- Employee photo -->
+      <!-- Employee photo + Worker ID -->
       <div class="form-photo-row">
         <div class="form-photo" id="form-photo-preview"></div>
         <div class="form-photo-actions">
@@ -622,10 +627,18 @@
           </label>
           <button type="button" class="btn btn-ghost btn-sm" id="f-photo-remove" onclick="removePhoto()" style="display:none" data-i18n="fm_photo_remove">Remove</button>
         </div>
+        <div class="form-photo-id">
+          <label><span data-i18n="fm_worker_id">Worker ID</span></label>
+          <div class="wid-row">
+            <input id="f-worker-id" placeholder="e.g. PHI-26-001" oninput="onWorkerIdInput(this.value)">
+            <button type="button" class="wid-regen" onclick="regenWorkerId(true)" title="Auto" aria-label="Regenerate ID"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
+          </div>
+          <div id="worker-id-warn" style="display:none;font-size:0.72rem;color:#c0392b;margin-top:3px">⚠ ID ນີ້ຊ້ຳກັນກັບພະນັກງານທີ່ມີຢູ່ແລ້ວ — ສາມາດບັນທຶກໄດ້ ແຕ່ກະລຸນາກວດສອບ</div>
+        </div>
       </div>
 
       <div class="form-section">
-        <div class="form-sec-title"><span class="form-sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span data-lo="ຂໍ້ມູນສ່ວນຕົວ" data-en="Personal"></span></div>
+        <div class="form-sec-title"><span class="form-sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span data-lo="ຂໍ້ມູນສ່ວນຕົວ" data-en="Personal" data-th="ข้อมูลส่วนตัว" data-ko="개인 정보"></span></div>
         <div class="form-grid">
           <div class="form-group">
             <label><span data-i18n="fm_name_en">Name (EN)</span></label>
@@ -649,7 +662,10 @@
           <div class="form-group full">
             <div class="addr-block">
               <div class="addr-block-hd">ທີ່ຢູ່ <span class="addr-block-hd-sub">/ Address</span></div>
-              <div class="addr-row">
+              <!-- Cascading selects from the Location Dictionary (shown only when configured) -->
+              <div class="addr-row" id="loc-select-block" style="display:none"></div>
+              <!-- Free-text address (default) -->
+              <div class="addr-row" id="loc-combo-block">
                 <div class="addr-field">
                   <label class="addr-lbl">ບ້ານ <span class="addr-lbl-en">Village</span></label>
                   <div class="addr-combo" id="addr-combo-village">
@@ -687,6 +703,38 @@
             </select>
           </div>
           <div class="form-group">
+            <label><span data-i18n="fm_weight">Weight (Kg)</span></label>
+            <input id="f-weight" placeholder="e.g. 60" type="number">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_height">Height (Cm)</span></label>
+            <input id="f-height" placeholder="e.g. 165" type="number">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_tel">Tel</span></label>
+            <input id="f-tel" placeholder="020 XXXX-XXXX">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_couple">Couple</span></label>
+            <select id="f-couple">
+              <option value="">-- Select --</option>
+              <option value="yes" data-i18n="fm_couple_yes">Yes</option>
+              <option value="no"  data-i18n="fm_couple_no">No</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_emg_tel">Emergency Tel</span></label>
+            <input id="f-emg-tel" placeholder="020 XXXX-XXXX">
+          </div>
+          <div class="form-group">
+            <label><span data-i18n="fm_size">Shirt Size</span></label>
+            <select id="f-size">
+              <option value="">-- Select --</option>
+              <option>S</option><option>M</option><option>L</option>
+              <option>XL</option><option>XXL</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label><span data-i18n="fm_blood">Blood Type</span></label>
             <select id="f-blood">
               <option value="">-- Select --</option>
@@ -702,43 +750,11 @@
               <option value="L" data-i18n="fm_hand_l">Left</option>
             </select>
           </div>
-          <div class="form-group">
-            <label><span data-i18n="fm_weight">Weight (Kg)</span></label>
-            <input id="f-weight" placeholder="e.g. 60" type="number">
-          </div>
-          <div class="form-group">
-            <label><span data-i18n="fm_height">Height (Cm)</span></label>
-            <input id="f-height" placeholder="e.g. 165" type="number">
-          </div>
-          <div class="form-group">
-            <label><span data-i18n="fm_size">Shirt Size</span></label>
-            <select id="f-size">
-              <option value="">-- Select --</option>
-              <option>S</option><option>M</option><option>L</option>
-              <option>XL</option><option>XXL</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label><span data-i18n="fm_couple">Couple</span></label>
-            <select id="f-couple">
-              <option value="">-- Select --</option>
-              <option value="yes" data-i18n="fm_couple_yes">Yes</option>
-              <option value="no"  data-i18n="fm_couple_no">No</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label><span data-i18n="fm_tel">Tel</span></label>
-            <input id="f-tel" placeholder="020 XXXX-XXXX">
-          </div>
-          <div class="form-group">
-            <label><span data-i18n="fm_emg_tel">Emergency Tel</span></label>
-            <input id="f-emg-tel" placeholder="020 XXXX-XXXX">
-          </div>
         </div>
       </div>
 
       <div class="form-section">
-        <div class="form-sec-title"><span class="form-sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="10" r="3"/><line x1="9" y1="17" x2="15" y2="17"/></svg></span><span data-lo="ຂໍ້ມູນພາສປອດ" data-en="Passport"></span></div>
+        <div class="form-sec-title"><span class="form-sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="10" r="3"/><line x1="9" y1="17" x2="15" y2="17"/></svg></span><span data-lo="ຂໍ້ມູນພາສປອດ" data-en="Passport" data-th="พาสปอร์ต" data-ko="여권"></span></div>
         <div class="form-grid col3">
           <div class="form-group">
             <label><span data-i18n="fm_passport_no">Passport No.</span></label>
@@ -770,7 +786,7 @@
       </div>
 
       <div class="form-section">
-        <div class="form-sec-title"><span class="form-sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1 2.5 3 6 3s6-2 6-3v-5"/></svg></span><span data-lo="ການສຶກສາ ແລະ ສະຖານະ" data-en="Education &amp; Status"></span></div>
+        <div class="form-sec-title"><span class="form-sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1 2.5 3 6 3s6-2 6-3v-5"/></svg></span><span data-lo="ການສຶກສາ ແລະ ສະຖານະ" data-en="Education &amp; Status" data-th="การศึกษา &amp; สถานะ" data-ko="학력 &amp; 상태"></span></div>
         <div class="form-grid">
           <div class="form-group">
             <label>Grade</label>
@@ -808,16 +824,11 @@
       </div>
 
       <div class="form-section">
-        <div class="form-sec-title"><span class="form-sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3.5S19 3 17.5 4.5L14 8 5.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 4.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></span><span data-lo="ການເດີນທາງ ແລະ ການມອບໝາຍ" data-en="Travel &amp; Assignment"></span><span style="color:var(--text-faint);font-weight:600;font-size:0.78rem" data-lo="(ທາງເລືອກ)" data-en="(optional)"></span></div>
+        <div class="form-sec-title"><span class="form-sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3.5S19 3 17.5 4.5L14 8 5.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 4.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></span><span data-lo="ການເດີນທາງ ແລະ ການມອບໝາຍ" data-en="Travel &amp; Assignment" data-th="การเดินทาง &amp; การมอบหมาย" data-ko="이동 &amp; 배정"></span><span data-lo="(ທາງເລືອກ)" data-en="(optional)" data-th="(ไม่บังคับ)" data-ko="(선택)" style="color:var(--text-faint);font-weight:600;font-size:0.78rem"></span></div>
         <div class="form-grid">
           <div class="form-group">
             <label><span data-i18n="fm_la_city">Lao City (origin)</span></label>
-            <select id="f-la-city"></select>
-          </div>
-          <div class="form-group">
-            <label><span data-i18n="fm_worker_id">Worker ID</span></label>
-            <input id="f-worker-id" placeholder="e.g. PHI-XYR-180626-001" oninput="checkWorkerIdDup(this.value)">
-            <div id="worker-id-warn" style="display:none;font-size:0.72rem;color:#c0392b;margin-top:3px">⚠ ID ນີ້ຊ້ຳກັນກັບພະນັກງານທີ່ມີຢູ່ແລ້ວ — ສາມາດບັນທຶກໄດ້ ແຕ່ກະລຸນາກວດສອບ</div>
+            <select id="f-la-city" onchange="regenWorkerId()"></select>
           </div>
           <div class="form-group">
             <label><span data-i18n="fm_employer_code">Employer Code</span></label>
@@ -835,12 +846,12 @@
       </div>
 
       <div class="form-section">
-        <div class="form-sec-title"><span class="form-sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></span><span data-lo="ເອກະສານ" data-en="Documents"></span></div>
+        <div class="form-sec-title"><span class="form-sec-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></span><span data-lo="ເອກະສານ" data-en="Documents" data-th="เอกสาร" data-ko="문서"></span></div>
         <div class="form-doc-add">
           <select id="f-doc-cat" class="form-doc-cat"></select>
           <label class="btn btn-sm form-doc-btn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            <span data-lo="ເພີ່ມເອກະສານ" data-en="Add document"></span>
+            <span data-lo="ເພີ່ມເອກະສານ" data-en="Add document" data-th="เพิ่มเอกสาร" data-ko="문서 추가"></span>
             <input type="file" accept="image/*,application/pdf" style="display:none" onchange="addFormDoc(this)">
           </label>
         </div>
@@ -937,8 +948,8 @@
     <div class="scan-header">
       <span class="scan-header-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg> Scan Passport MRZ</span>
       <div class="scan-header-actions">
-        <button class="scan-ctrl-btn" id="scan-pause-btn" onclick="scanTogglePause()">&#9646;&#9646; หยุด</button>
-        <button class="scan-ctrl-btn scan-capture-btn" onclick="scanCaptureNow()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg> ถ่ายภาพ</button>
+        <button class="scan-ctrl-btn" id="scan-pause-btn" onclick="scanTogglePause()">&#9646;&#9646; <span data-lo="ຢຸດ" data-en="Pause" data-th="หยุด" data-ko="일시정지"></span></button>
+        <button class="scan-ctrl-btn scan-capture-btn" onclick="scanCaptureNow()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg> <span data-lo="ຖ່າຍຮູບ" data-en="Photo" data-th="ถ่ายภาพ" data-ko="촬영"></span></button>
         <button class="scan-ctrl-btn scan-close-btn" onclick="closePassportScan()">&#x2715;</button>
       </div>
     </div>
@@ -957,7 +968,7 @@
             <span class="scan-mrz-label">MRZ zone</span>
           </div>
         </div>
-        <div class="scan-guide-hint">จัดให้ 2 บรรทัดด้านล่างพาสปอร์ตอยู่ใน MRZ zone</div>
+        <div class="scan-guide-hint" data-lo="ຈັດ 2 ແຖວລຸ່ມພາສປອດໃຫ້ຢູ່ໃນ MRZ zone" data-en="Align the 2 bottom passport lines inside the MRZ zone" data-th="จัดให้ 2 บรรทัดด้านล่างพาสปอร์ตอยู่ใน MRZ zone" data-ko="여권 하단 2줄을 MRZ 영역에 맞추세요"></div>
       </div>
 
       <!-- Hidden canvas for OCR preprocessing -->
@@ -966,13 +977,13 @@
 
     <!-- Status + results -->
     <div class="scan-bottom">
-      <div class="scan-status scan-status-idle" id="scan-status">กำลังเริ่มต้น…</div>
+      <div class="scan-status scan-status-idle" id="scan-status" data-lo="ກຳລັງເລີ່ມຕົ້ນ…" data-en="Starting…" data-th="กำลังเริ่มต้น…" data-ko="시작 중…"></div>
       <div id="scan-result-box" style="display:none"></div>
       <div class="scan-footer-btns">
-        <button class="btn btn-ghost" onclick="closePassportScan()">ยกเลิก</button>
+        <button class="btn btn-ghost" onclick="closePassportScan()" data-lo="ຍົກເລີກ" data-en="Cancel" data-th="ยกเลิก" data-ko="취소"></button>
         <button class="scan-ctrl-btn" id="scan-debug-btn" style="display:none" onclick="scanShowDebug()" title="ดู raw OCR text">&#128295; Debug</button>
         <button class="btn btn-primary" id="scan-apply-btn" disabled onclick="applyPassportScan()">
-          &#10003; ใช้ข้อมูลนี้
+          &#10003; <span data-lo="ໃຊ້ຂໍ້ມູນນີ້" data-en="Use this data" data-th="ใช้ข้อมูลนี้" data-ko="이 데이터 사용"></span>
         </button>
       </div>
     </div>
@@ -984,15 +995,15 @@
 <div class="overlay" id="import-overlay">
   <div class="import-modal" onclick="event.stopPropagation()">
     <div class="form-header">
-      <h2 data-lo="ນຳເຂົ້າຂໍ້ມູນ" data-en="Import"></h2>
+      <h2 data-lo="ນຳເຂົ້າຂໍ້ມູນ" data-en="Import" data-th="นำเข้าข้อมูล" data-ko="가져오기"></h2>
       <button class="fm-close" onclick="closeOverlay('import-overlay')">&#x2715;</button>
     </div>
     <div class="import-body">
       <!-- Drop / browse zone -->
       <label class="import-dropzone" id="import-dropzone">
         <div class="import-dz-icon">&#128196;</div>
-        <div class="import-dz-text">คลิกเพื่อเลือกไฟล์<br>
-          <span class="import-dz-sub">KDB (ฐานข้อมูล+รูป) · PPTX · CSV · JSON · PDF / รูปภาพ &nbsp;(ตรงกับที่ Export ได้)</span>
+        <div class="import-dz-text"><span data-lo="ຄລິກເພື່ອເລືອກໄຟລ໌" data-en="Click to choose a file" data-th="คลิกเพื่อเลือกไฟล์" data-ko="클릭하여 파일 선택"></span><br>
+          <span class="import-dz-sub" data-lo="KDB (ຖານຂໍ້ມູນ+ຮູບ) · PPTX · CSV · JSON · PDF / ຮູບ (ກົງກັບ Export)" data-en="KDB (database+images) · PPTX · CSV · JSON · PDF / images (matches Export)" data-th="KDB (ฐานข้อมูล+รูป) · PPTX · CSV · JSON · PDF / รูปภาพ (ตรงกับที่ Export ได้)" data-ko="KDB (데이터베이스+이미지) · PPTX · CSV · JSON · PDF / 이미지 (Export와 동일)"></span>
         </div>
         <input type="file" id="import-file" accept=".kdb,.zip,.pptx,.csv,.json,.pdf,image/*"
                style="display:none" onchange="handleImportFile(this)">
@@ -1002,21 +1013,21 @@
 
       <!-- Target group -->
       <div class="import-target-wrap" id="import-target-wrap" style="display:none">
-        <label class="import-target-label">นำเข้าไปยังกลุ่ม:</label>
+        <label class="import-target-label" data-lo="ນຳເຂົ້າໄປຍັງກຸ່ມ:" data-en="Import into group:" data-th="นำเข้าไปยังกลุ่ม:" data-ko="가져올 그룹:"></label>
         <select id="import-target-group" style="flex:1" onchange="onImportTargetChange()"></select>
       </div>
       <div class="import-target-wrap" id="import-newgroup-wrap" style="display:none">
-        <label class="import-target-label">ชื่อกลุ่มใหม่:</label>
-        <input id="import-newgroup-name" placeholder="เช่น DAMYANG 2026 – Group 2" style="flex:1">
+        <label class="import-target-label" data-lo="ຊື່ກຸ່ມໃໝ່:" data-en="New group name:" data-th="ชื่อกลุ่มใหม่:" data-ko="새 그룹 이름:"></label>
+        <input id="import-newgroup-name" data-ph-lo="ເຊັ່ນ DAMYANG 2026 – Group 2" data-ph-en="e.g. DAMYANG 2026 – Group 2" data-ph-th="เช่น DAMYANG 2026 – Group 2" data-ph-ko="예: DAMYANG 2026 – Group 2" placeholder="เช่น DAMYANG 2026 – Group 2" style="flex:1">
       </div>
 
       <!-- Preview table -->
       <div id="import-preview"></div>
     </div>
     <div class="form-footer">
-      <button class="btn btn-ghost" onclick="closeOverlay('import-overlay')">ยกเลิก</button>
+      <button class="btn btn-ghost" onclick="closeOverlay('import-overlay')" data-lo="ຍົກເລີກ" data-en="Cancel" data-th="ยกเลิก" data-ko="취소"></button>
       <button class="btn btn-primary" id="import-btn-go" disabled onclick="doImport()">
-        &#8593; นำเข้าข้อมูล
+        &#8593; <span data-lo="ນຳເຂົ້າຂໍ້ມູນ" data-en="Import" data-th="นำเข้าข้อมูล" data-ko="가져오기"></span>
       </button>
     </div>
   </div>
@@ -1032,50 +1043,50 @@
       <aside class="settings-nav" id="set-tabs">
         <label class="settings-search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-          <input id="settings-search-input" type="text" data-ph-lo="ຄົ້ນຫາ" data-ph-en="Search" placeholder="ຄົ້ນຫາ" oninput="filterSettings(this.value)">
+          <input data-ph-lo="ຄົ້ນຫາ" data-ph-en="Search" data-ph-th="ค้นหา" data-ph-ko="검색" id="settings-search-input" type="text" placeholder="ຄົ້ນຫາ" oninput="filterSettings(this.value)">
         </label>
 
         <div class="set-nav-group">
-          <div class="set-nav-group-label" data-lo="ທົ່ວໄປ" data-en="General"></div>
+          <div data-lo="ທົ່ວໄປ" data-en="General" data-th="ทั่วไป" data-ko="일반" class="set-nav-group-label"></div>
           <button class="set-nav-item active" data-tab="appearance" data-kw="appearance ຮູບລັກສະນະ theme ທີມ language ພາສາ dark light" onclick="switchSettingsTab('appearance')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.563-2.512 5.563-5.563C21.5 6.012 17.012 2 12 2z"/></svg>
-            <span data-lo="ຮູບລັກສະນະ" data-en="Appearance"></span>
+            <span data-lo="ຮູບລັກສະນະ" data-en="Appearance" data-th="ธีม / การแสดงผล" data-ko="화면 표시"></span>
           </button>
           <button class="set-nav-item" data-tab="about" data-kw="about ກ່ຽວກັບ version ເວີຊັນ storage" onclick="switchSettingsTab('about')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-            <span data-lo="ກ່ຽວກັບ" data-en="About"></span>
+            <span data-lo="ກ່ຽວກັບ" data-en="About" data-th="เกี่ยวกับ" data-ko="정보"></span>
           </button>
         </div>
 
         <div class="set-nav-group admin-only">
-          <div class="set-nav-group-label" data-lo="ບໍລິສັດ" data-en="Workspace"></div>
+          <div data-lo="ພື້ນທີ່ເຮັດວຽກ" data-en="Workspace" data-th="พื้นที่ทำงาน" data-ko="작업 공간" class="set-nav-group-label"></div>
           <button class="set-nav-item" data-tab="company" data-kw="company ບໍລິສັດ logo ໂລໂກ້ name ຊື່ brand" onclick="switchSettingsTab('company')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg>
-            <span data-lo="ບໍລິສັດ" data-en="Company"></span>
+            <span data-lo="ບໍລິສັດ" data-en="Company" data-th="บริษัท" data-ko="회사"></span>
           </button>
           <button class="set-nav-item" data-tab="cities" data-kw="dictionaries ວັດຈະນານຸກົມ cities ເມືອງ korean lao code" onclick="switchSettingsTab('cities')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-            <span data-lo="ວັດຈະນານຸກົມ" data-en="Dictionaries"></span>
+            <span data-lo="ວັດຈະນານຸກົມ" data-en="Dictionaries" data-th="พจนานุกรม" data-ko="사전"></span>
           </button>
           <button class="set-nav-item" data-tab="documents" data-kw="documents ເອກະສານ doc type residence land form" onclick="switchSettingsTab('documents')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
-            <span data-lo="ເອກະສານ" data-en="Documents"></span>
+            <span data-lo="ເອກະສານ" data-en="Documents" data-th="เอกสาร" data-ko="문서"></span>
           </button>
           <button class="set-nav-item" data-tab="notifications" data-kw="notifications ການແຈ້ງເຕືອນ passport ພາສປອດ expiry ໝົດອາຍຸ alert" onclick="switchSettingsTab('notifications')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-            <span data-lo="ການແຈ້ງເຕືອນ" data-en="Notifications"></span>
+            <span data-lo="ການແຈ້ງເຕືອນ" data-en="Notifications" data-th="การแจ้งเตือน" data-ko="알림"></span>
           </button>
         </div>
 
         <div class="set-nav-group admin-only">
-          <div class="set-nav-group-label" data-lo="ລະບົບ" data-en="System"></div>
+          <div data-lo="ລະບົບ" data-en="System" data-th="ระบบ" data-ko="시스템" class="set-nav-group-label"></div>
           <button class="set-nav-item" data-tab="users" data-kw="users ຜູ້ໃຊ້ roles ບົດບາດ accounts password admin viewer" onclick="switchSettingsTab('users')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            <span data-lo="ຜູ້ໃຊ້ &amp; ສິດ" data-en="Users &amp; roles"></span>
+            <span data-lo="ຜູ້ໃຊ້ &amp; ສິດ" data-en="Users &amp; roles" data-th="ผู้ใช้ &amp; สิทธิ์" data-ko="사용자 &amp; 권한"></span>
           </button>
           <button class="set-nav-item" data-tab="data" data-kw="data backup ສຳຮອງ restore ກູ້ຄືນ export import reset" onclick="switchSettingsTab('data')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
-            <span data-lo="ຂໍ້ມູນ &amp; ສຳຮອງ" data-en="Data &amp; backup"></span>
+            <span data-lo="ຂໍ້ມູນ &amp; ສຳຮອງ" data-en="Data &amp; backup" data-th="ข้อมูล &amp; สำรอง" data-ko="데이터 &amp; 백업"></span>
           </button>
         </div>
       </aside>
@@ -1086,11 +1097,11 @@
         <div class="set-pane" id="set-pane-appearance">
           <div class="set-section-head">
             <div class="ssh-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.563-2.512 5.563-5.563C21.5 6.012 17.012 2 12 2z"/></svg></div>
-            <div><div class="ssh-title" data-lo="ຮູບລັກສະນະ" data-en="Appearance"></div><div class="ssh-desc">ປັບຮູບແບບ ແລະ ພາສາ (ສ່ວນຕົວ)</div></div>
+            <div><div data-lo="ຮູບລັກສະນະ" data-en="Appearance" data-th="ธีม / การแสดงผล" data-ko="화면 표시" class="ssh-title"></div><div data-lo="ປັບຮູບແບບ ແລະ ພາສາ (ສ່ວນຕົວ)" data-en="Appearance & language (personal)" data-th="รูปแบบและภาษา (ส่วนตัว)" data-ko="화면 및 언어 (개인)" class="ssh-desc">ປັບຮູບແບບ ແລະ ພາສາ (ສ່ວນຕົວ)</div></div>
           </div>
           <div class="set-card">
             <div class="set-row" data-kw="theme ທີມ dark light system ສະຫວ່າງ ມືດ">
-              <div class="set-row-main"><div class="set-row-label" data-lo="ໂໝດສະແດງຜົນ" data-en="Theme"></div><div class="set-row-desc">ສະຫວ່າງ / ມືດ / ຕາມລະບົບ</div></div>
+              <div class="set-row-main"><div data-lo="ໂໝດສະແດງຜົນ" data-en="Theme" data-th="ธีม" data-ko="테마" class="set-row-label"></div><div data-lo="ສະຫວ່າງ / ມືດ / ຕາມລະບົບ" data-en="Light / Dark / System" data-th="สว่าง / มืด / ตามระบบ" data-ko="라이트 / 다크 / 시스템" class="set-row-desc">ສະຫວ່າງ / ມືດ / ຕາມລະບົບ</div></div>
               <div class="set-row-control">
                 <div class="seg-control seg-icon theme-options">
                   <button class="theme-opt" data-theme-val="system" onclick="setThemePref('system')" title="System · ຕາມລະບົບ" aria-label="System">
@@ -1106,16 +1117,20 @@
               </div>
             </div>
             <div class="set-row" data-kw="language ພາສາ english thai lao korean">
-              <div class="set-row-main"><div class="set-row-label" data-lo="ພາສາ" data-en="Language"></div><div class="set-row-desc">ຄ່າເລີ່ມຕົ້ນຕາມເຄື່ອງ</div></div>
+              <div class="set-row-main"><div data-lo="ພາສາ" data-en="Language" data-th="ภาษา" data-ko="언어" class="set-row-label"></div><div data-lo="ຄ່າເລີ່ມຕົ້ນຕາມເຄື່ອງ" data-en="Default follows your device" data-th="ค่าเริ่มต้นตามอุปกรณ์" data-ko="기기 설정을 따름" class="set-row-desc">ຄ່າເລີ່ມຕົ້ນຕາມເຄື່ອງ</div></div>
               <div class="set-row-control">
-                <div class="set-select-wrap">
-                  <select id="set-lang-select" class="set-select" onchange="changeLangFromSettings(this.value)">
-                    <option value="en">English</option>
-                    <option value="th">ไทย</option>
-                    <option value="lo">ລາວ</option>
-                    <option value="ko">한국어</option>
-                  </select>
-                  <svg class="set-select-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                <div class="lang-dd" id="set-lang-dd">
+                  <button type="button" class="lang-dd-btn" id="set-lang-btn" aria-haspopup="listbox" aria-expanded="false" onclick="toggleSetLangDD(event)">
+                    <svg class="lang-dd-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                    <span class="lang-dd-cur" id="set-lang-cur">English</span>
+                    <svg class="lang-dd-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                  <div class="lang-dd-menu" id="set-lang-menu" role="listbox">
+                    <button type="button" role="option" data-lang="en" onclick="setLangFromDD('en')"><span>English</span><svg class="lang-dd-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+                    <button type="button" role="option" data-lang="th" onclick="setLangFromDD('th')"><span>ไทย</span><svg class="lang-dd-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+                    <button type="button" role="option" data-lang="lo" onclick="setLangFromDD('lo')"><span>ລາວ</span><svg class="lang-dd-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+                    <button type="button" role="option" data-lang="ko" onclick="setLangFromDD('ko')"><span>한국어</span><svg class="lang-dd-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1126,24 +1141,24 @@
         <div class="set-pane" id="set-pane-company" style="display:none">
           <div class="set-section-head">
             <div class="ssh-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/></svg></div>
-            <div><div class="ssh-title" data-lo="ບໍລິສັດ" data-en="Company"></div><div class="ssh-desc">ໂລໂກ້ ແລະ ຊື່ (ໃຊ້ເທິງແຖບຂ້າງ ແລະ ການສົ່ງອອກ)</div></div>
+            <div><div data-lo="ບໍລິສັດ" data-en="Company" data-th="บริษัท" data-ko="회사" class="ssh-title"></div><div data-lo="ໂລໂກ້ ແລະ ຊື່ (ໃຊ້ເທິງແຖບຂ້າງ ແລະ ການສົ່ງອອກ)" data-en="Logo & name (used in sidebar and exports)" data-th="โลโก้และชื่อ (ใช้บนแถบข้างและการส่งออก)" data-ko="로고 및 이름 (사이드바·내보내기에 사용)" class="ssh-desc">ໂລໂກ້ ແລະ ຊື່ (ໃຊ້ເທິງແຖບຂ້າງ ແລະ ການສົ່ງອອກ)</div></div>
           </div>
           <div class="set-card">
             <div class="set-row" data-kw="logo ໂລໂກ້">
-              <div class="set-row-main"><div class="set-row-label" data-lo="ໂລໂກ້" data-en="Company logo"></div><div class="set-row-desc">ສະແດງເທິງແຖບຂ້າງ ແລະ ບັດ</div></div>
+              <div class="set-row-main"><div data-lo="ໂລໂກ້" data-en="Company logo" data-th="โลโก้บริษัท" data-ko="회사 로고" class="set-row-label"></div><div data-lo="ສະແດງເທິງແຖບຂ້າງ ແລະ ບັດ" data-en="Shown on the sidebar and cards" data-th="แสดงบนแถบข้างและบัตร" data-ko="사이드바와 카드에 표시" class="set-row-desc">ສະແດງເທິງແຖບຂ້າງ ແລະ ບັດ</div></div>
               <div class="set-row-control">
                 <div class="logo-upload-row">
                   <div class="logo-preview-wrap" id="logo-preview-wrap"><span class="logo-preview-text">KD</span></div>
                   <div class="logo-upload-actions">
-                    <label class="btn btn-sm" for="logo-file-input">Upload</label>
+                    <label class="btn btn-sm" for="logo-file-input" data-lo="ອັບໂຫລດ" data-en="Upload" data-th="อัปโหลด" data-ko="업로드"></label>
                     <input type="file" id="logo-file-input" accept="image/*" style="display:none" onchange="handleLogoUpload(this)">
-                    <button class="btn btn-sm btn-danger" id="logo-remove-btn" onclick="removeCompanyLogo()" style="display:none">Remove</button>
+                    <button class="btn btn-sm btn-danger" id="logo-remove-btn" onclick="removeCompanyLogo()" style="display:none" data-lo="ລຶບ" data-en="Remove" data-th="ลบ" data-ko="제거"></button>
                   </div>
                 </div>
               </div>
             </div>
             <div class="set-row stack" data-kw="company name ຊື່ບໍລິສັດ">
-              <div class="set-row-main"><div class="set-row-label" data-lo="ຊື່ບໍລິສັດ" data-en="Company name"></div></div>
+              <div class="set-row-main"><div data-lo="ຊື່ບໍລິສັດ" data-en="Company name" data-th="ชื่อบริษัท" data-ko="회사명" class="set-row-label"></div></div>
               <div class="set-row-control"><input id="set-company-name" class="set-row-input" placeholder="KD EMPLOYMENT CO., LTD" onchange="saveCompanyName(this.value)"></div>
             </div>
           </div>
@@ -1153,46 +1168,49 @@
         <div class="set-pane" id="set-pane-cities" style="display:none">
           <div class="set-section-head">
             <div class="ssh-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
-            <div><div class="ssh-title" data-lo="ວັດຈະນານຸກົມ" data-en="Dictionaries"></div><div class="ssh-desc">ເມືອງເກົາຫຼີ ແລະ ລາວ (ໃຊ້ສ້າງລະຫັດ ID)</div></div>
+            <div><div data-lo="ວັດຈະນານຸກົມ" data-en="Dictionaries" data-th="พจนานุกรม" data-ko="사전" class="ssh-title"></div><div data-lo="ເມືອງເກົາຫຼີ ແລະ ລາວ (ໃຊ້ສ້າງລະຫັດ ID)" data-en="Korean & Lao cities (used to generate ID codes)" data-th="เมืองเกาหลีและลาว (ใช้สร้างรหัส ID)" data-ko="한국·라오스 도시 (ID 코드 생성에 사용)" class="ssh-desc">ເມືອງເກົາຫຼີ ແລະ ລາວ (ໃຊ້ສ້າງລະຫັດ ID)</div></div>
           </div>
           <div class="set-cols">
             <div class="set-col">
-              <div class="set-col-title" data-lo="ເມືອງເກົາຫຼີ" data-en="Korean cities"></div>
+              <div data-lo="ເມືອງເກົາຫຼີ" data-en="Korean cities" data-th="เมืองเกาหลี" data-ko="한국 도시" class="set-col-title"></div>
               <div class="set-list" id="set-kr-list"></div>
               <div class="set-add-row">
-                <input id="set-kr-name" data-ph-lo="ຊື່ເມືອງ" data-ph-en="City name" placeholder="ຊື່ເມືອງ">
+                <input data-ph-lo="ຊື່ເມືອງ" data-ph-en="City name" data-ph-th="ชื่อเมือง" data-ph-ko="도시 이름" id="set-kr-name" placeholder="ຊື່ເມືອງ">
                 <input id="set-kr-code" class="code-in" maxlength="5" placeholder="Code">
-                <button class="btn btn-add btn-sm" onclick="addCity('kr')">Add</button>
+                <button class="btn btn-add btn-sm" onclick="addCity('kr')" data-lo="ເພີ່ມ" data-en="Add" data-th="เพิ่ม" data-ko="추가"></button>
               </div>
             </div>
             <div class="set-col">
-              <div class="set-col-title" data-lo="ເມືອງລາວ" data-en="Lao cities"></div>
+              <div data-lo="ເມືອງລາວ" data-en="Lao cities" data-th="เมืองลาว" data-ko="라오스 도시" class="set-col-title"></div>
               <div class="set-list" id="set-la-list"></div>
               <div class="set-add-row">
-                <input id="set-la-name" data-ph-lo="ຊື່ເມືອງ" data-ph-en="City name" placeholder="ຊື່ເມືອງ">
+                <input data-ph-lo="ຊື່ເມືອງ" data-ph-en="City name" data-ph-th="ชื่อเมือง" data-ph-ko="도시 이름" id="set-la-name" placeholder="ຊື່ເມືອງ">
                 <input id="set-la-code" class="code-in" maxlength="5" placeholder="Code">
-                <button class="btn btn-add btn-sm" onclick="addCity('la')">Add</button>
+                <button class="btn btn-add btn-sm" onclick="addCity('la')" data-lo="ເພີ່ມ" data-en="Add" data-th="เพิ่ม" data-ko="추가"></button>
               </div>
             </div>
           </div>
+
+          <!-- ── Location Dictionary (custom hierarchical categories) ── -->
+          <div class="locdict-wrap" id="set-locdict"></div>
         </div>
 
         <!-- Documents (configurable categories) -->
         <div class="set-pane" id="set-pane-documents" style="display:none">
           <div class="set-section-head">
             <div class="ssh-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></div>
-            <div><div class="ssh-title" data-lo="ເອກະສານ" data-en="Documents"></div><div class="ssh-desc" data-lo="ກຳນົດປະເພດເອກະສານທີ່ຮັບໄດ້ (ບໍ່ຈຳກັດ 6 ຊ່ອງ)" data-en="Define which document types are accepted (not limited to 6)"></div></div>
+            <div><div data-lo="ເອກະສານ" data-en="Documents" data-th="เอกสาร" data-ko="문서" class="ssh-title"></div><div data-lo="ກຳນົດປະເພດເອກະສານທີ່ຮັບໄດ້ (ບໍ່ຈຳກັດ 6 ຊ່ອງ)" data-en="Define which document types are accepted (not limited to 6)" data-th="กำหนดประเภทเอกสารที่รับได้ (ไม่จำกัด 6 ช่อง)" data-ko="허용되는 문서 유형 지정 (6개 제한 없음)" class="ssh-desc"></div></div>
           </div>
           <div class="set-card" style="padding:5px 0"><div class="set-list" id="set-doccats-list"></div></div>
-          <div class="set-card-label" data-lo="ເພີ່ມປະເພດເອກະສານ" data-en="Add document type"></div>
+          <div data-lo="ເພີ່ມປະເພດເອກະສານ" data-en="Add document type" data-th="เพิ่มประเภทเอกสาร" data-ko="문서 유형 추가" class="set-card-label"></div>
           <div class="set-card" style="padding:13px 15px">
             <div class="set-add-row">
-              <input id="set-doccat-name" data-ph-lo="ຊື່ປະເພດ ເຊັ່ນ ໃບຮັບຮອງທີ່ຢູ່" data-ph-en="Type name, e.g. Residence cert" placeholder="ຊື່ປະເພດ">
-              <button class="btn btn-add btn-sm" onclick="addDocCat()">Add</button>
+              <input data-ph-lo="ຊື່ປະເພດ ເຊັ່ນ ໃບຮັບຮອງທີ່ຢູ່" data-ph-en="Type name, e.g. Residence cert" data-ph-th="ชื่อประเภท เช่น ใบรับรองที่อยู่" data-ph-ko="유형 이름 (예: 거주 증명서)" id="set-doccat-name" placeholder="ຊື່ປະເພດ">
+              <button class="btn btn-add btn-sm" onclick="addDocCat()" data-lo="ເພີ່ມ" data-en="Add" data-th="เพิ่ม" data-ko="추가"></button>
             </div>
           </div>
 
-          <div class="set-card-label" data-lo="ຟິລด์ที่นับ % ຄວາມຄົບຖ້ວນ" data-en="ฟิลด์ที่นับ % ความครบ"></div>
+          <div data-lo="ຟິລດ໌ທີ່ນັບ % ຄວາມຄົບຖ້ວນ" data-en="Fields counted for completeness %" data-th="ฟิลด์ที่นับ % ความครบ" data-ko="완성도 %에 포함되는 항목" class="set-card-label"></div>
           <div class="set-card" style="padding:10px 8px"><div class="set-reqfields" id="set-reqfields-list"></div></div>
         </div>
 
@@ -1200,30 +1218,30 @@
         <div class="set-pane" id="set-pane-notifications" style="display:none">
           <div class="set-section-head">
             <div class="ssh-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
-            <div><div class="ssh-title" data-lo="ການແຈ້ງເຕືອນ" data-en="Notifications"></div><div class="ssh-desc">ກຳນົດເວລາແຈ້ງເຕືອນພາສປອດໃກ້ໝົດອາຍຸ</div></div>
+            <div><div data-lo="ການແຈ້ງເຕືອນ" data-en="Notifications" data-th="การแจ้งเตือน" data-ko="알림" class="ssh-title"></div><div data-lo="ກຳນົດເວລາແຈ້ງເຕືອນພາສປອດໃກ້ໝົດອາຍຸ" data-en="Set when to warn about expiring passports" data-th="กำหนดเวลาแจ้งเตือนพาสปอร์ตใกล้หมดอายุ" data-ko="여권 만료 알림 시점 설정" class="ssh-desc">ກຳນົດເວລາແຈ້ງເຕືອນພາສປອດໃກ້ໝົດອາຍຸ</div></div>
           </div>
           <div class="set-card">
             <div class="set-row" data-kw="urgent red ໄຟແດງ warn">
-              <div class="set-row-main"><div class="set-row-label" data-lo="ດ່ວນ (ໄຟແດງ)" data-en="Urgent (red)"></div><div class="set-row-desc">ແຈ້ງເຕືອນເມື່ອເຫຼືອໜ້ອຍກວ່າ</div></div>
-              <div class="set-row-control"><input id="set-warn-months" class="set-num-input" type="number" min="1" max="60" onchange="saveNotifPrefs()"><span class="set-row-desc">ເດືອນ</span></div>
+              <div class="set-row-main"><div data-lo="ດ່ວນ (ໄຟແດງ)" data-en="Urgent (red)" data-th="ด่วน (สีแดง)" data-ko="긴급 (빨강)" class="set-row-label"></div><div data-lo="ແຈ້ງເຕືອນເມື່ອເຫຼືອໜ້ອຍກວ່າ" data-en="Notify when less than" data-th="แจ้งเตือนเมื่อเหลือน้อยกว่า" data-ko="남은 기간이 다음 미만일 때 알림" class="set-row-desc">ແຈ້ງເຕືອນເມື່ອເຫຼືອໜ້ອຍກວ່າ</div></div>
+              <div class="set-row-control"><input id="set-warn-months" class="set-num-input" type="number" min="1" max="60" onchange="saveNotifPrefs()"><span data-lo="ເດືອນ" data-en="months" data-th="เดือน" data-ko="개월" class="set-row-desc">ເດືອນ</span></div>
             </div>
             <div class="set-row" data-kw="upcoming yellow ໄຟເຫຼືອງ near">
-              <div class="set-row-main"><div class="set-row-label" data-lo="ໃກ້ຮອດ (ໄຟເຫຼືອງ)" data-en="Upcoming (yellow)"></div><div class="set-row-desc">ໝາຍເປັນ “ໃກ້ໝົດ” ເມື່ອເຫຼືອໜ້ອຍກວ່າ</div></div>
-              <div class="set-row-control"><input id="set-near-months" class="set-num-input" type="number" min="1" max="120" onchange="saveNotifPrefs()"><span class="set-row-desc">ເດືອນ</span></div>
+              <div class="set-row-main"><div data-lo="ໃກ້ຮອດ (ໄຟເຫຼືອງ)" data-en="Upcoming (yellow)" data-th="ใกล้ถึง (สีเหลือง)" data-ko="임박 (노랑)" class="set-row-label"></div><div data-lo="ໝາຍເປັນ “ໃກ້ໝົດ” ເມື່ອເຫຼືອໜ້ອຍກວ່າ" data-en="Mark as 'expiring' when less than" data-th="ทำเครื่องหมาย “ใกล้หมด” เมื่อเหลือน้อยกว่า" data-ko="남은 기간이 다음 미만이면 '만료 임박' 표시" class="set-row-desc">ໝາຍເປັນ “ໃກ້ໝົດ” ເມື່ອເຫຼືອໜ້ອຍກວ່າ</div></div>
+              <div class="set-row-control"><input id="set-near-months" class="set-num-input" type="number" min="1" max="120" onchange="saveNotifPrefs()"><span data-lo="ເດືອນ" data-en="months" data-th="เดือน" data-ko="개월" class="set-row-desc">ເດືອນ</span></div>
             </div>
           </div>
-          <div class="set-card-label">ມີຜົນກັບ Dashboard, ສະຖານະ ແລະ ສັນຍານໃນແຖບຂ້າງ</div>
+          <div data-lo="ມີຜົນກັບ Dashboard, ສະຖານະ ແລະ ສັນຍານໃນແຖບຂ້າງ" data-en="Affects Dashboard, status and sidebar signals" data-th="มีผลกับ Dashboard, สถานะ และสัญญาณในแถบข้าง" data-ko="대시보드·상태·사이드바 신호에 영향" class="set-card-label">ມີຜົນກັບ Dashboard, ສະຖານະ ແລະ ສັນຍານໃນແຖບຂ້າງ</div>
         </div>
 
         <!-- Data & Backup -->
         <div class="set-pane" id="set-pane-data" style="display:none">
           <div class="set-section-head">
             <div class="ssh-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></div>
-            <div><div class="ssh-title" data-lo="ຂໍ້ມູນ ແລະ ສຳຮອງ" data-en="Data &amp; backup"></div><div class="ssh-desc">ສຳຮອງ, ກູ້ຄືນ, ນຳເຂົ້າ ແລະ ສົ່ງອອກຂໍ້ມູນ</div></div>
+            <div><div data-lo="ຂໍ້ມູນ &amp; ສຳຮອງ" data-en="Data &amp; backup" data-th="ข้อมูล &amp; สำรอง" data-ko="데이터 &amp; 백업" class="ssh-title"></div><div data-lo="ສຳຮອງ, ກູ້ຄືນ, ນຳເຂົ້າ ແລະ ສົ່ງອອກຂໍ້ມູນ" data-en="Backup, restore, import and export data" data-th="สำรอง, กู้คืน, นำเข้า และส่งออกข้อมูล" data-ko="백업·복원·가져오기·내보내기" class="ssh-desc">ສຳຮອງ, ກູ້ຄືນ, ນຳເຂົ້າ ແລະ ສົ່ງອອກຂໍ້ມູນ</div></div>
           </div>
           <div class="set-card">
             <div class="set-row" data-kw="default export format">
-              <div class="set-row-main"><div class="set-row-label">ຮູບແບບ Export ເລີ່ມຕົ້ນ</div><div class="set-row-desc">ເລືອກໄວ້ລ່ວງໜ້າໃນກ່ອງ Export</div></div>
+              <div class="set-row-main"><div data-lo="ຮູບແບບ Export ເລີ່ມຕົ້ນ" data-en="Default export format" data-th="รูปแบบ Export เริ่มต้น" data-ko="기본 내보내기 형식" class="set-row-label">ຮູບແບບ Export ເລີ່ມຕົ້ນ</div><div data-lo="ເລືອກໄວ້ລ່ວງໜ້າໃນກ່ອງ Export" data-en="Pre-selected in the Export dialog" data-th="เลือกไว้ล่วงหน้าในกล่อง Export" data-ko="내보내기 대화상자에서 미리 선택됨" class="set-row-desc">ເລືອກໄວ້ລ່ວງໜ້າໃນກ່ອງ Export</div></div>
               <div class="set-row-control">
                 <div class="seg-control" id="set-export-default">
                   <button data-exp="kd-pdf" onclick="saveExportDefault('kd-pdf')">PDF</button>
@@ -1237,38 +1255,38 @@
             <div class="set-action-list">
               <button class="set-action" onclick="doBackupNow()">
                 <span class="sa-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg></span>
-                <span class="set-action-body"><span class="set-action-title" data-lo="ສຳຮອງຂໍ້ມູນຕອນນີ້" data-en="Create backup"></span><span class="set-action-sub">ບັນທຶກ snapshot ຂອງຖານຂໍ້ມູນ</span></span>
+                <span class="set-action-body"><span data-lo="ສຳຮອງຂໍ້ມູນຕອນນີ້" data-en="Create backup" data-th="สำรองข้อมูลตอนนี้" data-ko="백업 생성" class="set-action-title"></span><span data-lo="ບັນທຶກ snapshot ຂອງຖານຂໍ້ມູນ" data-en="Save a snapshot of the database" data-th="บันทึก snapshot ของฐานข้อมูล" data-ko="데이터베이스 스냅샷 저장" class="set-action-sub">ບັນທຶກ snapshot ຂອງຖານຂໍ້ມູນ</span></span>
                 <span class="set-action-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
               </button>
               <button class="set-action" onclick="toggleRestoreList()">
                 <span class="sa-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.36 2.64L3 8"/><path d="M3 3v5h5M12 7v5l3 3"/></svg></span>
-                <span class="set-action-body"><span class="set-action-title" data-lo="ກູ້ຄືນຈາກສຳຮອງ" data-en="Restore"></span><span class="set-action-sub">ເລືອກໄຟລ໌ສຳຮອງເພື່ອກູ້ຄືນ</span></span>
+                <span class="set-action-body"><span data-lo="ກູ້ຄືນຈາກສຳຮອງ" data-en="Restore" data-th="กู้คืนจากสำรอง" data-ko="복원" class="set-action-title"></span><span data-lo="ເລືອກໄຟລ໌ສຳຮອງເພື່ອກູ້ຄືນ" data-en="Choose a backup file to restore" data-th="เลือกไฟล์สำรองเพื่อกู้คืน" data-ko="복원할 백업 파일 선택" class="set-action-sub">ເລືອກໄຟລ໌ສຳຮອງເພື່ອກູ້ຄືນ</span></span>
                 <span class="set-action-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
               </button>
               <button class="set-action" onclick="exportAllData()">
                 <span class="sa-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg></span>
-                <span class="set-action-body"><span class="set-action-title" data-lo="ສົ່ງອອກທັງໝົດ (JSON)" data-en="Export all (JSON)"></span><span class="set-action-sub">ດາວໂຫລດຂໍ້ມູນທັງໝົດເປັນໄຟລ໌ດຽວ</span></span>
+                <span class="set-action-body"><span data-lo="ສົ່ງອອກທັງໝົດ (JSON)" data-en="Export all (JSON)" data-th="ส่งออกทั้งหมด (JSON)" data-ko="전체 내보내기 (JSON)" class="set-action-title"></span><span data-lo="ດາວໂຫລດຂໍ້ມູນທັງໝົດເປັນໄຟລ໌ດຽວ" data-en="Download all data as one file" data-th="ดาวน์โหลดข้อมูลทั้งหมดเป็นไฟล์เดียว" data-ko="모든 데이터를 한 파일로 다운로드" class="set-action-sub">ດາວໂຫລດຂໍ້ມູນທັງໝົດເປັນໄຟລ໌ດຽວ</span></span>
                 <span class="set-action-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
               </button>
               <button class="set-action" onclick="openImport();closeOverlay('settings-overlay')">
                 <span class="sa-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/></svg></span>
-                <span class="set-action-body"><span class="set-action-title" data-lo="ນຳເຂົ້າ" data-en="Import"></span><span class="set-action-sub">ນຳເຂົ້າຂໍ້ມູນຈາກໄຟລ໌ PPTX</span></span>
+                <span class="set-action-body"><span data-lo="ນຳເຂົ້າຂໍ້ມູນ" data-en="Import" data-th="นำเข้าข้อมูล" data-ko="가져오기" class="set-action-title"></span><span data-lo="ນຳເຂົ້າຂໍ້ມູນຈາກໄຟລ໌ PPTX" data-en="Import data from a PPTX file" data-th="นำเข้าข้อมูลจากไฟล์ PPTX" data-ko="PPTX 파일에서 데이터 가져오기" class="set-action-sub">ນຳເຂົ້າຂໍ້ມູນຈາກໄຟລ໌ PPTX</span></span>
                 <span class="set-action-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
               </button>
               <button class="set-action" onclick="openTrash()">
                 <span class="sa-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></span>
-                <span class="set-action-body"><span class="set-action-title" data-lo="ຖັງຂີ້ເຫຍື້ອ" data-en="Trash"></span><span class="set-action-sub" id="set-trash-sub">ກູ້ຄືນ ຫຼື ລຶບຖາວອນ ຂໍ້ມູນທີ່ລຶບແລ້ວ</span></span>
+                <span class="set-action-body"><span data-lo="ຖັງຂີ້ເຫຍື້ອ" data-en="Trash" data-th="ถังขยะ" data-ko="휴지통" class="set-action-title"></span><span data-lo="ກູ້ຄືນ ຫຼື ລຶບຖາວອນ ຂໍ້ມູນທີ່ລຶບແລ້ວ" data-en="Restore or permanently delete trashed data" data-th="กู้คืนหรือลบถาวรข้อมูลที่ลบแล้ว" data-ko="삭제된 데이터 복원 또는 영구 삭제" class="set-action-sub" id="set-trash-sub">ກູ້ຄືນ ຫຼື ລຶບຖາວອນ ຂໍ້ມູນທີ່ລຶບແລ້ວ</span></span>
                 <span class="set-action-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
               </button>
             </div>
           </div>
           <div id="set-backup-list" style="display:none"></div>
-          <div class="set-card-label" data-lo="⚠ ໂຊນອັນຕະລາຍ" data-en="⚠ Danger zone"></div>
+          <div data-lo="⚠ ໂຊນອັນຕະລາຍ" data-en="⚠ Danger zone" data-th="⚠ โซนอันตราย" data-ko="⚠ 위험 구역" class="set-card-label"></div>
           <div class="set-card">
             <div class="set-action-list">
               <button class="set-action danger" onclick="confirmHardReset()">
                 <span class="sa-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></span>
-                <span class="set-action-body"><span class="set-action-title" data-lo="ລ້າງຂໍ້ມູນທັງໝົດ" data-en="Reset all data"></span><span class="set-action-sub">ລຶບກຸ່ມ, ແຮງງານ ແລະ ເອກະສານທັງໝົດ</span></span>
+                <span class="set-action-body"><span data-lo="ລ້າງຂໍ້ມູນທັງໝົດ" data-en="Reset all data" data-th="ล้างข้อมูลทั้งหมด" data-ko="모든 데이터 초기화" class="set-action-title"></span><span data-lo="ລຶບກຸ່ມ, ແຮງງານ ແລະ ເອກະສານທັງໝົດ" data-en="Delete all groups, workers and documents" data-th="ลบกลุ่ม, แรงงาน และเอกสารทั้งหมด" data-ko="모든 그룹·근로자·문서 삭제" class="set-action-sub">ລຶບກຸ່ມ, ແຮງງານ ແລະ ເອກະສານທັງໝົດ</span></span>
               </button>
             </div>
           </div>
@@ -1278,20 +1296,20 @@
         <div class="set-pane" id="set-pane-users" style="display:none">
           <div class="set-section-head">
             <div class="ssh-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-            <div><div class="ssh-title" data-lo="ຜູ້ໃຊ້ ແລະ ສິດ" data-en="Users &amp; roles"></div><div class="ssh-desc">ເພີ່ມ, ແກ້ໄຂ, ປ່ຽນບົດບາດ ແລະ ຣີເຊັດລະຫັດຜ່ານ</div></div>
+            <div><div data-lo="ຜູ້ໃຊ້ &amp; ສິດ" data-en="Users &amp; roles" data-th="ผู้ใช้ &amp; สิทธิ์" data-ko="사용자 &amp; 권한" class="ssh-title"></div><div data-lo="ເພີ່ມ, ແກ້ໄຂ, ປ່ຽນບົດບາດ ແລະ ຣີເຊັດລະຫັດຜ່ານ" data-en="Add, edit, change roles and reset passwords" data-th="เพิ่ม, แก้ไข, เปลี่ยนบทบาท และรีเซ็ตรหัสผ่าน" data-ko="추가·수정·역할 변경·비밀번호 재설정" class="ssh-desc">ເພີ່ມ, ແກ້ໄຂ, ປ່ຽນບົດບາດ ແລະ ຣີເຊັດລະຫັດຜ່ານ</div></div>
           </div>
           <div class="set-card" style="padding:5px 0"><div class="set-list" id="set-users-list"></div></div>
-          <div class="set-card-label" data-lo="ເພີ່ມຜູ້ໃຊ້" data-en="Add user"></div>
+          <div data-lo="ເພີ່ມຜູ້ໃຊ້" data-en="Add user" data-th="เพิ่มผู้ใช้" data-ko="사용자 추가" class="set-card-label"></div>
           <div class="set-card" style="padding:13px 15px">
             <div class="set-add-row users-add">
-              <input id="set-u-name" data-ph-lo="ຊື່ສະແດງ" data-ph-en="Display name" placeholder="ຊື່ສະແດງ">
+              <input data-ph-lo="ຊື່ສະແດງ" data-ph-en="Display name" data-ph-th="ชื่อที่แสดง" data-ph-ko="표시 이름" id="set-u-name" placeholder="ຊື່ສະແດງ">
               <input id="set-u-user" placeholder="Username">
               <input id="set-u-pass" type="text" placeholder="Password">
               <select id="set-u-role">
                 <option value="admin">Admin</option>
                 <option value="viewer">Viewer</option>
               </select>
-              <button class="btn btn-add btn-sm" onclick="addUser()">Add</button>
+              <button class="btn btn-add btn-sm" onclick="addUser()" data-lo="ເພີ່ມ" data-en="Add" data-th="เพิ่ม" data-ko="추가"></button>
             </div>
           </div>
         </div>
@@ -1300,7 +1318,7 @@
         <div class="set-pane" id="set-pane-about" style="display:none">
           <div class="set-section-head">
             <div class="ssh-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></div>
-            <div><div class="ssh-title" data-lo="ກ່ຽວກັບ" data-en="About"></div><div class="ssh-desc">ເວີຊັນ ແລະ ສະຫຼຸບຂໍ້ມູນ</div></div>
+            <div><div data-lo="ກ່ຽວກັບ" data-en="About" data-th="เกี่ยวกับ" data-ko="정보" class="ssh-title"></div><div data-lo="ເວີຊັນ ແລະ ສະຫຼຸບຂໍ້ມູນ" data-en="Version and data summary" data-th="เวอร์ชันและสรุปข้อมูล" data-ko="버전 및 데이터 요약" class="ssh-desc">ເວີຊັນ ແລະ ສະຫຼຸບຂໍ້ມູນ</div></div>
           </div>
           <div class="set-card" style="padding:18px 15px">
             <div class="set-about-logo">KD</div>
@@ -1319,28 +1337,28 @@
 <div class="overlay" id="create-overlay">
   <div class="form-modal create-sheet" onclick="event.stopPropagation()">
     <div class="form-header">
-      <h2 data-lo="ເມນູ" data-en="Menu"></h2>
+      <h2 data-lo="ເມນູ" data-en="Menu" data-th="เมนู" data-ko="메뉴"></h2>
       <button class="fm-close" onclick="closeOverlay('create-overlay')">×</button>
     </div>
     <div class="set-action-list">
       <button class="set-action" onclick="createNewGroup()">
         <span class="sa-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg></span>
-        <span class="set-action-body"><span class="set-action-title" data-lo="ເພີ່ມກຸ່ມໃໝ່" data-en="New group"></span><span class="set-action-sub">ສ້າງກຸ່ມ/ໂປຣເຈັກ ໃໝ່</span></span>
+        <span class="set-action-body"><span data-lo="ເພີ່ມກຸ່ມໃໝ່" data-en="New group" data-th="เพิ่มกลุ่มใหม่" data-ko="새 그룹" class="set-action-title"></span><span data-lo="ສ້າງກຸ່ມ/ໂປຣເຈັກ ໃໝ່" data-en="Create a new group/project" data-th="สร้างกลุ่ม/โปรเจกต์ใหม่" data-ko="새 그룹/프로젝트 만들기" class="set-action-sub">ສ້າງກຸ່ມ/ໂປຣເຈັກ ໃໝ່</span></span>
         <span class="set-action-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
       </button>
       <button class="set-action" onclick="createAddWorker()">
         <span class="sa-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg></span>
-        <span class="set-action-body"><span class="set-action-title" data-lo="ເພີ່ມແຮງງານ" data-en="Add worker"></span><span class="set-action-sub" id="create-worker-sub">ເພີ່ມເຂົ້າກຸ່ມປັດຈຸບັນ</span></span>
+        <span class="set-action-body"><span data-lo="ເພີ່ມແຮງງານ" data-en="Add worker" data-th="เพิ่มแรงงาน" data-ko="근로자 추가" class="set-action-title"></span><span data-lo="ເພີ່ມເຂົ້າກຸ່ມປັດຈຸບັນ" data-en="Add to the current group" data-th="เพิ่มเข้ากลุ่มปัจจุบัน" data-ko="현재 그룹에 추가" class="set-action-sub" id="create-worker-sub">ເພີ່ມເຂົ້າກຸ່ມປັດຈຸບັນ</span></span>
         <span class="set-action-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
       </button>
       <button class="set-action" onclick="createImport()">
         <span class="sa-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/></svg></span>
-        <span class="set-action-body"><span class="set-action-title" data-lo="ນຳເຂົ້າ" data-en="Import"></span><span class="set-action-sub">PPTX · CSV · JSON · PDF / ຮູບ</span></span>
+        <span class="set-action-body"><span data-lo="ນຳເຂົ້າຂໍ້ມູນ" data-en="Import" data-th="นำเข้าข้อมูล" data-ko="가져오기" class="set-action-title"></span><span data-lo="PPTX · CSV · JSON · PDF / ຮູບ" data-en="PPTX · CSV · JSON · PDF / images" data-th="PPTX · CSV · JSON · PDF / รูป" data-ko="PPTX · CSV · JSON · PDF / 이미지" class="set-action-sub">PPTX · CSV · JSON · PDF / ຮູບ</span></span>
         <span class="set-action-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
       </button>
       <button class="set-action" onclick="createExport()">
         <span class="sa-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg></span>
-        <span class="set-action-body"><span class="set-action-title" data-lo="ສົ່ງອອກ" data-en="Export"></span><span class="set-action-sub">PDF · PNG · CSV · ເອກະສານ</span></span>
+        <span class="set-action-body"><span data-lo="ສົ່ງອອກ" data-en="Export" data-th="ส่งออก" data-ko="내보내기" class="set-action-title"></span><span data-lo="PDF · PNG · CSV · ເອກະສານ" data-en="PDF · PNG · CSV · documents" data-th="PDF · PNG · CSV · เอกสาร" data-ko="PDF · PNG · CSV · 문서" class="set-action-sub">PDF · PNG · CSV · ເອກະສານ</span></span>
         <span class="set-action-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
       </button>
     </div>
@@ -1352,8 +1370,8 @@
   <div class="form-modal customize-modal" onclick="event.stopPropagation()">
     <div class="cz-head">
       <div class="cz-head-text">
-        <h2 data-lo="ປັບແຖບຂ້າງ" data-en="Customize sidebar"></h2>
-        <p data-lo="ເລືອກລາຍການທີ່ຈະສະແດງໃນແຖບຂ້າງ" data-en="Choose which items appear in your sidebar."></p>
+        <h2 data-lo="ປັບແຖບຂ້າງ" data-en="Customize sidebar" data-th="ปรับแถบข้าง" data-ko="사이드바 사용자화"></h2>
+        <p data-lo="ເລືອກລາຍການທີ່ຈະສະແດງໃນແຖບຂ້າງ" data-en="Choose which items appear in your sidebar." data-th="เลือกรายการที่จะแสดงในแถบข้าง" data-ko="사이드바에 표시할 항목을 선택하세요"></p>
       </div>
       <button class="fm-close" onclick="closeOverlay('customize-overlay')">&#x2715;</button>
     </div>

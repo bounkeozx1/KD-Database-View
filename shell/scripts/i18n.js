@@ -33,8 +33,14 @@ const I18N = {
     gm_rename: 'Rename',
     gm_move: 'Move Project',
     gm_archive: 'Archive',
+    gm_unarchive: 'Unarchive',
+    gm_move_up: 'Move up',
+    gm_move_down: 'Move down',
     gm_delete: 'Delete',
     gm_soon: 'This feature is coming soon.',
+    gm_archived_done: 'Moved to Archived',
+    gm_unarchived_done: 'Restored from Archived',
+    sec_archived: 'Archived',
     pm_account: 'Account',
     pm_switch: 'Switch account',
     pm_appearance: 'Appearance',
@@ -344,8 +350,14 @@ const I18N = {
     gm_rename: 'เปลี่ยนชื่อ',
     gm_move: 'ย้ายโปรเจกต์',
     gm_archive: 'เก็บเข้าคลัง',
+    gm_unarchive: 'นำออกจากคลัง',
+    gm_move_up: 'เลื่อนขึ้น',
+    gm_move_down: 'เลื่อนลง',
     gm_delete: 'ลบ',
     gm_soon: 'ฟีเจอร์นี้กำลังจะมาเร็ว ๆ นี้',
+    gm_archived_done: 'เก็บเข้าคลังแล้ว',
+    gm_unarchived_done: 'นำออกจากคลังแล้ว',
+    sec_archived: 'คลังที่เก็บ',
     pm_account: 'บัญชี',
     pm_switch: 'สลับบัญชี',
     pm_appearance: 'ธีม / การแสดงผล',
@@ -851,6 +863,68 @@ const I18N = {
     login_reset: 'ຣີເຊັດລະຫັດຜ່ານ',
     login_reset_note: 'ເປັນເດໂມຝັ່ງໜ້າເວັບ — ແຈ້ງຜູ້ດູແລໃຫ້ຣີເຊັດທີ່ ຕັ້ງຄ່າ → ບັນຊີຜູ້ໃຊ້',
     vc_issue_expiry: 'ວັນອອກ / ໝົດອາຍຸ',
+    nav_new_group: 'ສ້າງກຸ່ມໃໝ່',
+    nav_search: 'ຄົ້ນຫາ',
+    nav_library: 'ຄັງເອກະສານ',
+    nav_projects: 'ໂປຣເຈັກ',
+    nav_more: 'ເພີ່ມເຕີມ',
+    sec_pinned: 'ປັກໝຸດໄວ້',
+    pin: 'ປັກໝຸດ',
+    unpin: 'ຍົກເລີກປັກໝຸດ',
+    pm_change_photo: 'ປ່ຽນຮູບ',
+    pm_add_account: 'ເພີ່ມບັນຊີ',
+    pm_profile: 'ໂປຣໄຟລ໌',
+    pm_help: 'ຊ່ວຍເຫຼືອ',
+    pm_policies: 'ນະໂຍບາຍບໍລິສັດ',
+    gm_share: 'ແບ່ງປັນ',
+    gm_pin: 'ປັກໝຸດ',
+    gm_rename: 'ປ່ຽນຊື່',
+    gm_move: 'ຍ້າຍໂປຣເຈັກ',
+    gm_archive: 'ເກັບເຂົ້າຄັງ',
+    gm_unarchive: 'ນຳອອກຈາກຄັງ',
+    gm_move_up: 'ເລື່ອນຂຶ້ນ',
+    gm_move_down: 'ເລື່ອນລົງ',
+    gm_delete: 'ລຶບ',
+    gm_soon: 'ຟີເຈີນີ້ກຳລັງຈະມາໃນໄວໆນີ້',
+    gm_archived_done: 'ເກັບເຂົ້າຄັງແລ້ວ',
+    gm_unarchived_done: 'ນຳອອກຈາກຄັງແລ້ວ',
+    sec_archived: 'ຄັງເກັບ',
+    pm_account: 'ບັນຊີ',
+    pm_switch: 'ສະຫຼັບບັນຊີ',
+    pm_appearance: 'ຮູບລັກສະນະ',
+    pm_help_center: 'ສູນຊ່ວຍເຫຼືອ',
+    pm_current: 'ບັນຊີປັດຈຸບັນ',
+    info_ok: 'ຕົກລົງ',
+    info_profile_msg: 'ເຂົ້າສູ່ລະບົບເປັນ {name} ({role}) — ໜ້າໂປຣໄຟລ໌ເຕັມຮູບແບບກຳລັງຈະມາ',
+    info_help_msg: 'ຕ້ອງການຄວາມຊ່ວຍເຫຼືອ? ຕິດຕໍ່ຜູ້ດູແລລະບົບ ຫຼື ເບິ່ງໄຟລ໌ README / ARCHITECTURE.md ໃນໂປຣເຈັກ',
+    info_policies_msg: 'KD Employment Co., Ltd — ໃຊ້ພາຍໃນເທົ່ານັ້ນ. ຂໍ້ມູນພະນັກງານເປັນຄວາມລັບ ຫ້າມເປີດເຜີຍຂໍ້ມູນພາສປອດ ຫຼື ຂໍ້ມູນສ່ວນຕົວ ອອກນອກບໍລິສັດ',
+    info_addacct_msg: 'ອອກຈາກລະບົບເພື່ອສະຫຼັບໄປບັນຊີອື່ນ? ລະບົບຈະພາທ່ານໄປໜ້າເຂົ້າສູ່ລະບົບ',
+    act_view_full: 'ເບິ່ງລາຍລະອຽດ',
+    act_edit_full: 'ແກ້ໄຂຂໍ້ມູນ',
+    act_del_full: 'ລຶບລາຍການ',
+    status_valid: 'ໃຊ້ໄດ້',
+    status_expiring: 'ໃກ້ໝົດອາຍຸ',
+    status_expired: 'ໝົດອາຍຸ',
+    status_none: 'ບໍ່ມີຂໍ້ມູນ',
+    fm_photo: 'ຮູບພະນັກງານ',
+    fm_photo_upload: 'ອັບໂຫລດຮູບ',
+    fm_photo_remove: 'ລຶບຮູບ',
+    doc_passport: 'ພາສປອດ',
+    doc_id_card: 'ບັດປະຈຳຕົວ',
+    doc_land: 'ເອກະສານທີ່ດິນ',
+    doc_work_permit: 'ໃບອະນຸຍາດເຮັດວຽກ',
+    doc_other: 'ສຳເນົາ & ເອກະສານແນບ',
+    fm_nationality: 'ສັນຊາດ',
+    fm_sex_m: 'ຊາຍ',
+    fm_sex_f: 'ຍິງ',
+    vc_nationality: 'ສັນຊາດ',
+    vc_sex: 'ເພດ',
+    scan_q_dark: 'ມືດເກີນໄປ — ເພີ່ມແສງ',
+    scan_q_bright: 'ສະຫວ່າງເກີນໄປ — ຫຼຸດແສງສະທ້ອນ',
+    scan_q_blur: 'ພາບມົວ — ຖືໃຫ້ໝັ້ນ',
+    scan_q_aim: 'ວາງໜ້າຂໍ້ມູນພາສປອດໃນກອບ',
+    scan_q_ok: 'ດີ — ກຳລັງອ່ານ…',
+    scan_photo_done: 'ເກັບຮູບຈາກພາສປອດແລ້ວ',
   },
 
   ko: {
@@ -1091,6 +1165,68 @@ const I18N = {
     login_reset: '비밀번호 재설정',
     login_reset_note: '프런트엔드 데모 — 관리자에게 설정 → 사용자 계정에서 재설정을 요청하세요.',
     vc_issue_expiry: '발급 / 만료',
+    nav_new_group: '새 그룹',
+    nav_search: '검색',
+    nav_library: '라이브러리',
+    nav_projects: '프로젝트',
+    nav_more: '더 보기',
+    sec_pinned: '고정됨',
+    pin: '고정',
+    unpin: '고정 해제',
+    pm_change_photo: '사진 변경',
+    pm_add_account: '계정 추가',
+    pm_profile: '프로필',
+    pm_help: '도움말',
+    pm_policies: '회사 정책',
+    gm_share: '공유',
+    gm_pin: '고정',
+    gm_rename: '이름 변경',
+    gm_move: '프로젝트 이동',
+    gm_archive: '보관',
+    gm_unarchive: '보관 해제',
+    gm_move_up: '위로 이동',
+    gm_move_down: '아래로 이동',
+    gm_delete: '삭제',
+    gm_soon: '이 기능은 곧 제공됩니다.',
+    gm_archived_done: '보관함으로 이동됨',
+    gm_unarchived_done: '보관함에서 복원됨',
+    sec_archived: '보관함',
+    pm_account: '계정',
+    pm_switch: '계정 전환',
+    pm_appearance: '화면 표시',
+    pm_help_center: '고객 센터',
+    pm_current: '현재 계정',
+    info_ok: '확인',
+    info_profile_msg: '{name}({role})(으)로 로그인됨 — 전체 프로필 페이지는 곧 제공됩니다.',
+    info_help_msg: '도움이 필요하신가요? 관리자에게 문의하거나 프로젝트의 README / ARCHITECTURE.md를 참조하세요.',
+    info_policies_msg: 'KD Employment Co., Ltd — 내부 전용. 근로자 정보는 기밀입니다. 여권 또는 개인 정보를 회사 외부에 공유하지 마세요.',
+    info_addacct_msg: '다른 계정으로 전환하려면 로그아웃하시겠습니까? 로그인 페이지로 이동합니다.',
+    act_view_full: '상세 보기',
+    act_edit_full: '정보 수정',
+    act_del_full: '기록 삭제',
+    status_valid: '유효',
+    status_expiring: '만료 임박',
+    status_expired: '만료됨',
+    status_none: '데이터 없음',
+    fm_photo: '직원 사진',
+    fm_photo_upload: '사진 업로드',
+    fm_photo_remove: '제거',
+    doc_passport: '여권',
+    doc_id_card: '신분증',
+    doc_land: '토지 소유 증서',
+    doc_work_permit: '취업 허가증',
+    doc_other: '사본 및 첨부 파일',
+    fm_nationality: '국적',
+    fm_sex_m: '남성',
+    fm_sex_f: '여성',
+    vc_nationality: '국적',
+    vc_sex: '성별',
+    scan_q_dark: '너무 어두움 — 빛을 더 비추세요',
+    scan_q_bright: '너무 밝음 — 반사를 줄이세요',
+    scan_q_blur: '흐릿함 — 흔들리지 않게 잡으세요',
+    scan_q_aim: '여권 정보 페이지를 프레임 안에 맞추세요',
+    scan_q_ok: '좋음 — 읽는 중…',
+    scan_photo_done: '여권 사진을 캡처했습니다',
   }
 };
 
@@ -1143,17 +1279,22 @@ function applyTranslations() {
   document.querySelectorAll('[data-i18n-title]').forEach(el => {
     el.title = t(el.dataset.i18nTitle);
   });
-  // Bilingual labels (redesign): show ONE language only — Lao when 'lo', else English.
-  const useLo = currentLang === 'lo';
-  document.querySelectorAll('[data-en]').forEach(el => {
-    const en = el.getAttribute('data-en');
-    const lo = el.getAttribute('data-lo') || en;
-    el.textContent = useLo ? lo : en;
+  // Inline multilingual labels — pick the attribute matching the current
+  // language, falling back to English then Lao. Now covers all 4 languages
+  // (data-en/th/lo/ko and data-ph-en/th/lo/ko), not just Lao-or-English.
+  const _pickLangAttr = (el, prefix) => {
+    const order = [currentLang, 'en', 'lo'];
+    for (const L of order) {
+      const v = el.getAttribute('data-' + prefix + L);
+      if (v != null) return v;
+    }
+    return '';
+  };
+  document.querySelectorAll('[data-en],[data-th],[data-lo],[data-ko]').forEach(el => {
+    el.textContent = _pickLangAttr(el, '');
   });
-  document.querySelectorAll('[data-ph-en]').forEach(el => {
-    const en = el.getAttribute('data-ph-en');
-    const lo = el.getAttribute('data-ph-lo') || en;
-    el.placeholder = useLo ? lo : en;
+  document.querySelectorAll('[data-ph-en],[data-ph-th],[data-ph-lo],[data-ph-ko]').forEach(el => {
+    el.placeholder = _pickLangAttr(el, 'ph-');
   });
 
   // Update active lang button
@@ -1162,5 +1303,12 @@ function applyTranslations() {
   });
 }
 
-// Helper for JS-generated bilingual strings: bi('ລາວ','English') → one language.
-function bi(lo, en) { return (typeof currentLang !== 'undefined' && currentLang === 'lo') ? lo : en; }
+// Helper for JS-generated strings. Pass translations per language; picks the
+// current language, falling back to English then Lao. Backward compatible:
+// old bi(lo, en) calls still work (th/ko undefined → English fallback).
+function bi(lo, en, th, ko) {
+  const cur = (typeof currentLang !== 'undefined') ? currentLang : 'en';
+  const map = { lo: lo, en: en, th: th, ko: ko };
+  if (map[cur] != null) return map[cur];
+  return (en != null) ? en : lo;
+}
