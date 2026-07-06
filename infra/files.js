@@ -7,6 +7,7 @@ const fs     = require('node:fs');
 const path   = require('node:path');
 const crypto = require('node:crypto');
 const { UPLOADS_DIR } = require('./db');
+const r2     = require('./r2');
 
 const CATEGORY_DIR = {
   photo:    'employee-photos',
@@ -47,12 +48,15 @@ function saveDataUrl(value, category) {
   return '/uploads/' + dir + '/' + fname;
 }
 
-/** Best-effort delete of a stored file given its public path. */
+/** Best-effort delete of a stored file given its public path (local + R2). */
 function deleteStored(publicPath) {
   if (!isStoredPath(publicPath)) return;
   const rel = publicPath.replace(/^\/uploads\//, '');
   const full = path.join(UPLOADS_DIR, rel);
   if (full.startsWith(UPLOADS_DIR)) { try { fs.unlinkSync(full); } catch (e) {} }
+  // Also remove the offloaded copy in R2 (async, best-effort — a leftover remote
+  // object is only a reclaimable orphan, never data loss).
+  if (r2.isEnabled()) { r2.del(rel).catch(() => {}); }
 }
 
 /**

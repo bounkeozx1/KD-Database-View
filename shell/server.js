@@ -11,10 +11,12 @@ const fs   = require('node:fs');
 const path = require('node:path');
 const url  = require('node:url');
 
-const dbmod = require('../infra/db');
-const repo  = require('../infra/repo');
-const admin = require('../infra/admin');
-const ai    = require('../infra/ai');
+const dbmod   = require('../infra/db');
+const repo    = require('../infra/repo');
+const admin   = require('../infra/admin');
+const ai      = require('../infra/ai');
+const r2      = require('../infra/r2');
+const offload = require('../infra/offload');
 
 dbmod.init();   // auto-create DB + tables + default master data on first launch
 
@@ -53,7 +55,11 @@ function serveStatic(req, res, pathname) {
   if (!full.startsWith(ROOT)) return send(res, 403, 'Forbidden', 'text/plain');
   const isUpload = rel.startsWith('/uploads/');
   fs.stat(full, (err, st) => {
-    if (err || !st.isFile()) return send(res, 404, 'Not found', 'text/plain');
+    if (err || !st.isFile()) {
+      // Offloaded upload: the local copy was freed after mirroring to R2 — proxy it.
+      if (isUpload && r2.isEnabled()) return serveFromR2(req, res, rel);
+      return send(res, 404, 'Not found', 'text/plain');
+    }
     // Uploaded files have content-unique / versioned names (UUID or _v{n}), so they
     // never change once written → cache them hard. This is the single biggest win
     // for slow document/photo loading: the browser stops re-downloading every view.
@@ -70,6 +76,33 @@ function serveStatic(req, res, pathname) {
     });
     fs.createReadStream(full).pipe(res);
   });
+}
+
+/* ── Proxy an offloaded upload from R2 (bucket stays private) ── */
+async function serveFromR2(req, res, rel) {
+  const key = rel.replace(/^\/uploads\//, '');
+  try {
+    const obj = await r2.get(key);
+    if (!obj.ok || !obj.hasBody) return send(res, obj.status === 404 ? 404 : 502, 'Not found', 'text/plain');
+    // Offloaded files are content-addressed / versioned → cache hard, like local ones.
+    const etag = obj.etag || (obj.contentLength ? '"' + obj.contentLength + '"' : null);
+    if (etag && req.headers['if-none-match'] === etag) {
+      res.writeHead(304, { 'ETag': etag, 'Cache-Control': 'public, max-age=31536000, immutable' });
+      return res.end();
+    }
+    res.writeHead(200, {
+      'Content-Type': obj.contentType,
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      ...(obj.contentLength ? { 'Content-Length': obj.contentLength } : {}),
+      ...(etag ? { 'ETag': etag } : {}),
+    });
+    const stream = obj.stream();
+    stream.on('error', () => { try { res.destroy(); } catch (e) {} });
+    stream.pipe(res);
+  } catch (e) {
+    console.error('[R2 proxy]', key, e && e.message || e);
+    return send(res, 502, 'Upstream error', 'text/plain');
+  }
 }
 
 /* ── API ── */
@@ -175,6 +208,26 @@ async function handleApi(req, res, pathname) {
     if (seg[0] === 'admin') {
       if (method === 'POST' && seg[1] === 'backup')  return json(res, 200, { ok: true, file: admin.backup() });
       if (method === 'GET'  && seg[1] === 'backups') return json(res, 200, { ok: true, files: admin.listBackups() });
+      // Read-only disk-usage breakdown (db / uploads / backups + orphan + VACUUM estimate)
+      if (method === 'GET'  && seg[1] === 'storage') {
+        const stats = admin.storageStats();
+        return json(res, 200, { ok: true, stats, r2: { enabled: r2.isEnabled(), pending: r2.isEnabled() ? offload.pendingCount() : null } });
+      }
+      // Reclaim space (all non-destructive to live data). Body: { orphans, vacuum, pruneKeep }
+      if (method === 'POST' && seg[1] === 'cleanup') {
+        const before = admin.storageStats();
+        const result = {};
+        if (body.orphans !== false)              result.orphans = admin.cleanOrphans();
+        if (typeof body.pruneKeep === 'number')  result.backups = admin.pruneBackups(body.pruneKeep);
+        if (body.vacuum !== false)               result.db = admin.vacuum();
+        return json(res, 200, { ok: true, result, before, after: admin.storageStats() });
+      }
+      // Push the local upload backlog to R2 now (rather than waiting for the timer).
+      if (method === 'POST' && seg[1] === 'offload') {
+        if (!r2.isEnabled()) return json(res, 400, { ok: false, error: 'R2 not configured' });
+        const summary = await offload.sweepReferenced({ limit: body.limit || 0 });
+        return json(res, 200, { ok: true, summary, pending: offload.pendingCount() });
+      }
       if (method === 'POST' && seg[1] === 'restore') { admin.restore(body.file); return json(res, 200, { ok: true, data: repo.getBootstrap() }); }
       if (method === 'POST' && seg[1] === 'reset')   { admin.reset(); return json(res, 200, { ok: true, data: repo.getBootstrap() }); }
     }
@@ -197,7 +250,36 @@ server.listen(PORT, '0.0.0.0', () => {
   // open localhost: browsers can't connect to 0.0.0.0 (ERR_ADDRESS_INVALID on Windows).
   console.log('KD Database server  →  http://localhost:' + PORT);
   console.log('SQLite file         →  ' + dbmod.DB_PATH);
+  if (r2.isEnabled()) {
+    const t = r2.selfTestSigner();
+    console.log('R2 offload          →  ENABLED (bucket "' + r2.cfg().bucket + '")' + (t.ok ? '' : '  ⚠ SIGNER SELF-TEST FAILED'));
+  } else {
+    console.log('R2 offload          →  disabled (serving uploads from local disk). Set R2_* env vars to enable.');
+  }
 });
+
+// ── Background offload to R2 ───────────────────────────────────────
+// Mirror referenced upload files to R2 and free the local copy so the volume
+// stops filling. Runs in small batches; only deletes local after verifying the
+// remote copy. No-op when R2 is disabled. (One-time backlog can be pushed faster
+// with: node infra/scripts/migrate-uploads-to-r2.js)
+let _sweeping = false;
+async function offloadTick() {
+  if (_sweeping || !r2.isEnabled()) return;
+  _sweeping = true;
+  try {
+    const s = await offload.sweepReferenced({ limit: 40 });
+    if (s && (s.uploaded || s.already)) {
+      console.log(`Offload → R2: ${s.uploaded} uploaded, ${s.already} verified, freed ${(s.freedBytes/1048576).toFixed(1)}MB` + (s.errors ? `, ${s.errors} errors` : ''));
+    }
+  } catch (e) { console.error('[offload] tick failed:', e && e.message || e); }
+  finally { _sweeping = false; }
+}
+if (r2.isEnabled()) {
+  setTimeout(offloadTick, 20 * 1000).unref();            // shortly after boot
+  const _off = setInterval(offloadTick, 5 * 60 * 1000);  // then every 5 min
+  if (_off.unref) _off.unref();
+}
 
 // Periodically fold the WAL back into kd.db so the main file never lags far
 // behind and the WAL can't grow without bound during a long-running session.

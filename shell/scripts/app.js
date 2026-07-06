@@ -646,6 +646,7 @@ function _groupRowHtml(g, s, totalGroups) {
 
 function renderSidebar() {
   applySidebarPrefs();   // honour Customize-sidebar visibility choices
+  updateSelectedBadge();
   const allGroups = DB.getGroups();
   const groups = _orderGroups(allGroups.filter(g => !g.archived));   // active list, manual order
   const stats  = DB.getAllStats();
@@ -832,6 +833,7 @@ function navTo(view, el) {
 
   document.querySelectorAll('.sb-nav-item').forEach(b => b.classList.remove('active'));
   if (el) el.classList.add('active');
+  _overviewMode = '';
 
   const dashWelcome = document.getElementById('dashboard-welcome');
   const groupView   = document.getElementById('group-view');
@@ -861,14 +863,21 @@ function navTo(view, el) {
     if (groupsOv) groupsOv.style.display = '';
     renderGroupsOverview();
   } else if (view === 'alerts') {
-    // Expiring passports across ALL groups
+    // Alerts = groups first (only those with expiring passports), then drill in
+    _overviewMode = 'alerts';
     quickFilter = 'alerts';
     activeGroupId = '';
-    if (groupView) groupView.style.display = '';
-    const t1 = document.getElementById('page-title-group'); if (t1) t1.textContent = '⚠ ' + t('passport_alert');
-    const t2 = document.getElementById('page-sub');         if (t2) t2.textContent = (t('all_groups') || 'All groups');
-    rebuildFilters(); applyFilters();
+    if (groupsOv) groupsOv.style.display = '';
+    renderGroupsOverview();
+  } else if (view === 'selected') {
+    // Selection = groups first, then drill into a group's selected members
+    _overviewMode = 'selected';
+    quickFilter = 'selected';
+    activeGroupId = '';
+    if (groupsOv) groupsOv.style.display = '';
+    renderGroupsOverview();
   }
+  updateSelectedBadge();
   document.querySelector('.main-content')?.scrollTo({ top: 0, behavior: 'smooth' });
   document.getElementById('sidebar').classList.remove('open');
 }
@@ -900,6 +909,40 @@ function toggleMoreMenu(event) {
 }
 function closeMoreMenu() { document.getElementById('sb-more')?.classList.remove('open'); }
 
+// ── GRADE (applicant grade A / B+ / B / C) ────────────────────────
+const GRADE_COLORS = { A:'#16a34a', 'B+':'#0891b2', B:'#2563eb', C:'#d97706' };
+function gradeBadge(grade) {
+  if (!grade) return '';
+  return '<span class="grade-badge" style="background:' + (GRADE_COLORS[grade] || '#6b7280') + '">' + esc(grade) + '</span>';
+}
+
+// ── SELECTION (shortlist of workers chosen "to go") ───────────────
+// Stored as a list of uids in app_settings (no schema change; travels w/ backup).
+function getSelectedUids() { const v = DB.getSetting('selected_uids', []); return Array.isArray(v) ? v : []; }
+function isSelected(uid)   { return getSelectedUids().indexOf(uid) >= 0; }
+function _selStar(uid) {
+  if (!isAdmin()) return '';
+  return '<button class="sel-star' + (isSelected(uid) ? ' on' : '') + '" onclick="toggleSelected(\'' + esc(uid) + '\',event)" ' +
+         'title="' + esc(bi('ຄັດເລືອກ','Select','คัดเลือก','선택')) + '">&#9733;</button>';
+}
+function toggleSelected(uid, ev) {
+  if (ev) ev.stopPropagation();
+  if (!isAdmin()) return;
+  let s = getSelectedUids();
+  s = isSelected(uid) ? s.filter(x => x !== uid) : s.concat([uid]);
+  DB.setSetting('selected_uids', s);
+  updateSelectedBadge();
+  if (quickFilter === 'selected') applyFilters();   // selected board: drop the deselected
+  else renderTable();                               // reflect star state in the list
+  const btn = document.getElementById('vm-select-btn');
+  if (btn) btn.classList.toggle('on', isSelected(uid));
+}
+function updateSelectedBadge() {
+  const n = getSelectedUids().length;
+  const b = document.getElementById('sb-selected-badge');
+  if (b) { b.textContent = n; b.style.display = n ? '' : 'none'; }
+}
+
 // ── CUSTOMIZE SIDEBAR (choose which items show) ───────────────────
 const SIDEBAR_ITEMS = [
   { key:'create',    sel:'.sb-create',         lo:'ສ້າງ', en:'Create', th:'สร้าง', ko:'만들기',
@@ -910,6 +953,8 @@ const SIDEBAR_ITEMS = [
     icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>' },
   { key:'alerts',    sel:'#nav-alerts',        lo:'ພາສປອດໃກ້ໝົດ', en:'Alerts', th:'พาสปอร์ตใกล้หมด', ko:'여권 만료 임박',
     icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>' },
+  { key:'selected',  sel:'#nav-selected',      lo:'ຄັດເລືອກ', en:'Selected', th:'คัดเลือก', ko:'선택됨',
+    icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>' },
   { key:'projects',  sel:'#sb-groups-section', lo:'ໂປຣເຈັກ', en:'Projects', th:'โปรเจกต์', ko:'프로젝트',
     icon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>' },
 ];
@@ -1515,7 +1560,7 @@ function renderDashCharts() {
   const ws = DB.getWorkers(activeGroupId);
 
   _renderPieChart('chart-grade', 'chart-grade-legend', _countBy(ws, 'grade'),
-    { A:'#16a34a', B:'#2563eb', C:'#d97706', D:'#dc2626', '':'#9ca3af' });
+    Object.assign({ '':'#9ca3af' }, GRADE_COLORS));
 
   _renderPieChart('chart-visa', 'chart-visa-legend', _countBy(ws, 'visa_status'),
     { approved:'#16a34a', applied:'#2563eb', not_started:'#9ca3af', rejected:'#dc2626', '':'#d1d5db' });
@@ -1578,6 +1623,8 @@ function _renderPieChart(svgId, legendId, counts, colors) {
 // ── GROUP SWITCH ──────────────────────────────────────────────────
 function switchGroup(id) {
   activeGroupId = id;
+  quickFilter = '';            // a normal group open shows ALL members (no leaked alerts/selected filter)
+  _overviewMode = '';
   expandedGroups.add(id);
   highlightedWorkerUid = null;
   document.getElementById('search').value = '';
@@ -1622,36 +1669,94 @@ function _ensureGroupFor(uid) {
 }
 
 // ── GROUPS OVERVIEW (the "ກຸ່ມ" landing — pick a group, then see members) ──
+// _overviewMode = '' (normal) | 'selected' | 'alerts'. The Selected and Alerts
+// views show groups FIRST (only those that match), then drill into one group.
+let _overviewMode = '';
+const _isExpiring = w => ['expiry-warn','expiry-near','expiry-expired'].includes(expiryClass(w.passport_expiry));
+
+// How many workers in a group match the given overview mode.
+function _groupMetric(g, mode) {
+  const ws = g.workers || [];
+  if (mode === 'selected') { const s = new Set(getSelectedUids()); return ws.filter(w => s.has(w.uid)).length; }
+  if (mode === 'alerts')   return ws.filter(_isExpiring).length;
+  return ws.length;
+}
+
+function _goCard(g, count, mode) {
+  const ws    = g.workers || [];
+  const short = ((g.name || '?').replace(/[^A-Za-z0-9]/g, '').substring(0, 2).toUpperCase()) || 'KD';
+  const route = g.route || g.departure || '';
+  const onclick = mode
+    ? 'openOverviewGroup(\'' + mode + '\',\'' + esc(g.id) + '\')'
+    : 'openGroup(\'' + esc(g.id) + '\')';
+  let stats;
+  if (mode === 'selected') {
+    stats = '<div class="go-stat go-sel"><span class="n">' + count + '</span><span class="l">' + esc(bi('ຄັດເລືອກ','Selected','คัดเลือก','선택')) + '</span></div>' +
+            '<div class="go-stat"><span class="n">' + ws.length + '</span><span class="l">' + (t('dz_workers_suffix') || 'ຄົນ') + '</span></div>';
+  } else if (mode === 'alerts') {
+    stats = '<div class="go-stat go-alert"><span class="n">' + count + '</span><span class="l">' + (t('dz_near') || 'ໃກ້ໝົດ') + '</span></div>' +
+            '<div class="go-stat"><span class="n">' + ws.length + '</span><span class="l">' + (t('dz_workers_suffix') || 'ຄົນ') + '</span></div>';
+  } else {
+    const expiring = ws.filter(_isExpiring).length;
+    stats = '<div class="go-stat"><span class="n">' + ws.length + '</span><span class="l">' + (t('dz_workers_suffix') || 'ຄົນ') + '</span></div>' +
+            '<div class="go-stat' + (expiring ? ' go-alert' : '') + '"><span class="n">' + expiring + '</span><span class="l">' + (t('dz_near') || 'ໃກ້ໝົດ') + '</span></div>';
+  }
+  return '<div class="go-card" onclick="' + onclick + '">' +
+    '<div class="go-card-top">' +
+      '<div class="go-ic">' + esc(short) + '</div>' +
+      '<div style="min-width:0">' +
+        '<div class="go-name">' + esc(g.name || '—') + '</div>' +
+        (route ? '<div class="go-route">' + esc(route) + '</div>' : '') +
+      '</div>' +
+      '<svg class="go-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>' +
+    '</div>' +
+    '<div class="go-stats">' + stats + '</div>' +
+  '</div>';
+}
+
 function renderGroupsOverview() {
   const el = document.getElementById('go-grid');
   if (!el) return;
+  const titleEl = document.getElementById('go-title');
+  const subEl   = document.getElementById('go-sub');
+  if (_overviewMode === 'selected') {
+    if (titleEl) titleEl.textContent = '★ ' + bi('ຄັດເລືອກ','Selected','คัดเลือก','선택됨');
+    if (subEl)   subEl.textContent   = bi('ກຸ່ມທີ່ມີຄົນຖືກຄັດເລືອກ — ກົດເພື່ອເບິ່ງ','Groups with selected workers — tap to view','กลุ่มที่มีคนถูกคัดเลือก — แตะเพื่อดู','선택된 근로자가 있는 그룹 — 탭하여 보기');
+  } else if (_overviewMode === 'alerts') {
+    if (titleEl) titleEl.textContent = '⚠ ' + t('passport_alert');
+    if (subEl)   subEl.textContent   = bi('ກຸ່ມທີ່ມີພາສປອດໃກ້ໝົດ — ກົດເພື່ອເບິ່ງ','Groups with expiring passports — tap to view','กลุ่มที่มีพาสปอร์ตใกล้หมด — แตะเพื่อดู','여권 만료 임박 그룹 — 탭하여 보기');
+  } else {
+    if (titleEl) titleEl.textContent = bi(titleEl.dataset.lo, titleEl.dataset.en, titleEl.dataset.th, titleEl.dataset.ko);
+    if (subEl)   subEl.textContent   = bi(subEl.dataset.lo, subEl.dataset.en, subEl.dataset.th, subEl.dataset.ko);
+  }
+
   const groups = _orderGroups(DB.getGroups().filter(g => !g.archived));
-  if (!groups.length) {
-    el.innerHTML = '<div class="go-empty">' + (t('dz_no_projects') || 'ຍັງບໍ່ມີກຸ່ມ') + '</div>';
+  if (_overviewMode) {
+    const withMetric = groups.map(g => ({ g, n: _groupMetric(g, _overviewMode) })).filter(x => x.n > 0);
+    const empty = _overviewMode === 'alerts'
+      ? bi('ບໍ່ມີພາສປອດໃກ້ໝົດ','No expiring passports','ไม่มีพาสปอร์ตใกล้หมด','만료 임박 여권 없음')
+      : bi('ຍັງບໍ່ມີຄົນຖືກຄັດເລືອກ','No one selected yet','ยังไม่มีคนถูกคัดเลือก','아직 선택된 사람이 없습니다');
+    el.innerHTML = withMetric.length
+      ? withMetric.map(x => _goCard(x.g, x.n, _overviewMode)).join('')
+      : '<div class="go-empty">' + esc(empty) + '</div>';
     return;
   }
-  el.innerHTML = groups.map(g => {
-    const ws    = g.workers || [];
-    const cnt   = ws.length;
-    let expiring = 0;
-    ws.forEach(w => { const c = expiryClass(w.passport_expiry); if (c === 'expiry-expired' || c === 'expiry-warn' || c === 'expiry-near') expiring++; });
-    const short = ((g.name || '?').replace(/[^A-Za-z0-9]/g, '').substring(0, 2).toUpperCase()) || 'KD';
-    const route = g.route || g.departure || '';
-    return '<div class="go-card" onclick="openGroup(\'' + esc(g.id) + '\')">' +
-      '<div class="go-card-top">' +
-        '<div class="go-ic">' + esc(short) + '</div>' +
-        '<div style="min-width:0">' +
-          '<div class="go-name">' + esc(g.name || '—') + '</div>' +
-          (route ? '<div class="go-route">' + esc(route) + '</div>' : '') +
-        '</div>' +
-        '<svg class="go-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>' +
-      '</div>' +
-      '<div class="go-stats">' +
-        '<div class="go-stat"><span class="n">' + cnt + '</span><span class="l">' + (t('dz_workers_suffix') || 'ຄົນ') + '</span></div>' +
-        '<div class="go-stat' + (expiring ? ' go-alert' : '') + '"><span class="n">' + expiring + '</span><span class="l">' + (t('dz_near') || 'ໃກ້ໝົດ') + '</span></div>' +
-      '</div>' +
-    '</div>';
-  }).join('');
+  el.innerHTML = groups.length
+    ? groups.map(g => _goCard(g, null, '')).join('')
+    : '<div class="go-empty">' + (t('dz_no_projects') || 'ຍັງບໍ່ມີກຸ່ມ') + '</div>';
+}
+
+// Open a group from the Selected/Alerts overview → show only its matching members.
+function openOverviewGroup(mode, id) {
+  switchGroup(id);            // resets quickFilter and shows the group
+  quickFilter = mode;        // 'selected' | 'alerts'
+  applyFilters();             // narrow to the matching members
+  document.querySelectorAll('.sb-nav-item').forEach(b => b.classList.remove('active'));
+  document.getElementById(mode === 'alerts' ? 'nav-alerts' : 'nav-selected')?.classList.add('active');
+  const g    = DB.getGroup(id);
+  const icon = mode === 'alerts' ? '⚠ ' : '★ ';
+  const t1   = document.getElementById('page-title-group'); if (t1) t1.textContent = icon + (g ? (g.name || '') : '');
+  const t2   = document.getElementById('page-sub');         if (t2) t2.textContent = mode === 'alerts' ? t('passport_alert') : bi('ຄັດເລືອກ','Selected','คัดเลือก','선택됨');
 }
 
 // ── Sidebar search → mirror into toolbar search + filter ──────────
@@ -1757,6 +1862,7 @@ function applyFilters() {
   tableFiltered = ws.filter(w => {
     if (quickFilter === 'alerts' &&
         !['expiry-warn','expiry-near','expiry-expired'].includes(expiryClass(w.passport_expiry))) return false;
+    if (quickFilter === 'selected' && !isSelected(w.uid)) return false;
     if (fe && w.employer_code !== fe) return false;
     if (fs && w.group_supervisor !== fs) return false;
     if (fb && w.blood !== fb) return false;
@@ -1845,7 +1951,7 @@ function renderTable() {
       : '<span class="worker-id no-id">No ID</span>';
     return '<tr id="row-' + w.uid + '" onclick="openView(\'' + w.uid + '\')">' +
       '<td>' + idHtml + '</td>' +
-      '<td><div class="name-cell">' + personPhoto(w,'avatar-sm') + '<span style="font-weight:700">' + esc(w.en_name) + '</span></div></td>' +
+      '<td><div class="name-cell">' + personPhoto(w,'avatar-sm') + '<span style="font-weight:700">' + esc(w.en_name) + '</span>' + gradeBadge(w.grade) + '</div></td>' +
       '<td style="color:var(--text-muted);font-size:0.8rem">' + esc(w.lo_name) + '</td>' +
       '<td>' + empBadge(w.employer_code) + '</td>' +
       '<td>' + esc(w.group_supervisor) + '</td>' +
@@ -1856,6 +1962,7 @@ function renderTable() {
       '<td class="' + ec + '">' + esc(w.passport_expiry) + '</td>' +
       '<td>' + esc(w.size) + '</td>' +
       '<td>' +
+        _selStar(w.uid) +
         '<button class="kebab" onclick="openRowMenu(\'' + w.uid + '\',event)" title="' + esc(t('col_actions')) + '">' +
           '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>' +
         '</button>' +
@@ -1897,6 +2004,7 @@ function renderCards(g) {
   grid.className = 'cards-grid kd-grid';
   grid.innerHTML = tableFiltered.map(w =>
     '<div class="idc-cell" onclick="openView(\'' + esc(w.uid) + '\')">' +
+      _selStar(w.uid) +
       _completenessChip(w) +
       _renderKdCard(w, g, false, gc) +
     '</div>'
@@ -2226,6 +2334,10 @@ function _renderDetailTopbar(w, uid) {
     h += '<button class="vm-action-btn vm-nav-btn" onclick="_navWorker(1)" title="'+esc(t('nav_next')||'ถัดไป (→)')+'"'+nextDis+'>&#8250;</button>';
     h += '<span class="vm-nav-count">'+(ni+1)+'/'+_navUids.length+'</span>';
   }
+  if (isAdmin()) {
+    const on = isSelected(uid);
+    h += '<button class="vm-action-btn vm-select' + (on ? ' on' : '') + '" id="vm-select-btn" onclick="toggleSelected(\''+esc(uid)+'\')" title="'+esc(on?bi('ເອົາອອກຈາກຄັດເລືອກ','Remove from selected','เอาออกจากคัดเลือก','선택 해제'):bi('ຄັດເລືອກ (ຈະໄປ)','Select (to go)','คัดเลือก (จะไป)','선택 (출국)'))+'">&#9733; '+esc(bi('ຄັດເລືອກ','Select','คัดเลือก','선택'))+'</button>';
+  }
   h += '<button class="vm-action-btn" onclick="zoomCard(\''+esc(uid)+'\')" title="'+esc(t('vd_zoom'))+'">&#10530;</button>';
   h += '<button class="vm-action-btn" onclick="openExportDialog(\'worker\',\''+esc(uid)+'\')">&#11015; Export</button>';
   if (isAdmin()) {
@@ -2313,8 +2425,7 @@ function openView(uid) {
   const age   = calcAge(w.dob);
   const idNum = w.worker_id ? w.worker_id.split('-').pop() : '--';
 
-  const gradeColors = { A:'#16a34a', B:'#2563eb', C:'#d97706', D:'#dc2626' };
-  const gradeColor  = gradeColors[w.grade] || '#6b7280';
+  const gradeColor  = GRADE_COLORS[w.grade] || '#6b7280';
   const gradeChip   = w.grade
     ? '<span class="vm-grade-chip" style="background:' + gradeColor + '">Grade ' + esc(w.grade) + '</span>'
     : '';
@@ -2385,6 +2496,98 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
   _navWorker(e.key === 'ArrowRight' ? 1 : -1);
 });
+
+// ── GLOBAL KEYBOARD SHORTCUTS ─────────────────────────────────────
+function _overlayOpen(id) { return !!document.getElementById(id)?.classList.contains('open'); }
+function _topOpenOverlay() {
+  // Prefer the most-recently-opened overlay still open → true layer order, so
+  // opening Form then Photo and pressing Esc closes the Photo first.
+  for (let i = _overlayStack.length - 1; i >= 0; i--) {
+    const el = document.getElementById(_overlayStack[i]);
+    if (el && el.classList.contains('open')) return el;
+  }
+  // Fallback (overlay opened without openOverlay): highest z-index, ties → later DOM.
+  const open = [...document.querySelectorAll('.overlay.open')];
+  if (!open.length) return null;
+  return open.reduce((top, el) =>
+    (parseInt(getComputedStyle(el).zIndex, 10) || 0) >= (parseInt(getComputedStyle(top).zIndex, 10) || 0) ? el : top);
+}
+function copyWorkerInfo(uid) {
+  _ensureGroupFor(uid);
+  const g = DB.getGroup(activeGroupId); const w = g && g.workers.find(x => x.uid === uid);
+  if (!w) return;
+  const text = [w.worker_id, w.en_name, w.lo_name].filter(Boolean).join('  •  ');
+  if (!text) return;
+  const done = () => toast(bi('ຄັດລອກແລ້ວ','Copied','คัดลอกแล้ว','복사됨') + ': ' + text, 'ok');
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(() => {});
+  else { const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch (e) {} ta.remove(); }
+}
+document.addEventListener('keydown', e => {
+  const tag    = (e.target && e.target.tagName || '').toLowerCase();
+  const typing = tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target && e.target.isContentEditable);
+
+  // ?  → keyboard shortcuts cheatsheet (when not typing)
+  if (!typing && e.key === '?') { e.preventDefault(); toggleShortcuts(); return; }
+
+  // Ctrl/Cmd + Enter → save the open form
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    if (_overlayOpen('form-overlay'))  { e.preventDefault(); saveWorker(); return; }
+    if (_overlayOpen('group-overlay')) { e.preventDefault(); saveGroup();  return; }
+  }
+
+  // Enter → confirm the small confirm/info dialog (never auto-submits big forms)
+  if (e.key === 'Enter' && !e.shiftKey && tag !== 'textarea' && _overlayOpen('confirm-overlay')) {
+    const ok = document.getElementById('cm-confirm-btn');
+    if (ok && ok.offsetParent !== null) { e.preventDefault(); ok.click(); return; }
+  }
+
+  // Ctrl/Cmd + C → copy the open worker's ID + name (unless typing or selecting text)
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && !typing && _currentViewUid) {
+    const hasSel = window.getSelection && String(window.getSelection()).trim();
+    if (!hasSel) { e.preventDefault(); copyWorkerInfo(_currentViewUid); return; }
+  }
+
+  // Esc → close menus, then the top-most overlay (the worker form auto-saves)
+  if (e.key === 'Escape') {
+    if (_overlayOpen('shortcuts-overlay')) { closeOverlay('shortcuts-overlay'); return; }
+    const rm = document.getElementById('row-menu');
+    if (rm && rm.classList.contains('open')) { closeRowMenu(); return; }
+    if (document.getElementById('sb-more')?.classList.contains('open')) { closeMoreMenu(); return; }
+    const top = _topOpenOverlay();
+    if (top) {
+      e.preventDefault();
+      if (top.id === 'form-overlay') autoSaveWorkerForm();
+      else closeOverlay(top.id);
+    }
+  }
+});
+
+// ── Keyboard shortcuts cheatsheet ─────────────────────────────────
+function _shortcutRows() {
+  const mod = (navigator.platform || '').toLowerCase().indexOf('mac') >= 0 ? '⌘' : 'Ctrl';
+  return [
+    ['Esc',          bi('ປິດໜ້າຕ່າງ (ຟອມບັນທຶກອັດຕະໂນມັດ)','Close dialog (form auto-saves)','ปิดหน้าต่าง (ฟอร์มบันทึกอัตโนมัติ)','창 닫기 (양식 자동 저장)')],
+    ['Enter',        bi('ຢືນຢັນ (ກ່ອງເລັກ)','Confirm (small dialog)','ยืนยัน (กล่องเล็ก)','확인 (작은 대화상자)')],
+    [mod + ' + Enter', bi('ບັນທຶກຟອມ','Save form','บันทึกฟอร์ม','양식 저장')],
+    [mod + ' + C',   bi('ຄັດລອກ Worker ID / ຊື່','Copy Worker ID / name','คัดลอก Worker ID / ชื่อ','근로자 ID·이름 복사')],
+    [mod + ' + V',   bi('ວາງຮູບ (ຊ່ອງເອກະສານ)','Paste image (doc slot)','วางรูป (ช่องเอกสาร)','이미지 붙여넣기 (문서)')],
+    [mod + ' + K',   bi('ຄົ້ນຫາ','Search','ค้นหา','검색')],
+    [mod + ' + ,',   bi('ຕັ້ງຄ່າ','Settings','ตั้งค่า','설정')],
+    ['← / →',        bi('ຄົນກ່ອນໜ້າ / ຖັດໄປ','Prev / next worker','คนก่อนหน้า / ถัดไป','이전 / 다음 근로자')],
+    ['?',            bi('ສະແດງລາຍການນີ້','Show this list','แสดงรายการนี้','이 목록 표시')],
+  ];
+}
+function renderShortcuts() {
+  const el = document.getElementById('shortcuts-body');
+  if (!el) return;
+  el.innerHTML = _shortcutRows().map(([k, d]) =>
+    '<div class="kbd-row"><span class="kbd-keys">' +
+      k.split(' + ').map(p => '<kbd>' + esc(p) + '</kbd>').join('<i>+</i>') +
+    '</span><span class="kbd-desc">' + esc(d) + '</span></div>'
+  ).join('');
+}
+function openShortcuts()   { renderShortcuts(); openOverlay('shortcuts-overlay'); }
+function toggleShortcuts() { _overlayOpen('shortcuts-overlay') ? closeOverlay('shortcuts-overlay') : openShortcuts(); }
 
 function _triggerPhotoEdit(uid) {
   const inp = document.getElementById('photo-edit-input');
@@ -3210,6 +3413,7 @@ function removeFormDoc(i) {
 // ── WORKER FORM ───────────────────────────────────────────────────
 function openWorkerForm(editUid) {
   if (!isAdmin()) return;
+  if (editUid) _ensureGroupFor(editUid);   // point activeGroupId at the worker's group (cross-group views)
   populateCityDropdowns();
   const fids = ['worker-id','employer-code','supervisor','en-name','lo-name',
                 'province','district','village','nationality','sex','blood','hand','weight','height','size','couple',
@@ -3352,11 +3556,183 @@ function regenWorkerId(force) {
   if (force) _widManual = false;
   checkWorkerIdDup(idEl.value);
 }
-function onWorkerIdInput(v) { _widManual = true; checkWorkerIdDup(v); }
+function onWorkerIdInput(el) {
+  if (typeof el === 'string') { _widManual = true; checkWorkerIdDup(el); return; }   // legacy callers
+  _applyLiveFormat(el, liveFormatWorkerId);
+  _widManual = true;
+  checkWorkerIdDup(el.value);
+}
+function onPhoneInput(el) { if (el) _applyLiveFormat(el, liveFormatPhone); }
+
+// ── FORMAT NORMALISERS (Worker ID + phone) ────────────────────────
+// Canonical Worker ID = CODE-YY-NNN (dashes, 3-digit sequence). Accepts any
+// separator the user types (":", spaces, none) and reformats. Leaves anything
+// that doesn't fit the pattern untouched so odd IDs aren't mangled.
+function normalizeWorkerId(raw) {
+  const s = String(raw || '').trim().toUpperCase();
+  if (!s) return '';
+  const m = s.match(/^([A-Z]+)[\s:_.\-]*(\d{2})[\s:_.\-]*(\d{1,})$/);
+  if (m) return m[1] + '-' + m[2] + '-' + m[3].padStart(3, '0');
+  return s;
+}
+function normalizeWorkerIdField() {
+  const el = document.getElementById('f-worker-id');
+  if (!el) return;
+  const norm = normalizeWorkerId(el.value);
+  if (norm !== el.value) el.value = norm;
+  checkWorkerIdDup(el.value);
+}
+
+// Canonical phone = 020-XXX-XXX-XX (3-3-3-2) for 11-digit Lao numbers.
+// Other lengths are left as the user typed them (no wrong grouping).
+function normalizePhone(raw) {
+  const s = String(raw || '').trim();
+  const digits = s.replace(/\D/g, '');
+  if (digits.length === 11) return digits.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1-$2-$3-$4');
+  return s;
+}
+function normalizePhoneField(id) {
+  const el = document.getElementById(id);
+  if (el) el.value = normalizePhone(el.value);
+}
+
+// ── LIVE (as-you-type) formatting — inserts dashes while typing and keeps the
+// caret in the right spot by counting alphanumerics before it. ─────────────
+function _applyLiveFormat(el, fmt) {
+  if (!el) return;
+  const sig = el.value.slice(0, el.selectionStart || 0).replace(/[^0-9A-Za-z]/g, '').length;
+  const formatted = fmt(el.value);
+  if (formatted === el.value) return;
+  el.value = formatted;
+  let pos = 0, count = 0;
+  while (pos < formatted.length && count < sig) {
+    if (/[0-9A-Za-z]/.test(formatted[pos])) count++;
+    pos++;
+  }
+  try { el.setSelectionRange(pos, pos); } catch (e) {}
+}
+// Worker ID while typing: CODE-YY-SEQ (no zero-padding yet — blur pads to 3).
+function liveFormatWorkerId(raw) {
+  const s = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const m = s.match(/^([A-Z]*)(\d{0,2})(\d*)$/);
+  if (!m || !m[1]) return s;                 // no letter prefix yet → leave digits
+  let out = m[1];
+  if (m[2]) out += '-' + m[2];
+  if (m[3]) out += '-' + m[3];
+  return out;
+}
+// Phone while typing: 020-XXX-XXX-XX (3-3-3-2); extra digits append raw.
+function liveFormatPhone(raw) {
+  const d = String(raw || '').replace(/\D/g, '');
+  if (!d) return '';
+  let out = d.slice(0, 3);
+  if (d.length > 3) out += '-' + d.slice(3, 6);
+  if (d.length > 6) out += '-' + d.slice(6, 9);
+  if (d.length > 9) out += '-' + d.slice(9, 11);
+  if (d.length > 11) out += d.slice(11);
+  return out;
+}
+
+// ── Karaoke-style romanization (Lao + Thai → Latin), offline & approximate ──
+// Drops tone marks, re-orders pre-posed vowels (เ/แ/ເ/ແ…) after their
+// consonant, then maps phonetically. Not linguistically exact — readable and
+// editable. Latin/other input is returned unchanged.
+const romanizePlace = (() => {
+  const cons = {
+    // Thai consonants
+    'ก':'k','ข':'kh','ฃ':'kh','ค':'kh','ฅ':'kh','ฆ':'kh','ง':'ng','จ':'ch','ฉ':'ch','ช':'ch','ซ':'s','ฌ':'ch',
+    'ญ':'y','ฎ':'d','ฏ':'t','ฐ':'th','ฑ':'th','ฒ':'th','ณ':'n','ด':'d','ต':'t','ถ':'th','ท':'th','ธ':'th','น':'n',
+    'บ':'b','ป':'p','ผ':'ph','ฝ':'f','พ':'ph','ฟ':'f','ภ':'ph','ม':'m','ย':'y','ร':'r','ล':'l','ว':'w','ศ':'s',
+    'ษ':'s','ส':'s','ห':'h','ฬ':'l','ฮ':'h',
+    // Lao consonants
+    'ກ':'k','ຂ':'kh','ຄ':'kh','ງ':'ng','ຈ':'ch','ສ':'s','ຊ':'s','ຍ':'ny','ດ':'d','ຕ':'t','ຖ':'th','ທ':'th',
+    'ນ':'n','ບ':'b','ປ':'p','ຜ':'ph','ຝ':'f','ພ':'ph','ຟ':'f','ມ':'m','ຢ':'y','ຣ':'r','ລ':'l','ວ':'v','ຫ':'h',
+    'ຮ':'h','ໜ':'n','ໝ':'m',
+  };
+  const vow = {
+    // Thai vowels (อ acts as the 'o' vowel between consonants)
+    'ะ':'a','ั':'a','า':'a','ๅ':'a','ิ':'i','ี':'i','ึ':'ue','ื':'ue','ุ':'u','ู':'u','ฤ':'rue','ฦ':'lue','ำ':'am',
+    'อ':'o','เ':'e','แ':'ae','โ':'o','ใ':'ai','ไ':'ai','ๆ':'',
+    // Lao vowels (ອ acts as 'o')
+    'ະ':'a','ັ':'a','າ':'a','ິ':'i','ີ':'i','ຶ':'ue','ື':'ue','ຸ':'u','ູ':'u','ໍ':'o','ົ':'o','ຳ':'am','ຽ':'ia',
+    'ອ':'o','ເ':'e','ແ':'ae','ໂ':'o','ໃ':'ai','ໄ':'ai',
+  };
+  const drop = /[็่้๊๋์ํ๎່້໊໋໌຺ຼ]/g;  // tone/silent/ligature marks
+  const consClass = '[' + Object.keys(cons).join('') + ']';
+  const reorder  = new RegExp('([เแโใไເແໂໃໄ])(' + consClass + ')', 'g');
+  const silentH  = new RegExp('[หຫ](?=' + consClass + ')', 'g');   // leading ห/ຫ before a consonant is silent
+  function one(tok) {
+    let s = tok.replace(/ຫຼ/g, 'ລ')         // Lao lo-ligature → l
+             .replace(drop, '')              // strip tones
+             .replace(reorder, '$2$1')       // move pre-posed vowels after their consonant
+             .replace(silentH, '');          // drop silent leading h
+    let out = '';
+    for (const ch of s) {
+      if (cons[ch] !== undefined)      out += cons[ch];
+      else if (vow[ch] !== undefined)  out += vow[ch];
+      else if (/[A-Za-z0-9]/.test(ch)) out += ch;             // keep existing Latin/digits
+    }
+    return out ? out.charAt(0).toUpperCase() + out.slice(1) : out;
+  }
+  return function (text) {
+    if (!text) return '';
+    if (!/[฀-໿]/.test(text)) return text;            // no Thai/Lao → leave as-is
+    return text.split(/(\s+)/).map(t => /^\s+$/.test(t) ? ' ' : one(t)).join('').trim();
+  };
+})();
+
+// Romanize a place field on blur (only if it contains Thai/Lao script).
+function romanizeAddrField(id) {
+  const el = document.getElementById(id);
+  if (el) el.value = romanizePlace(el.value);
+}
+// Dictionary item: auto-fill the English name from the Lao name if EN is empty.
+function locAutofillEn(loEl) {
+  const en = document.getElementById('locdict-item-en');
+  if (en && !en.value.trim() && loEl && loEl.value.trim()) en.value = romanizePlace(loEl.value);
+}
+
+// Admin: reformat EVERY existing record's Worker ID + phone numbers to the
+// canonical format. Backs up the database first so the change is reversible.
+function formatAllRecords() {
+  if (!isAdmin()) return;
+  showConfirm(
+    bi('ຈັດຮູບແບບຂໍ້ມູນທັງໝົດ?','Reformat all records?','จัดรูปแบบข้อมูลทั้งหมด?','모든 레코드를 정리할까요?'),
+    bi('ຈະສຳຮອງຖານຂໍ້ມູນກ່ອນ ແລ້ວຈັດ Worker ID + ເບີໂທ ຂອງທຸກຄົນໃຫ້ເປັນຮູບແບບມາດຕະຖານ (CODE-YY-NNN, 020-XXX-XXX-XX).',
+       'Backs up the database first, then normalizes everyone\'s Worker ID + phone numbers to the standard format (CODE-YY-NNN, 020-XXX-XXX-XX).',
+       'จะสำรองฐานข้อมูลก่อน แล้วจัด Worker ID + เบอร์โทรของทุกคนให้เป็นรูปแบบมาตรฐาน (CODE-YY-NNN, 020-XXX-XXX-XX)',
+       '먼저 데이터베이스를 백업한 뒤 모든 근로자 ID·전화번호를 표준 형식으로 정리합니다 (CODE-YY-NNN, 020-XXX-XXX-XX).'),
+    async () => {
+      try { await DB.backup(); } catch (e) { /* backup is best-effort; continue */ }
+      let n = 0;
+      DB.getGroups().forEach(g => {
+        (g.workers || []).forEach(w => {
+          const patch = {};
+          if (w.worker_id) { const v = normalizeWorkerId(w.worker_id); if (v !== w.worker_id) patch.worker_id = v; }
+          if (w.tel)       { const v = normalizePhone(w.tel);          if (v !== w.tel)       patch.tel = v; }
+          if (w.emg_tel)   { const v = normalizePhone(w.emg_tel);      if (v !== w.emg_tel)   patch.emg_tel = v; }
+          if (Object.keys(patch).length) { DB.updateWorker(g.id, w.uid, patch); n++; }
+        });
+      });
+      toast(bi('ຈັດຮູບແບບແລ້ວ ' + n + ' ລາຍການ', 'Reformatted ' + n + ' records', 'จัดรูปแบบแล้ว ' + n + ' รายการ', n + '개 정리됨'), 'ok');
+      refreshAll();
+    }
+  );
+}
 
 // ── WORKER FORM: cascading Location Dictionary selects ────────────
 let _editLocNames = null;
 const _LOC_INPUTS = ['f-province', 'f-district', 'f-village'];   // level 0,1,2 → columns
+
+// Item label in the user's current language (falls back to English / any).
+function _locName(it, lang) {
+  if (!it) return '';
+  const n = it.names || {};
+  lang = lang || (typeof currentLang !== 'undefined' ? currentLang : 'en');
+  return n[lang] || n.en || n.lo || n.th || n.ko || '';
+}
+// English is the canonical value stored on the worker + shown on records.
+function _locEnName(it) { return it ? ((it.names && it.names.en) || _locName(it, 'en')) : ''; }
 
 function renderFormLocation() {
   const ld        = DB.getLocDict();
@@ -3398,9 +3774,11 @@ function _fillLocSelect(i, preselectName) {
     .sort((a, b) => a.order - b.order);
   sel.innerHTML = '<option value="">' + t('fm_select') + '</option>' +
     items.map(it => '<option value="' + esc(it.id) + '">' +
-      esc(it.name) + (it.code ? ' (' + esc(it.code) + ')' : '') + '</option>').join('');
+      esc(_locName(it)) + (it.code ? ' (' + esc(it.code) + ')' : '') + '</option>').join('');
   if (preselectName) {
-    const match = items.find(it => it.name === preselectName);
+    // Stored value is the English name; also tolerate any-language match for old data.
+    const match = items.find(it => _locEnName(it) === preselectName)
+               || items.find(it => [it.names.en, it.names.lo, it.names.th, it.names.ko].includes(preselectName));
     if (match) sel.value = match.id;
   }
   _writeLocInput(i);
@@ -3413,7 +3791,7 @@ function _writeLocInput(i) {
   if (!lv || !inp) return;
   const sel = document.getElementById('locsel-' + lv.id);
   const it  = sel && ld.items.find(x => x.id === sel.value);
-  inp.value = it ? it.name : '';
+  inp.value = it ? _locEnName(it) : '';   // always store English (canonical)
 }
 
 function onLocSelect(i) {
@@ -3494,8 +3872,14 @@ function saveWorker() {
   }
 
   if (editUid) {
+    _ensureGroupFor(editUid);                 // make sure we target the worker's real group
     DB.updateWorker(activeGroupId, editUid, data);
   } else {
+    // A new worker MUST belong to a group; if none is active, don't lose the data silently.
+    if (!activeGroupId || !DB.getGroup(activeGroupId)) {
+      toast(bi('ເລືອກກຸ່ມກ່ອນເພີ່ມພະນັກງານ','Pick a group before adding a worker','เลือกกลุ่มก่อนเพิ่มพนักงาน','근로자 추가 전 그룹을 선택하세요'), 'warn');
+      return;
+    }
     DB.addWorker(activeGroupId, data);
   }
 
@@ -4320,12 +4704,18 @@ async function _doKdCardPptx(workers, g) {
 }
 
 // ── OVERLAY HELPERS ───────────────────────────────────────────────
+// Open-order stack: the last entry is the visually top-most overlay, so Esc
+// (and any "close the current dialog" action) always targets the right layer.
+let _overlayStack = [];
 function openOverlay(id) {
   document.getElementById(id).classList.add('open');
   document.body.classList.add('no-scroll');
+  _overlayStack = _overlayStack.filter(x => x !== id);
+  _overlayStack.push(id);
 }
 function closeOverlay(id) {
   document.getElementById(id).classList.remove('open');
+  _overlayStack = _overlayStack.filter(x => x !== id);
   if (id === 'view-overlay') _currentViewUid = null;
   if (!document.querySelector('.overlay.open')) document.body.classList.remove('no-scroll');
 }
@@ -4905,23 +5295,27 @@ function renderLocDictSettings() {
         '<select class="addr-input" onchange="locSelectEditParent(this.value)">' +
         (parents.length ? '' : '<option value="">—</option>') +
         parents.map(p => '<option value="' + esc(p.id) + '"' + (p.id === _locEditParent ? ' selected' : '') + '>' +
-          esc(p.name) + (p.code ? ' (' + esc(p.code) + ')' : '') + '</option>').join('') + '</select></div>';
+          esc(_locName(p)) + (p.code ? ' (' + esc(p.code) + ')' : '') + '</option>').join('') + '</select></div>';
     }
 
     if (!parentOk) {
       html += '<div class="set-empty">' + esc(bi('ເພີ່ມລາຍການຊັ້ນເທິງກ່ອນ','Add a parent item first','เพิ่มรายการชั้นบนก่อน','상위 항목을 먼저 추가하세요')) + '</div>';
     } else {
       const items = ld.items.filter(it => it.levelId === lv.id && (_locEditLevel === 0 || it.parentId === _locEditParent)).sort((a, b) => a.order - b.order);
-      html += items.length ? items.map((it, idx) =>
-        '<div class="locdict-row">' +
+      html += items.length ? items.map((it, idx) => {
+        const en = _locEnName(it);
+        const sub = it.names.lo && it.names.lo !== en ? ' <span style="color:var(--text-faint);font-weight:400">· ' + esc(it.names.lo) + '</span>' : '';
+        return '<div class="locdict-row">' +
           '<span class="set-code">' + esc(it.code || '—') + '</span>' +
-          '<span class="set-name" style="flex:1">' + esc(it.name) + '</span>' +
+          '<span class="set-name" style="flex:1">' + esc(en) + sub + '</span>' +
           '<button class="locdict-ic" onclick="locMoveItem(\'' + it.id + '\',-1)"' + (idx === 0 ? ' disabled' : '') + '>&#9650;</button>' +
           '<button class="locdict-ic" onclick="locMoveItem(\'' + it.id + '\',1)"' + (idx === items.length - 1 ? ' disabled' : '') + '>&#9660;</button>' +
           '<button class="locdict-ic danger" onclick="locDelItem(\'' + it.id + '\')">&#10005;</button>' +
-        '</div>').join('') : '<div class="set-empty">—</div>';
-      html += '<div class="set-add-row" style="margin-top:8px">' +
-        '<input id="locdict-item-name" placeholder="' + esc(bi('ຊື່','Name','ชื่อ','이름')) + '">' +
+        '</div>';
+      }).join('') : '<div class="set-empty">—</div>';
+      html += '<div class="set-add-row" style="margin-top:8px;flex-wrap:wrap">' +
+        '<input id="locdict-item-en" style="flex:1 1 120px" placeholder="' + esc(bi('ຊື່ (EN)','Name (EN)','ชื่อ (EN)','이름 (EN)')) + '">' +
+        '<input id="locdict-item-lo" style="flex:1 1 120px" placeholder="' + esc(bi('ຊື່ (ລາວ)','Name (Lao)','ชื่อ (ลาว)','이름 (Lao)')) + '" onblur="locAutofillEn(this)">' +
         '<input id="locdict-item-code" class="code-in" maxlength="6" placeholder="Code">' +
         '<button class="btn btn-add btn-sm" onclick="locAddItem()">' + esc(bi('ເພີ່ມ','Add','เพิ่ม','추가')) + '</button></div>';
     }
@@ -4992,16 +5386,18 @@ function locMoveLevel(id, dir) {
 function locSelectEditLevel(i) { _locEditLevel = i; _locEditParent = ''; renderLocDictSettings(); }
 function locSelectEditParent(v) { _locEditParent = v; renderLocDictSettings(); }
 function locAddItem() {
-  const nameEl = document.getElementById('locdict-item-name');
+  const enEl   = document.getElementById('locdict-item-en');
+  const loEl   = document.getElementById('locdict-item-lo');
   const codeEl = document.getElementById('locdict-item-code');
-  const name = nameEl ? nameEl.value.trim() : '';
+  const en   = enEl ? enEl.value.trim() : '';
+  const lo   = loEl ? loEl.value.trim() : '';
   const code = codeEl ? codeEl.value.trim().toUpperCase() : '';
-  if (!name) return;
+  if (!en && !lo) return;
   _locMutate(ld => {
     const lv = ld.levels[_locEditLevel]; if (!lv) return;
     const parentId = _locEditLevel > 0 ? (_locEditParent || null) : null;
     const sibs = ld.items.filter(it => it.levelId === lv.id && it.parentId === parentId).length;
-    ld.items.push({ id: DB._newLocId(), levelId: lv.id, parentId, name, code, order: sibs });
+    ld.items.push({ id: DB._newLocId(), levelId: lv.id, parentId, names: { en: en || lo, lo }, code, order: sibs });
   });
 }
 function locDelItem(id) {

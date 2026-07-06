@@ -107,6 +107,11 @@
           <span data-i18n="passport_alert">Alerts</span>
           <span class="sb-nav-badge-red" id="sb-alerts-badge" style="display:none">0</span>
         </button>
+        <button class="sb-nav-item" id="nav-selected" onclick="navTo('selected', this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          <span data-lo="ຄັດເລືອກ" data-en="Selected" data-th="คัดเลือก" data-ko="선택됨"></span>
+          <span class="sb-nav-badge" id="sb-selected-badge" style="display:none">0</span>
+        </button>
 
         <!-- More (with submenu) -->
         <div class="sb-more" id="sb-more">
@@ -331,8 +336,8 @@
     <div id="groups-overview" style="display:none">
       <div class="page-head">
         <div>
-          <h1 data-lo="ກຸ່ມ" data-en="Groups" data-th="กลุ่ม" data-ko="그룹" class="page-title"></h1>
-          <p data-lo="ເລືອກກຸ່ມເພື່ອເບິ່ງລາຍລະອຽດສະມາຊິກ" data-en="Pick a group to view its members" data-th="เลือกกลุ่มเพื่อดูสมาชิก" data-ko="멤버를 보려면 그룹을 선택하세요" class="page-sub"></p>
+          <h1 id="go-title" data-lo="ກຸ່ມ" data-en="Groups" data-th="กลุ่ม" data-ko="그룹" class="page-title"></h1>
+          <p id="go-sub" data-lo="ເລືອກກຸ່ມເພື່ອເບິ່ງລາຍລະອຽດສະມາຊິກ" data-en="Pick a group to view its members" data-th="เลือกกลุ่มเพื่อดูสมาชิก" data-ko="멤버를 보려면 그룹을 선택하세요" class="page-sub"></p>
         </div>
         <div class="page-actions">
           <button class="btn btn-add admin-only" onclick="openCreate()">
@@ -630,7 +635,7 @@
         <div class="form-photo-id">
           <label><span data-i18n="fm_worker_id">Worker ID</span></label>
           <div class="wid-row">
-            <input id="f-worker-id" placeholder="e.g. PHI-26-001" oninput="onWorkerIdInput(this.value)">
+            <input id="f-worker-id" placeholder="e.g. PHI-26-001" oninput="onWorkerIdInput(this)" onblur="normalizeWorkerIdField()">
             <button type="button" class="wid-regen" onclick="regenWorkerId(true)" title="Auto" aria-label="Regenerate ID"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>
           </div>
           <div id="worker-id-warn" style="display:none;font-size:0.72rem;color:#c0392b;margin-top:3px">⚠ ID ນີ້ຊ້ຳກັນກັບພະນັກງານທີ່ມີຢູ່ແລ້ວ — ສາມາດບັນທຶກໄດ້ ແຕ່ກະລຸນາກວດສອບ</div>
@@ -669,21 +674,21 @@
                 <div class="addr-field">
                   <label class="addr-lbl">ບ້ານ <span class="addr-lbl-en">Village</span></label>
                   <div class="addr-combo" id="addr-combo-village">
-                    <input id="f-village" class="addr-input" placeholder="ຊື່ບ້ານ..." autocomplete="off">
+                    <input id="f-village" class="addr-input" placeholder="ຊື່ບ້ານ..." autocomplete="off" onblur="romanizeAddrField('f-village')">
                     <div class="addr-combo-list" id="addr-combo-list-village" style="display:none"></div>
                   </div>
                 </div>
                 <div class="addr-field">
                   <label class="addr-lbl">ເມືອງ <span class="addr-lbl-en">District</span></label>
                   <div class="addr-combo" id="addr-combo-district">
-                    <input id="f-district" class="addr-input" placeholder="ຊື່ເມືອງ..." autocomplete="off">
+                    <input id="f-district" class="addr-input" placeholder="ຊື່ເມືອງ..." autocomplete="off" onblur="romanizeAddrField('f-district')">
                     <div class="addr-combo-list" id="addr-combo-list-district" style="display:none"></div>
                   </div>
                 </div>
                 <div class="addr-field">
                   <label class="addr-lbl">ແຂວງ <span class="addr-lbl-en">Province</span></label>
                   <div class="addr-combo" id="addr-combo-province">
-                    <input id="f-province" class="addr-input" placeholder="ຄົ້ນຫາ / ພິມ..." autocomplete="off">
+                    <input id="f-province" class="addr-input" placeholder="ຄົ້ນຫາ / ພິມ..." autocomplete="off" onblur="romanizeAddrField('f-province')">
                     <div class="addr-combo-list" id="addr-combo-list-province" style="display:none"></div>
                   </div>
                 </div>
@@ -712,7 +717,7 @@
           </div>
           <div class="form-group">
             <label><span data-i18n="fm_tel">Tel</span></label>
-            <input id="f-tel" placeholder="020 XXXX-XXXX">
+            <input id="f-tel" placeholder="020-XXX-XXX-XX" oninput="onPhoneInput(this)" onblur="normalizePhoneField('f-tel')">
           </div>
           <div class="form-group">
             <label><span data-i18n="fm_couple">Couple</span></label>
@@ -724,7 +729,7 @@
           </div>
           <div class="form-group">
             <label><span data-i18n="fm_emg_tel">Emergency Tel</span></label>
-            <input id="f-emg-tel" placeholder="020 XXXX-XXXX">
+            <input id="f-emg-tel" placeholder="020-XXX-XXX-XX" oninput="onPhoneInput(this)" onblur="normalizePhoneField('f-emg-tel')">
           </div>
           <div class="form-group">
             <label><span data-i18n="fm_size">Shirt Size</span></label>
@@ -793,9 +798,9 @@
             <select id="f-grade">
               <option value="">-- Select --</option>
               <option value="A">A — ດີເດັ່ນ</option>
+              <option value="B+">B+ — ດີຫຼາຍ</option>
               <option value="B">B — ດີ</option>
               <option value="C">C — ປານກາງ</option>
-              <option value="D">D — ຕ້ອງປັບປຸງ</option>
             </select>
           </div>
           <div class="form-group">
@@ -937,6 +942,17 @@
         <span data-i18n="confirm_delete">Delete</span>
       </button>
     </div>
+  </div>
+</div>
+
+<!-- KEYBOARD SHORTCUTS cheatsheet -->
+<div class="overlay" id="shortcuts-overlay" onclick="closeOverlay('shortcuts-overlay')">
+  <div class="confirm-modal shortcuts-modal" onclick="event.stopPropagation()">
+    <div class="shortcuts-head">
+      <h2 data-lo="ຄີລັດແປ້ນພິມ" data-en="Keyboard shortcuts" data-th="คีย์ลัดแป้นพิมพ์" data-ko="키보드 단축키"></h2>
+      <button class="shortcuts-close" onclick="closeOverlay('shortcuts-overlay')" aria-label="Close">&#10005;</button>
+    </div>
+    <div id="shortcuts-body" class="shortcuts-body"></div>
   </div>
 </div>
 
@@ -1134,6 +1150,12 @@
                 </div>
               </div>
             </div>
+            <div class="set-row" data-kw="keyboard shortcuts คีย์ลัด คีย์บอร์ด ຄີລັດ 단축키 hotkey">
+              <div class="set-row-main"><div data-lo="ຄີລັດແປ້ນພິມ" data-en="Keyboard shortcuts" data-th="คีย์ลัดแป้นพิมพ์" data-ko="키보드 단축키" class="set-row-label"></div><div data-lo="ກົດ ? ໄດ້ທຸກເວລາເພື່ອເປີດ" data-en="Press ? anytime to open" data-th="กด ? ได้ทุกเมื่อเพื่อเปิด" data-ko="언제든 ? 키로 열기" class="set-row-desc"></div></div>
+              <div class="set-row-control">
+                <button class="btn btn-ghost btn-sm" onclick="openShortcuts()" data-lo="ເບິ່ງ" data-en="View" data-th="ดู" data-ko="보기"></button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1266,6 +1288,11 @@
               <button class="set-action" onclick="exportAllData()">
                 <span class="sa-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5M12 15V3"/></svg></span>
                 <span class="set-action-body"><span data-lo="ສົ່ງອອກທັງໝົດ (JSON)" data-en="Export all (JSON)" data-th="ส่งออกทั้งหมด (JSON)" data-ko="전체 내보내기 (JSON)" class="set-action-title"></span><span data-lo="ດາວໂຫລດຂໍ້ມູນທັງໝົດເປັນໄຟລ໌ດຽວ" data-en="Download all data as one file" data-th="ดาวน์โหลดข้อมูลทั้งหมดเป็นไฟล์เดียว" data-ko="모든 데이터를 한 파일로 다운로드" class="set-action-sub">ດາວໂຫລດຂໍ້ມູນທັງໝົດເປັນໄຟລ໌ດຽວ</span></span>
+                <span class="set-action-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
+              </button>
+              <button class="set-action" onclick="formatAllRecords()">
+                <span class="sa-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></span>
+                <span class="set-action-body"><span data-lo="ຈັດຮູບແບບຂໍ້ມູນທັງໝົດ" data-en="Reformat all records" data-th="จัดรูปแบบข้อมูลทั้งหมด" data-ko="모든 레코드 형식 정리" class="set-action-title"></span><span data-lo="ຈັດ Worker ID + ເບີໂທ ໃຫ້ເປັນຮູບແບບມາດຕະຖານ (ສຳຮອງກ່ອນ)" data-en="Normalize Worker IDs + phone numbers (backs up first)" data-th="จัด Worker ID + เบอร์โทร ให้เป็นรูปแบบมาตรฐาน (สำรองก่อน)" data-ko="근로자 ID·전화번호 형식 정리 (먼저 백업)" class="set-action-sub">ຈັດ Worker ID + ເບີໂທ ໃຫ້ເປັນຮູບແບບມາດຕະຖານ (ສຳຮອງກ່ອນ)</span></span>
                 <span class="set-action-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>
               </button>
               <button class="set-action" onclick="openImport();closeOverlay('settings-overlay')">

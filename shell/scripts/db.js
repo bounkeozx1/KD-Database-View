@@ -120,14 +120,25 @@ const DB = (() => {
     const levelIds = new Set(levels.map(l => l.id));
     const items = (Array.isArray(d.items) ? d.items : [])
       .filter(it => it && levelIds.has(it.levelId))
-      .map((it, i) => ({
-        id:       it.id ? String(it.id) : _newLocId(),
-        levelId:  String(it.levelId),
-        parentId: it.parentId ? String(it.parentId) : null,
-        name:     String(it.name || '').trim(),
-        code:     String(it.code || '').trim().toUpperCase(),
-        order:    typeof it.order === 'number' ? it.order : i,
-      }));
+      .map((it, i) => {
+        // Multilingual names; migrate the old single `name` → names.en.
+        const src = (it.names && typeof it.names === 'object') ? it.names : { en: it.name };
+        const names = {
+          en: String(src.en || '').trim(),
+          lo: String(src.lo || '').trim(),
+          th: String(src.th || '').trim(),
+          ko: String(src.ko || '').trim(),
+        };
+        if (!names.en) names.en = names.lo || names.th || names.ko || '';   // English is canonical
+        return {
+          id:       it.id ? String(it.id) : _newLocId(),
+          levelId:  String(it.levelId),
+          parentId: it.parentId ? String(it.parentId) : null,
+          names,
+          code:     String(it.code || '').trim().toUpperCase(),
+          order:    typeof it.order === 'number' ? it.order : i,
+        };
+      });
     const ic = (d.idConfig && typeof d.idConfig === 'object') ? d.idConfig : {};
     return {
       enabled: !!d.enabled && levels.length > 0,
@@ -193,18 +204,25 @@ const DB = (() => {
       _push('POST', '/groups/' + encodeURIComponent(groupId) + '/employees', worker);
       return worker.uid;
     },
+    // The server keys employees by uid (PATCH/DELETE /employees/:uid), so the
+    // write must ALWAYS be sent even if the passed groupId is wrong/empty
+    // (e.g. editing from the Alerts/Selected/all-workers views). We locate the
+    // cached row by uid across every group so the cache and server stay in sync.
     updateWorker(groupId, uid, patch) {
-      const g = _data.groups.find(x => x.id === groupId);
-      if (!g) return;
-      const idx = g.workers.findIndex(w => w.uid === uid);
-      if (idx < 0) return;
-      g.workers[idx] = { ...g.workers[idx], ...patch };
-      _push('PATCH', '/employees/' + encodeURIComponent(uid), patch);
+      let g = _data.groups.find(x => x.id === groupId);
+      if (!g || !g.workers.some(w => w.uid === uid))
+        g = _data.groups.find(x => (x.workers || []).some(w => w.uid === uid));
+      if (g) {
+        const idx = g.workers.findIndex(w => w.uid === uid);
+        if (idx >= 0) g.workers[idx] = { ...g.workers[idx], ...patch };
+      }
+      _push('PATCH', '/employees/' + encodeURIComponent(uid), patch);   // always persist by uid
     },
     deleteWorker(groupId, uid) {
-      const g = _data.groups.find(x => x.id === groupId);
-      if (!g) return;
-      g.workers = g.workers.filter(w => w.uid !== uid);
+      let g = _data.groups.find(x => x.id === groupId);
+      if (!g || !g.workers.some(w => w.uid === uid))
+        g = _data.groups.find(x => (x.workers || []).some(w => w.uid === uid));
+      if (g) g.workers = g.workers.filter(w => w.uid !== uid);
       _push('DELETE', '/employees/' + encodeURIComponent(uid));
     },
 

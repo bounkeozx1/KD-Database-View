@@ -98,6 +98,26 @@ button, input, select, textarea, optgroup { line-height: 1.2; }
 /* Prevent background scroll when any overlay is open */
 body.no-scroll { overflow: hidden !important; }
 
+/* ── Slim, floating scrollbars (match the clean reference look) ──
+   Applies everywhere; the narrower sidebar keeps its own 4px rule
+   (higher specificity via .sidebar-scroll). The 3px transparent border
+   + background-clip:padding-box makes the thumb read as a thin pill with
+   breathing room from the edge instead of a chunky OS bar. */
+* { scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.22) transparent; }
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.22);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.34); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+[data-theme="dark"] * { scrollbar-color: rgba(255,255,255,0.2) transparent; }
+[data-theme="dark"] ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); background-clip: padding-box; }
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.32); background-clip: padding-box; }
+
 /* Global input / select / textarea dark mode override */
 [data-theme="dark"] input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
 [data-theme="dark"] select,
@@ -408,6 +428,25 @@ tr:last-child td { border-bottom: none; }
   border-radius: 4px; font-size: 0.73rem; font-weight: 700;
   background: #fff8e1; color: #856404;
 }
+
+/* Applicant grade badge (A / B+ / B / C) on lists + cards */
+.grade-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 18px; padding: 0 6px; margin-left: 7px; vertical-align: middle;
+  border-radius: 5px; color: #fff; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.3px;
+}
+
+/* "Selected to go" star — inline in the list, overlay on KD cards */
+.sel-star {
+  width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
+  border: 1px solid var(--border); background: var(--bg-card); color: var(--text-faint);
+  font-size: 0.95rem; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+  margin-right: 4px; transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.sel-star:hover { color: #f59e0b; border-color: #f59e0b; }
+.sel-star.on { background: #f59e0b; border-color: #f59e0b; color: #fff; }
+.idc-cell > .sel-star { position: absolute; top: 8px; left: 8px; z-index: 4; box-shadow: var(--shadow-sm); }
+.vm-action-btn.vm-select.on { background: #f59e0b; border-color: #f59e0b; color: #fff; }
 
 /* Expiry colours */
 .expiry-expired { color: var(--red); font-weight: 700; }
@@ -1379,7 +1418,7 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 /* ── GROUPS OVERVIEW (pick-a-group landing) ── */
 .go-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(258px, 1fr));
-  gap: 16px; padding: 4px 0 40px;
+  gap: 16px; padding: 4px 28px 40px;   /* align with .page-head; keep cards off the sidebar/window edges */
 }
 .go-empty { color: var(--text-muted); font-size: 0.86rem; padding: 30px 4px; }
 .go-card {
@@ -1403,6 +1442,7 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 .go-stat .n { font-size: 1.15rem; font-weight: 800; color: var(--text); line-height: 1; }
 .go-stat .l { font-size: 0.68rem; color: var(--text-faint); }
 .go-stat.go-alert .n { color: var(--red); }
+.go-stat.go-sel .n { color: #f59e0b; }
 
 /* Back-to-groups link in the member view header */
 .back-to-groups {
@@ -1951,7 +1991,9 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 /* ── Document preview lightbox ── (active rules consolidated below at .docview-modal) */
 
 /* ── Form: employee photo ── */
-.form-photo-row { display: flex; align-items: center; gap: 16px; padding: 4px 0 18px; }
+/* Keep the card padding from the base .form-photo-row rule (var(--sp-5) var(--sp-6))
+   so the photo + worker-ID sit inset from the card edge instead of hugging it. */
+.form-photo-row { display: flex; align-items: center; gap: 16px; }
 .form-photo {
   width: 84px; height: 84px; border-radius: var(--r-md); flex-shrink: 0;
   background: var(--field-bg); border: none; box-shadow: var(--shadow-sm);
@@ -2825,7 +2867,9 @@ body[data-role="viewer"] .fab { display: none !important; }
 .kd-v { padding: 0.4cqw 0.9cqw; border-bottom: 1px solid var(--line); font-weight: 600; font-size: 1.3cqw; text-align: center; color: var(--text); display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .kd-right { display: flex; flex-direction: column; min-height: 0; }
 .kd-photo { position: relative; flex: 1 1 auto; min-height: 0; background: var(--field-bg); display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.kd-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Anchor to the top so the forehead is never cropped (cover would otherwise
+   centre-crop and eat the top of the head). Consistent across every photo. */
+.kd-photo img { width: 100%; height: 100%; object-fit: cover; object-position: center top; display: block; }
 /* tap-to-edit affordance (admin, detail view only) */
 .kd-photo.editable { cursor: pointer; }
 .kd-photo-edit {
@@ -3088,6 +3132,31 @@ body[data-role="viewer"] .fab { display: none !important; }
 
 /* ── PROGRESS overlay (export / long operations) ── */
 #progress-overlay { z-index: 900; }   /* above other overlays */
+
+/* Confirm / info dialog (delete worker, delete group, etc.) must sit ABOVE
+   everything — row menu (800), detail drawer, progress (900) and toasts (2000) —
+   so the delete prompt is never hidden behind the layer that opened it. */
+#confirm-overlay { z-index: 2100; }
+
+/* Keyboard shortcuts cheatsheet (opened by ? or from Settings) */
+#shortcuts-overlay { z-index: 1500; }
+.shortcuts-modal { width: 440px; max-width: calc(100vw - 32px); padding: 0; }
+.shortcuts-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 8px; }
+.shortcuts-head h2 { margin: 0; font-size: 1.05rem; font-weight: 800; color: var(--text); }
+.shortcuts-close { background: none; border: none; color: var(--text-faint); font-size: 1rem; cursor: pointer; padding: 4px 8px; border-radius: 7px; }
+.shortcuts-close:hover { background: var(--hover); color: var(--text); }
+.shortcuts-body { padding: 2px 20px 18px; }
+.kbd-row { display: flex; align-items: center; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.kbd-row:last-child { border-bottom: none; }
+.kbd-keys { flex: 0 0 132px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.kbd-keys i { font-style: normal; color: var(--text-faint); font-size: 0.78rem; }
+.kbd-desc { color: var(--text-muted); font-size: 0.86rem; }
+kbd {
+  display: inline-block; min-width: 18px; text-align: center;
+  padding: 3px 7px; border: 1px solid var(--border); border-bottom-width: 2px;
+  border-radius: 6px; background: var(--field-bg); color: var(--text);
+  font-family: inherit; font-size: 0.76rem; font-weight: 700; line-height: 1;
+}
 .progress-modal {
   background: var(--bg-card); border-radius: var(--r-xl);
   width: 360px; max-width: calc(100vw - 40px);
