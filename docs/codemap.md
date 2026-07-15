@@ -50,7 +50,9 @@ kd-database/
 ├── vendor/                             ไลบรารี offline (ไม่พึ่ง CDN)
 │   ├── tesseract/                      Tesseract.js + worker + core.wasm + eng.traineddata.gz
 │   ├── jszip/                          jszip.min.js
+│   ├── pdf-lib/                        pdf-lib.min.js + fontkit.umd.min.js (โหลด lazy ตอน export PDF)
 │   └── fonts/                          Inter · Noto Sans Lao · Noto Sans KR (woff2) + fonts.css
+│       └── ttf/                        Noto Sans / Thai / Lao (Regular+Bold TTF — ฝังใน PDF export)
 │
 └── data/                               ข้อมูลจริง — git-ignored
     ├── db/kd.db                        SQLite database (+ kd.db-wal + kd.db-shm ตอน server รัน)
@@ -76,6 +78,7 @@ kd-database/
 | แก้สีหรือ layout | `shell/styles/main.css` / `sidebar.css` |
 | แก้ OCR / passport scan | `domains/recruitment/passport-scan/passport-scan.js` |
 | แก้การนำเข้า PPTX | `domains/recruitment/intake-import/pptx-import.js` |
+| แก้ export (XLSX/PPTX/PDF/CSV/.kdb) | `shell/scripts/app.js` → `_doExportXlsx` / `_kdCardSlideXml`+`_buildPptx` / `_doKdCardPdfFile`+`_doWorkerDetailPdf` — ทุกฟอร์แมตเป็น native แก้ไขได้ (PPTX = text box + ตารางจริง, PDF = ฝังฟอนต์ไทย/ลาว), geometry การ์ดใช้ `_KD_GEO` ร่วมกัน |
 | เพิ่มไลบรารี offline | `vendor/` + แก้ path ใน JS ที่ใช้ |
 | แก้ backup / restore | `infra/admin.js` |
 | แก้ npm script | `package.json` |

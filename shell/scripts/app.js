@@ -147,6 +147,7 @@ function startApp(user) {
     initDatePickers();
     initProvinceCombobox();
     initSaveStatusUI();
+    _fillNatDatalist();
     appInited = true;
   }
 
@@ -229,6 +230,11 @@ function empBadge(code) {
 }
 function esc(s) {
   return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+// For OOXML exports (xlsx/pptx): also strip characters that are illegal in
+// XML 1.0 — a single stray control char makes Office show a "repair" dialog.
+function _xmlSafe(s) {
+  return esc((s == null ? '' : String(s)).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ''));
 }
 
 // ── Avatar ────────────────────────────────────────────────────────
@@ -2210,6 +2216,45 @@ function _renderBadgeCard(w, g, editable, locked) {
   '</div>';
 }
 
+// ── Shared option lists ───────────────────────────────────────────
+// One source of truth for the blood / size / nationality pickers so the worker
+// form, the table filter and the detail-view editor never drift apart.
+const _BLOOD_TYPES = ['A','A+','A-','B','B+','B-','AB','AB+','AB-','O','O+','O-'];  // bare ABO kept for legacy records
+const _SHIRT_SIZES = ['XS','S','M','L','XL','XXL','XXXL'];
+// [code, English name] — 3-letter codes match the passport-MRZ output the scanner writes.
+const _NATIONALITIES = [
+  ['LAO','Laos'],['THA','Thailand'],['VNM','Vietnam'],['KHM','Cambodia'],
+  ['MMR','Myanmar'],['CHN','China'],['KOR','South Korea'],['IDN','Indonesia'],
+  ['PHL','Philippines'],['IND','India'],['MYS','Malaysia'],['NPL','Nepal'],
+  ['BGD','Bangladesh'],['LKA','Sri Lanka'],['PAK','Pakistan'],['MNG','Mongolia'],
+  ['JPN','Japan'],['SGP','Singapore'],['USA','United States'],['GBR','United Kingdom'],
+];
+// Build a [{v,t}] list, guaranteeing the current stored value stays selectable
+// even if it isn't one of the standard options (never blank out old data).
+function _optsWithCurrent(values, cur) {
+  const opts = [{ v:'', t:'--' }].concat(values.map(v => ({ v, t: v })));
+  if (cur && !values.includes(String(cur))) opts.push({ v: String(cur), t: String(cur) });
+  return opts;
+}
+function _natOpts() { return _NATIONALITIES.map(([v, t]) => ({ v, t })); }
+// Fill the worker-form nationality <datalist> (suggestions; still free-typeable).
+function _fillNatDatalist() {
+  const dl = document.getElementById('nat-list');
+  if (dl) dl.innerHTML = _NATIONALITIES.map(([v, t]) => '<option value="' + esc(v) + '">' + esc(t) + '</option>').join('');
+}
+// Set a <select> to a value, appending a one-off <option> first if that value
+// isn't already listed — so editing a record with a legacy value never drops it.
+function _ensureSelectValue(id, val) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  sel.querySelectorAll('option[data-oneoff]').forEach(o => o.remove());   // drop a previous injection
+  val = (val == null) ? '' : String(val);
+  if (val && ![...sel.options].some(o => o.value === val)) {
+    sel.insertAdjacentHTML('beforeend', '<option data-oneoff value="' + esc(val) + '">' + esc(val) + '</option>');
+  }
+  sel.value = val;
+}
+
 // ── Detail drawer: inline edit + export + zoom ────────────────────
 let detailEditMode = false;
 
@@ -2221,6 +2266,14 @@ function _ev(w, field, viewHtml, type, opts) {
     return '<select class="vm-edit-in" data-ef="' + field + '">' +
       opts.map(o => '<option value="' + esc(o.v) + '"' + (String(cur) === String(o.v) ? ' selected' : '') + '>' + esc(o.t) + '</option>').join('') +
       '</select>';
+  }
+  if (type === 'datalist') {
+    // Dropdown suggestions + free text — any value (incl. scanned codes) is kept.
+    const listId = 'ev-list-' + field;
+    return '<input class="vm-edit-in" data-ef="' + field + '" list="' + listId + '" value="' + esc(cur) + '" autocomplete="off">' +
+      '<datalist id="' + listId + '">' +
+      (opts || []).map(o => '<option value="' + esc(o.v) + '">' + esc(o.t || o.v) + '</option>').join('') +
+      '</datalist>';
   }
   return '<input class="vm-edit-in" data-ef="' + field + '" value="' + esc(cur) + '">';
 }
@@ -2250,8 +2303,8 @@ function _renderDetailBody(w, g) {
 
   const sexOpts  = [{v:'',t:'--'},{v:'M',t:t('fm_sex_m')},{v:'F',t:t('fm_sex_f')}];
   const handOpts = [{v:'',t:'--'},{v:'R',t:'R (Right)'},{v:'L',t:'L (Left)'}];
-  const bloodOpts= [{v:'',t:'--'},{v:'A',t:'A'},{v:'B',t:'B'},{v:'O',t:'O'},{v:'AB',t:'AB'},{v:'B+',t:'B+'},{v:'B-',t:'B-'}];
-  const sizeOpts = [{v:'',t:'--'},{v:'S',t:'S'},{v:'M',t:'M'},{v:'L',t:'L'},{v:'XL',t:'XL'},{v:'XXL',t:'XXL'}];
+  const bloodOpts= _optsWithCurrent(_BLOOD_TYPES, w.blood);
+  const sizeOpts = _optsWithCurrent(_SHIRT_SIZES, w.size);
 
   const tableHtml =
     '<div class="vd-sections">' +
@@ -2263,7 +2316,7 @@ function _renderDetailBody(w, g) {
         row('ຊື່ ນາມສະກຸນ', 'LO Name', _ev(w,'lo_name', esc(w.lo_name||'--'), 'text')) +
         row(t('vc_dob'), 'ວັນເດືອນປີ', _ev(w,'dob', esc(w.dob||'--'), 'text')) +
         row(t('vc_age'), 'ອາຍຸ', _ev(w,'age', age ? age + ' yrs' : '--', 'text')) +
-        row(t('vc_nationality'), 'ສັນຊາດ', _ev(w,'nationality', esc(w.nationality||'--'), 'text')) +
+        row(t('vc_nationality'), 'ສັນຊາດ', _ev(w,'nationality', esc(w.nationality||'--'), 'datalist', _natOpts())) +
         row(t('vc_sex'), 'ເພດ', ed ? _ev(w,'sex','','select',sexOpts) : (w.sex==='M'?'♂ '+t('fm_sex_m'):w.sex==='F'?'♀ '+t('fm_sex_f'):'--'))
       ) +
 
@@ -3415,11 +3468,14 @@ function openWorkerForm(editUid) {
   if (!isAdmin()) return;
   if (editUid) _ensureGroupFor(editUid);   // point activeGroupId at the worker's group (cross-group views)
   populateCityDropdowns();
+  // NB: 'blood' is deliberately absent — the form's field is #fm-blood (see below).
+  // 'f-blood' is the toolbar FILTER; clearing it here used to wipe the user's filter.
   const fids = ['worker-id','employer-code','supervisor','en-name','lo-name',
-                'province','district','village','nationality','sex','blood','hand','weight','height','size','couple',
+                'province','district','village','nationality','sex','hand','weight','height','size','couple',
                 'tel','emg-tel','passport-no','kr-city','la-city',
                 'grade','visa-status','education','work-experience','languages'];
   fids.forEach(f => { const el = document.getElementById('f-' + f); if (el) el.value = ''; });
+  _ensureSelectValue('fm-blood', '');
   setDatePicker('dp-dob', '');
   setDatePicker('dp-issue', '');
   setDatePicker('dp-expiry', '');
@@ -3461,11 +3517,11 @@ function openWorkerForm(editUid) {
     _editLocNames = { 0: w.province || '', 1: w.district || '', 2: w.village || '' };
     document.getElementById('f-nationality').value     = w.nationality || '';
     document.getElementById('f-sex').value              = w.sex || '';
-    document.getElementById('f-blood').value           = w.blood || '';
+    _ensureSelectValue('fm-blood', w.blood);   // keep an out-of-list legacy value selectable
     document.getElementById('f-hand').value            = w.hand || '';
     document.getElementById('f-weight').value          = w.weight || '';
     document.getElementById('f-height').value          = w.height || '';
-    document.getElementById('f-size').value            = w.size || '';
+    _ensureSelectValue('f-size', w.size);
     document.getElementById('f-couple').value          = w.couple || '';
     document.getElementById('f-tel').value             = w.tel || '';
     document.getElementById('f-emg-tel').value         = w.emg_tel || '';
@@ -3746,15 +3802,35 @@ function renderFormLocation() {
   }
   comboBlock.style.display = 'none';
   selBlock.style.display = '';
-  selBlock.innerHTML = ld.levels.map((lv, i) =>
-    '<div class="addr-field">' +
-      '<label class="addr-lbl">' + esc(lv.name) + '</label>' +
-      '<select class="addr-input loc-select" id="locsel-' + esc(lv.id) + '" onchange="onLocSelect(' + i + ')"></select>' +
-    '</div>'
-  ).join('');
+  // A level with no items anywhere (e.g. the empty Village level in the seeded
+  // dictionary) renders as a free-text input, so a Province+District-only
+  // hierarchy stays fully usable and villages can still be typed.
+  selBlock.innerHTML = ld.levels.map((lv, i) => {
+    const control = _locLevelHasItems(ld, lv.id)
+      ? '<select class="addr-input loc-select" id="locsel-' + esc(lv.id) + '" onchange="onLocSelect(' + i + ')"></select>'
+      : '<input class="addr-input loc-free" id="locfree-' + i + '" autocomplete="off" oninput="_writeLocFree(' + i + ')">';
+    return '<div class="addr-field"><label class="addr-lbl">' + esc(lv.name) + '</label>' + control + '</div>';
+  }).join('');
   for (let i = 0; i < ld.levels.length; i++) {
-    _fillLocSelect(i, _editLocNames ? (_editLocNames[i] || '') : '');
+    const lv  = ld.levels[i];
+    const pre = _editLocNames ? (_editLocNames[i] || '') : '';
+    if (_locLevelHasItems(ld, lv.id)) {
+      _fillLocSelect(i, pre);
+    } else {
+      const inp = document.getElementById('locfree-' + i);
+      const col = document.getElementById(_LOC_INPUTS[i]);
+      if (inp) { inp.value = pre || (col ? col.value : '') || ''; _writeLocFree(i); }
+    }
   }
+}
+
+function _locLevelHasItems(ld, levelId) { return ld.items.some(it => it.levelId === levelId); }
+
+// Free-text level (e.g. Village) → mirror the typed value into its address column.
+function _writeLocFree(i) {
+  const inp = document.getElementById('locfree-' + i);
+  const col = document.getElementById(_LOC_INPUTS[i]);
+  if (inp && col) col.value = inp.value.trim();
 }
 
 function _fillLocSelect(i, preselectName) {
@@ -3762,7 +3838,7 @@ function _fillLocSelect(i, preselectName) {
   const lv = ld.levels[i];
   if (!lv) return;
   const sel = document.getElementById('locsel-' + lv.id);
-  if (!sel) return;
+  if (!sel) return;                       // free-text level → handled by _writeLocFree
   let parentId = null;
   if (i > 0) {
     const pl = ld.levels[i - 1];
@@ -3776,10 +3852,21 @@ function _fillLocSelect(i, preselectName) {
     items.map(it => '<option value="' + esc(it.id) + '">' +
       esc(_locName(it)) + (it.code ? ' (' + esc(it.code) + ')' : '') + '</option>').join('');
   if (preselectName) {
-    // Stored value is the English name; also tolerate any-language match for old data.
+    // Stored value is the English name; also tolerate any-language match for old
+    // data, then a case/spacing-insensitive pass (existing records are a mix of
+    // Lao script, UPPERCASE and Title Case — e.g. "THOULAKHOM" vs "Thoulakhom").
+    const norm   = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const target = norm(preselectName);
     const match = items.find(it => _locEnName(it) === preselectName)
-               || items.find(it => [it.names.en, it.names.lo, it.names.th, it.names.ko].includes(preselectName));
+               || items.find(it => [it.names.en, it.names.lo, it.names.th, it.names.ko].includes(preselectName))
+               || items.find(it => [it.names.en, it.names.lo, it.names.th, it.names.ko].some(n => n && norm(n) === target));
     if (match) sel.value = match.id;
+    else {
+      // Value not in the dictionary → keep it as a one-off option so opening +
+      // saving an old record never blanks the address out.
+      sel.insertAdjacentHTML('beforeend',
+        '<option value="__raw__' + esc(preselectName) + '" selected>' + esc(preselectName) + '</option>');
+    }
   }
   _writeLocInput(i);
 }
@@ -3790,8 +3877,10 @@ function _writeLocInput(i) {
   const inp = document.getElementById(_LOC_INPUTS[i]);
   if (!lv || !inp) return;
   const sel = document.getElementById('locsel-' + lv.id);
-  const it  = sel && ld.items.find(x => x.id === sel.value);
-  inp.value = it ? _locEnName(it) : '';   // always store English (canonical)
+  if (!sel) return;                                    // free-text level writes its own column
+  if (sel.value.indexOf('__raw__') === 0) { inp.value = sel.value.slice(7); return; }   // preserved old value
+  const it = ld.items.find(x => x.id === sel.value);
+  inp.value = it ? _locEnName(it) : '';                // always store English (canonical)
 }
 
 function onLocSelect(i) {
@@ -3837,7 +3926,7 @@ function saveWorker() {
     village:        document.getElementById('f-village').value.trim(),
     nationality:    document.getElementById('f-nationality').value.trim().toUpperCase(),
     sex:            document.getElementById('f-sex').value,
-    blood:          document.getElementById('f-blood').value,
+    blood:          document.getElementById('fm-blood').value,
     hand:           document.getElementById('f-hand').value,
     weight:         document.getElementById('f-weight').value,
     height:         document.getElementById('f-height').value,
@@ -4182,7 +4271,7 @@ function toggleExportFmt(el) {
 }
 
 function _updateCsvFieldsVis() {
-  const on = !!document.querySelector('.export-opt[data-fmt="csv"].sel');
+  const on = !!document.querySelector('.export-opt[data-fmt="csv"].sel, .export-opt[data-fmt="xlsx"].sel');
   document.getElementById('export-csv-fields').style.display = on ? '' : 'none';
 }
 
@@ -4226,11 +4315,19 @@ async function doExport() {
   if (!workers.length && !fmts.includes('kdb')) { toast(bi('ບໍ່ມີຂໍ້ມູນ','No data','ไม่มีข้อมูล','데이터 없음'), 'warn'); return; }
 
   for (const fmt of fmts) {
-    if      (fmt === 'detail-pdf') { exportWorkerPDF(); await new Promise(r => setTimeout(r, 200)); }
-    else if (fmt === 'kd-pdf')     _doKdCardPdf(workers, g);
+    if (fmt === 'detail-pdf') {
+      // real PDF file; browser print dialog only if pdf-lib can't load
+      try { await _doWorkerDetailPdf(workers[0], g); }
+      catch (e) { console.warn('pdf-lib failed → print fallback:', e); exportWorkerPDF(); await new Promise(r => setTimeout(r, 200)); }
+    }
+    else if (fmt === 'kd-pdf') {
+      try { await _doKdCardPdfFile(workers, g); }
+      catch (e) { console.warn('pdf-lib failed → print fallback:', e); _doKdCardPdf(workers, g); }
+    }
     else if (fmt === 'kd-png')     await _doKdCardPng(workers, g);
     else if (fmt === 'pptx')       await _doKdCardPptx(workers, g);
     else if (fmt === 'csv')        _doExportCsv(workers, g);
+    else if (fmt === 'xlsx')       await _doExportXlsx(workers, g);
     else if (fmt === 'docs')       await _doExportDocs(workers);
     else if (fmt === 'kdb')        await _doDatabaseBundle(g);
   }
@@ -4281,28 +4378,148 @@ async function _doKdCardPng(workers, g) {
   } finally { if (showProg) _progressDone(); }
 }
 
-function _doExportCsv(workers, g) {
-  const selFields = [];
+// Selected-field helpers shared by the CSV and XLSX exports.
+function _exportSelectedFields() {
+  const sel = [];
   _EXPORT_FIELDS.forEach(grp => {
     grp.fields.forEach(f => {
       const el = document.querySelector('#export-field-list input[name="ef-' + f.key + '"]');
-      if (el && el.checked) selFields.push(f);
+      if (el && el.checked) sel.push(f);
     });
   });
+  return sel;
+}
+function _exportFieldValue(w, f, gName) {
+  if (f.key === 'age')        return calcAge(w.dob) || '';
+  if (f.key === 'group_name') return gName;
+  return w[f.key] || '';
+}
+
+function _doExportCsv(workers, g) {
+  const selFields = _exportSelectedFields();
   if (!selFields.length) { toast(bi('ກະລຸນາເລືອກ field ຢ່າງໜ້ອຍ 1 ອັນ','Please select at least 1 field','โปรดเลือกฟิลด์อย่างน้อย 1 ช่อง','항목을 1개 이상 선택하세요'), 'warn'); return; }
   const gName = g ? g.name : '';
-  const rows = workers.map(w => selFields.map(f => {
-    let v = '';
-    if (f.key === 'age')        v = calcAge(w.dob) || '';
-    else if (f.key === 'group_name') v = gName;
-    else                        v = w[f.key] || '';
-    return '"' + v.toString().replace(/"/g, '""') + '"';
-  }).join(','));
+  const rows = workers.map(w => selFields.map(f =>
+    '"' + _exportFieldValue(w, f, gName).toString().replace(/"/g, '""') + '"'
+  ).join(','));
   const csv = '﻿' + [selFields.map(f => f.label).join(','), ...rows].join('\n');
   const a = document.createElement('a');
   a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
   a.download = _safeFile(gName, 'workers') + '.csv';
   a.click();
+}
+
+// ── Excel (.xlsx) export ──────────────────────────────────────────
+// A real SpreadsheetML package (styled bold header on the brand brown, frozen
+// header row, sized columns) hand-rolled with JSZip — same zero-dependency
+// approach as the .pptx builder. Strings are written inline (no sharedStrings
+// part needed); UTF-8 throughout so Lao/Thai/Korean never mangle.
+function _colRef(i) {           // 0 → A, 25 → Z, 26 → AA …
+  let s = '', n = i + 1;
+  while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = (n - 1 - m) / 26; }
+  return s;
+}
+async function _doExportXlsx(workers, g) {
+  const selFields = _exportSelectedFields();
+  if (!selFields.length) { toast(bi('ກະລຸນາເລືອກ field ຢ່າງໜ້ອຍ 1 ອັນ','Please select at least 1 field','โปรดเลือกฟิลด์อย่างน้อย 1 ช่อง','항목을 1개 이상 선택하세요'), 'warn'); return; }
+  if (typeof _loadJSZip === 'function') { try { await _loadJSZip(); } catch (e) {} }
+  if (!window.JSZip) { toast(bi('JSZip ບໍ່ໄດ້ໂຫລດ','JSZip not loaded','JSZip ยังไม่โหลด','JSZip가 로드되지 않음'), 'warn'); return; }
+
+  const gName = g ? g.name : '';
+  const NUMERIC = { age: 1, weight: 1, height: 1 };
+  const rows = workers.map(w => selFields.map(f => String(_exportFieldValue(w, f, gName))));
+
+  // Column widths: fit the longest cell (header included), clamped 10–40 chars.
+  const widths = selFields.map((f, c) => {
+    let max = f.label.length;
+    rows.forEach(r => { if (r[c].length > max) max = r[c].length; });
+    return Math.min(40, Math.max(10, max + 3));
+  });
+
+  const C = _KD_COLORS;
+  const cellXml = (r, c, v, style, numericOk) => {
+    const ref = _colRef(c) + r;
+    if (numericOk && v !== '' && /^-?\d+(\.\d+)?$/.test(v))
+      return '<c r="' + ref + '" s="' + style + '"><v>' + v + '</v></c>';
+    if (v === '') return '<c r="' + ref + '" s="' + style + '"/>';
+    return '<c r="' + ref + '" s="' + style + '" t="inlineStr"><is><t xml:space="preserve">' + _xmlSafe(v) + '</t></is></c>';
+  };
+
+  let sheet = _XH +
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' +
+    '<sheetFormatPr defaultRowHeight="16"/>' +
+    '<cols>' + widths.map((w, i) =>
+      '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>').join('') + '</cols>' +
+    '<sheetData>' +
+    '<row r="1" ht="22" customHeight="1">' +
+      selFields.map((f, c) => cellXml(1, c, f.label, 1, false)).join('') + '</row>' +
+    rows.map((r, ri) =>
+      '<row r="' + (ri + 2) + '">' +
+      r.map((v, c) => cellXml(ri + 2, c, v, 2, NUMERIC[selFields[c].key])).join('') +
+      '</row>').join('') +
+    '</sheetData></worksheet>';
+
+  // Font/fill/border/xf indices are positional — fills 0 (none) and 1 (gray125)
+  // are reserved by Excel and must exist even though nothing references them.
+  const styles = _XH +
+    '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<fonts count="2">' +
+      '<font><sz val="11"/><name val="Calibri"/></font>' +
+      '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts>' +
+    '<fills count="3">' +
+      '<fill><patternFill patternType="none"/></fill>' +
+      '<fill><patternFill patternType="gray125"/></fill>' +
+      '<fill><patternFill patternType="solid"><fgColor rgb="FF' + C.brown + '"/><bgColor rgb="FF' + C.brown + '"/></patternFill></fill></fills>' +
+    '<borders count="2">' +
+      '<border><left/><right/><top/><bottom/><diagonal/></border>' +
+      '<border>' +
+        '<left style="thin"><color rgb="FFD9D9D9"/></left><right style="thin"><color rgb="FFD9D9D9"/></right>' +
+        '<top style="thin"><color rgb="FFD9D9D9"/></top><bottom style="thin"><color rgb="FFD9D9D9"/></bottom><diagonal/></border></borders>' +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="3">' +
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+      '<xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1">' +
+        '<alignment horizontal="center" vertical="center"/></xf>' +
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/></cellXfs>' +
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
+    '</styleSheet>';
+
+  // Excel sheet names: ≤31 chars, none of []\/*?: — fall back to "Workers".
+  const sheetName = _xmlSafe((gName || 'Workers').replace(/[\[\]\\\/*?:]+/g, ' ').trim().slice(0, 31)) || 'Workers';
+
+  const zip = new JSZip();
+  zip.file('[Content_Types].xml', _XH +
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+    '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+    '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+    '</Types>');
+  zip.file('_rels/.rels', _pptxRels([   // package-level rels, format-agnostic
+    { id: 'rId1', type: _RT.off, target: 'xl/workbook.xml' },
+  ]));
+  zip.file('xl/workbook.xml', _XH +
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    '<sheets><sheet name="' + sheetName + '" sheetId="1" r:id="rId1"/></sheets></workbook>');
+  zip.file('xl/_rels/workbook.xml.rels', _pptxRels([
+    { id: 'rId1', type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet', target: 'worksheets/sheet1.xml' },
+    { id: 'rId2', type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles',    target: 'styles.xml' },
+  ]));
+  zip.file('xl/styles.xml', styles);
+  zip.file('xl/worksheets/sheet1.xml', sheet);
+
+  const blob = await zip.generateAsync({ type: 'blob',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = _safeFile(gName, 'workers') + '.xlsx';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('Excel ✓', 'ok');
 }
 
 async function _doExportDocs(workers) {
@@ -4395,7 +4612,53 @@ function _progressHide() {
 // Snap to 100% briefly so the bar visibly completes, then close.
 function _progressDone() { _progressSet(100, ''); setTimeout(_progressHide, 280); }
 // Let the browser paint the latest bar state between awaited steps.
-function _paint() { return new Promise(r => requestAnimationFrame(() => setTimeout(r, 0))); }
+// rAF never fires in a hidden/background tab (Chrome throttles it to zero), which
+// would freeze a long export the moment the user switches tabs — so always
+// race it against a short timeout.
+function _paint() {
+  return new Promise(r => {
+    let done = false;
+    const fin = () => { if (!done) { done = true; setTimeout(r, 0); } };
+    requestAnimationFrame(fin);
+    setTimeout(fin, 60);
+  });
+}
+
+// ── Shared media/loader helpers for exports ───────────────────────
+// Pick a file extension from a path or, failing that, its MIME type.
+function _fileExtFor(p, mime) {
+  const m = (p || '').match(/\.([a-z0-9]+)(?:[?#].*)?$/i);
+  if (m) return m[1].toLowerCase();
+  if (/png/.test(mime))  return 'png';
+  if (/webp/.test(mime)) return 'webp';
+  if (/pdf/.test(mime))  return 'pdf';
+  return 'jpg';
+}
+// Fetch a /uploads path (or data: URL) → raw bytes, or null if unavailable.
+async function _fetchImageBytes(src) {
+  if (!src) return null;
+  try {
+    const resp = await fetch(src);
+    if (!resp.ok) return null;
+    const blob = await resp.blob();
+    return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type || '' };
+  } catch (e) { return null; }
+}
+// Lazy <script> loader for heavy vendor libs (pdf-lib) — same pattern as
+// _loadJSZip in pptx-import.js. Cached per path so repeat exports are free.
+const _loadedScripts = {};
+function _loadScript(relPath) {
+  if (!_loadedScripts[relPath]) {
+    _loadedScripts[relPath] = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = new URL(relPath, location.href).href;
+      s.onload = resolve;
+      s.onerror = () => { delete _loadedScripts[relPath]; reject(new Error('failed to load ' + relPath)); };
+      document.head.appendChild(s);
+    });
+  }
+  return _loadedScripts[relPath];
+}
 
 // ── FULL DATABASE BUNDLE (.kdb) export ────────────────────────────
 // A portable, self-contained ZIP of an ENTIRE group — every worker (no field
@@ -4421,24 +4684,8 @@ async function _doDatabaseBundle(g) {
   _progressShow(bi('ກຳລັງສ້າງໄຟລ໌ຖານຂໍ້ມູນ', 'Building database file', 'กำลังสร้างไฟล์ฐานข้อมูล', '데이터베이스 파일 생성 중'));
   try {
 
-  const _extFor = (p, mime) => {
-    const m = (p || '').match(/\.([a-z0-9]+)(?:[?#].*)?$/i);
-    if (m) return m[1].toLowerCase();
-    if (/png/.test(mime))  return 'png';
-    if (/webp/.test(mime)) return 'webp';
-    if (/pdf/.test(mime))  return 'pdf';
-    return 'jpg';
-  };
-  // Fetch a /uploads path (or data: URL) → raw bytes, or null if unavailable.
-  const _grab = async (src) => {
-    if (!src) return null;
-    try {
-      const resp = await fetch(src);
-      if (!resp.ok) return null;
-      const blob = await resp.blob();
-      return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: blob.type || '' };
-    } catch (e) { return null; }
-  };
+  const _extFor = _fileExtFor;
+  const _grab   = _fetchImageBytes;
 
   const zip = new JSZip();
   const media = zip.folder('media');
@@ -4525,11 +4772,22 @@ async function _doDatabaseBundle(g) {
 }
 
 // ── PowerPoint (.pptx) export ─────────────────────────────────────
-// One KD card per slide. Each card is rasterised with html2canvas (same path as
-// the PNG export) and packed into a minimal-but-valid OOXML package via JSZip —
-// no external pptx library required. Output opens cleanly in PowerPoint / Google
-// Slides / Keynote with one editable picture per slide.
-const _PPTX_W = 12192000, _PPTX_H = 6858000;            // 16:9 slide (EMU)
+// One KD card per slide, rebuilt from NATIVE OOXML elements (text boxes, a real
+// a:tbl for the field grid, the photo as the only picture) so every value is
+// editable in PowerPoint / Google Slides / Keynote. Hand-rolled XML via JSZip —
+// no pptx library. The old html2canvas one-picture-per-slide path is kept as
+// _doKdCardPptxRaster and used only as a fallback if native building throws.
+// Fixed LIGHT palette for generated files (xlsx/pptx/pdf) — exports must look
+// identical regardless of the on-screen theme, so never read CSS variables here.
+const _KD_COLORS = {
+  brown: '6B6A2F', line: 'E7EAE7', thBg: 'FAFBFA', fieldBg: 'F7F8F7',
+  text: '14181A', muted: '6B7280', faint: '9AA3A0', green: '2D6A4F',
+  card: 'FFFFFF', white: 'FFFFFF',
+  genderMBg: 'DBEAFE', genderMTx: '1D4ED8', genderFBg: 'FCE7F3', genderFTx: 'BE185D',
+  expired: 'B91C1C',
+};
+
+const _PPTX_W = 12192000, _PPTX_H = 7620000;            // 16:10 slide (EMU) — same aspect as the locked KD card
 const _XH = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n';
 const _NS_P = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"';
 const _EMPTY_TREE = '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>';
@@ -4579,15 +4837,235 @@ const _RT = {
   image: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
 };
 
+// ── Native KD-card slide geometry ─────────────────────────────────
+// The KD card is a locked 16:10 sheet whose internal sizes are all in cqw
+// (1cqw = 1% of card width). These constants are the card measured ONCE at a
+// virtual 1000×625 px (so 1cqw = 10px) and frozen — never computed at runtime,
+// so the exported layout is identical on every machine (kd-card-locked).
+// The card fills the whole 16:10 slide: 12192000 EMU / 1000 px = 12192 exactly.
+const _KD_EMU = 12192;
+function _E(px)  { return Math.round(px * _KD_EMU); }
+// Card px → OOXML font size (1/100 pt). Slide is 960pt wide → 1px = 0.96pt.
+function _SZ(px) { return Math.max(100, Math.round(px * 96)); }
+const _KD_GEO = {
+  top:   { h: 33.2, codeX: 13, codeSize: 13.5,
+           pillX: 878, pillY: 5.5, pillW: 24.7, pillH: 21.2, pillSize: 13,
+           bloodsX: 700, bloodsEndX: 987, bloodsY: 7.6, bloodsH: 17, bloodSize: 12.5 },
+  head:  { y: 33.2, h: 42.2, padX: 15, lSize: 18.5, rSize: 16 },
+  tbl:   { y: 75.4, w: 523.8, labelW: 219.6, rowH: 54.96, labelSize: 12, subSize: 10,
+           valSize: 13, padL: 9 },
+  photo: { x: 523.8, y: 75.4, w: 476.2, h: 411.7, initialsSize: 28 },
+  couple:{ x: 936, y: 85.4, w: 54, h: 23.6, size: 13 },
+  sum:   { x: 523.8, y: 487, headH: 27.6, rowH: 27.6, padX: 14, size: 13 },
+};
+
+// Run properties: Calibri for Latin, Leelawadee UI for complex scripts (covers
+// both Thai and Lao on Windows), Malgun Gothic for the card's fixed Korean
+// strings. PowerPoint substitutes per-character when a glyph is missing.
+function _pptxRun(text, o) {
+  o = o || {};
+  return '<a:r><a:rPr lang="lo-LA" sz="' + (o.sz || 1200) + '"' +
+    (o.b ? ' b="1"' : '') + (o.u ? ' u="sng"' : '') + ' dirty="0">' +
+    '<a:solidFill><a:srgbClr val="' + (o.color || _KD_COLORS.text) + '"/></a:solidFill>' +
+    '<a:latin typeface="' + (o.mono ? 'Consolas' : 'Calibri') + '"/>' +
+    '<a:ea typeface="Malgun Gothic"/><a:cs typeface="Leelawadee UI"/>' +
+    '</a:rPr><a:t>' + _xmlSafe(text) + '</a:t></a:r>';
+}
+function _pptxPara(runs, algn) {
+  return '<a:p><a:pPr algn="' + (algn || 'l') + '"/>' + runs + '<a:endParaRPr lang="lo-LA" dirty="0"/></a:p>';
+}
+// Generic shape: rect / roundRect with optional fill, outline and text.
+function _pptxSp(id, x, y, w, h, o, paras) {
+  o = o || {};
+  return '<p:sp><p:nvSpPr><p:cNvPr id="' + id + '" name="' + (o.name || 'Shape ' + id) + '"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>' +
+    '<p:spPr><a:xfrm><a:off x="' + _E(x) + '" y="' + _E(y) + '"/><a:ext cx="' + Math.max(1, _E(w)) + '" cy="' + Math.max(1, _E(h)) + '"/></a:xfrm>' +
+    '<a:prstGeom prst="' + (o.round ? 'roundRect' : 'rect') + '">' +
+    (o.adj != null ? '<a:avLst><a:gd name="adj" fmla="val ' + o.adj + '"/></a:avLst>' : '<a:avLst/>') +
+    '</a:prstGeom>' +
+    (o.fill ? '<a:solidFill><a:srgbClr val="' + o.fill + '"/></a:solidFill>' : '<a:noFill/>') +
+    (o.line ? '<a:ln w="' + (o.lineW || _KD_EMU) + '"><a:solidFill><a:srgbClr val="' + o.line + '"/></a:solidFill></a:ln>' : '<a:ln><a:noFill/></a:ln>') +
+    '</p:spPr>' +
+    '<p:txBody><a:bodyPr wrap="' + (o.wrap || 'none') + '" lIns="0" tIns="0" rIns="0" bIns="0" anchor="' + (o.anchor || 'ctr') + '"/><a:lstStyle/>' +
+    (paras || '<a:p/>') + '</p:txBody></p:sp>';
+}
+function _pptxPic(id, relId, x, y, w, h, crop) {
+  return '<p:pic><p:nvPicPr><p:cNvPr id="' + id + '" name="Photo"/>' +
+    '<p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr>' +
+    '<p:blipFill><a:blip r:embed="' + relId + '"/>' +
+    (crop ? '<a:srcRect l="' + crop.l + '" t="' + crop.t + '" r="' + crop.r + '" b="' + crop.b + '"/>' : '') +
+    '<a:stretch><a:fillRect/></a:stretch></p:blipFill>' +
+    '<p:spPr><a:xfrm><a:off x="' + _E(x) + '" y="' + _E(y) + '"/><a:ext cx="' + _E(w) + '" cy="' + _E(h) + '"/></a:xfrm>' +
+    '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>';
+}
+// srcRect percentages (1/1000 %) emulating CSS object-fit:cover with
+// object-position:center top — crop sides when too wide, bottom when too tall.
+function _coverCrop(imgW, imgH, boxW, boxH) {
+  if (!imgW || !imgH) return null;
+  const ia = imgW / imgH, ba = boxW / boxH;
+  if (ia > ba * 1.001) { const c = Math.round((1 - ba / ia) * 50000); return { l: c, r: c, t: 0, b: 0 }; }
+  if (ia < ba * 0.999) return { l: 0, r: 0, t: 0, b: Math.round((1 - ia / ba) * 100000) };
+  return null;
+}
+
+// The left field grid as a REAL PowerPoint table (a:tbl) — rows stay editable
+// and our own pptx importer can read the values back.
+function _kdFieldTable(id, fields) {
+  const G = _KD_GEO.tbl, C = _KD_COLORS;
+  const line = (tag) => '<a:' + tag + ' w="' + _KD_EMU + '" cap="flat">' +
+    '<a:solidFill><a:srgbClr val="' + C.line + '"/></a:solidFill><a:prstDash val="solid"/></a:' + tag + '>';
+  const rows = fields.map(f => {
+    const label =
+      '<a:tc><a:txBody><a:bodyPr/><a:lstStyle/>' +
+      _pptxPara(_pptxRun(f.label, { sz: _SZ(G.labelSize), color: C.muted })) +
+      (f.sub ? _pptxPara(_pptxRun(f.sub, { sz: _SZ(G.subSize), color: C.faint })) : '') +
+      '</a:txBody><a:tcPr marL="' + _E(G.padL) + '" marR="' + _E(4) + '" marT="0" marB="0" anchor="ctr">' +
+      line('lnB') + '<a:solidFill><a:srgbClr val="' + C.thBg + '"/></a:solidFill></a:tcPr></a:tc>';
+    const val =
+      '<a:tc><a:txBody><a:bodyPr/><a:lstStyle/>' +
+      _pptxPara(_pptxRun(f.val, { sz: _SZ(G.valSize), b: 1, color: f.color || C.text, mono: f.mono }), 'ctr') +
+      '</a:txBody><a:tcPr marL="' + _E(4) + '" marR="' + _E(4) + '" marT="0" marB="0" anchor="ctr">' +
+      line('lnR') + line('lnB') + '<a:solidFill><a:srgbClr val="' + C.white + '"/></a:solidFill></a:tcPr></a:tc>';
+    return '<a:tr h="' + _E(G.rowH) + '">' + label + val + '</a:tr>';
+  }).join('');
+  return '<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="' + id + '" name="Fields"/>' +
+    '<p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>' +
+    '<p:xfrm><a:off x="0" y="' + _E(G.y) + '"/><a:ext cx="' + _E(G.w) + '" cy="' + _E(G.rowH * fields.length) + '"/></p:xfrm>' +
+    '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">' +
+    '<a:tbl><a:tblPr/><a:tblGrid>' +
+    '<a:gridCol w="' + _E(G.labelW) + '"/><a:gridCol w="' + _E(G.w - G.labelW) + '"/>' +
+    '</a:tblGrid>' + rows + '</a:tbl></a:graphicData></a:graphic></p:graphicFrame>';
+}
+
+// Build the full spTree for one worker's KD card (same fields/layout as
+// _renderKdCard — keep the two in sync if the card design ever changes).
+function _kdCardSlideXml(w, g, gc, photo) {
+  const C = _KD_COLORS, G = _KD_GEO;
+  const CARD_W = 1000, CARD_H = 625;
+  let id = 2;
+  const parts = [];
+
+  // card background + outer hairline
+  parts.push(_pptxSp(id++, 0, 0, CARD_W, CARD_H, { name: 'Card', fill: C.card, line: C.line }));
+
+  // top strip: worker code · gender pill · blood letters, hairline below
+  parts.push(_pptxSp(id++, G.top.codeX, 0, 400, G.top.h, { name: 'Code' },
+    _pptxPara(_pptxRun(w.worker_id || w.employer_code || '—', { sz: _SZ(G.top.codeSize), b: 1 }))));
+  if (w.sex === 'M' || w.sex === 'F') {
+    const m = w.sex === 'M';
+    parts.push(_pptxSp(id++, G.top.pillX, G.top.pillY, G.top.pillW, G.top.pillH,
+      { name: 'Gender', round: 1, adj: 50000, fill: m ? C.genderMBg : C.genderFBg },
+      _pptxPara(_pptxRun(m ? '♂' : '♀', { sz: _SZ(G.top.pillSize), b: 1, color: m ? C.genderMTx : C.genderFTx }), 'ctr')));
+  }
+  const bloodRuns = ['A', 'B', 'O', 'AB'].map(b => {
+    const on = w.blood === b;
+    return _pptxRun(b, { sz: _SZ(G.top.bloodSize), b: on ? 1 : 0, u: on ? 1 : 0, color: on ? C.green : C.faint });
+  }).join(_pptxRun('  ', { sz: _SZ(G.top.bloodSize), color: C.faint }));
+  parts.push(_pptxSp(id++, G.top.bloodsX, G.top.bloodsY, G.top.bloodsEndX - G.top.bloodsX, G.top.bloodsH,
+    { name: 'Bloods' }, _pptxPara(bloodRuns, 'r')));
+  parts.push(_pptxSp(id++, 0, G.top.h - 1, CARD_W, 1, { name: 'TopLine', fill: C.line }));
+
+  // brown header bar: supervisor + sequence
+  parts.push(_pptxSp(id++, 0, G.head.y, CARD_W, G.head.h, { name: 'HeadBar', fill: C.brown }));
+  const seq = w.worker_id ? w.worker_id.split('-').pop() : '';
+  parts.push(_pptxSp(id++, G.head.padX, G.head.y, 700, G.head.h, { name: 'Supervisor' },
+    _pptxPara(_pptxRun(w.group_supervisor || '—', { sz: _SZ(G.head.lSize), b: 1, color: C.white }))));
+  parts.push(_pptxSp(id++, CARD_W - G.head.padX - 300, G.head.y, 300, G.head.h, { name: 'Seq' },
+    _pptxPara(_pptxRun(seq || '', { sz: _SZ(G.head.rSize), color: C.white }), 'r')));
+
+  // left column: the 10-row field table (native, editable)
+  const wh = (w.weight ? w.weight + 'Kg' : '--') + ' ; ' + (w.height ? w.height + 'Cm' : '--');
+  const expCls = expiryClass(w.passport_expiry);
+  const expColor = expCls === 'expiry-expired' ? C.expired
+                 : (expCls === 'expiry-warn' || expCls === 'expiry-near') ? 'B45309' : C.text;
+  parts.push(_kdFieldTable(id++, [
+    { label: 'Name',            sub: 'ຊື່',             val: w.en_name || '--' },
+    { label: 'ຊື່ ນາມສະກຸນ',      sub: '',               val: w.lo_name || '--' },
+    { label: 'Date of birth',   sub: 'ວັນເດືອນປີເກີດ',   val: w.dob || '--' },
+    { label: 'Village',         sub: 'ບ້ານ',            val: w.village || '--' },
+    { label: 'Weight ; Height', sub: 'Kg ; Cm',        val: wh },
+    { label: 'Size',            sub: 'ຂະໜາດ',           val: w.size || '--' },
+    { label: 'Blood',           sub: 'ກຸ່ມເລືອດ',        val: w.blood || '--' },
+    { label: 'Passport No',     sub: 'ເລກໜັງສື',        val: w.passport_no || '--', mono: 1 },
+    { label: 'Date of expiry',  sub: 'ໝົດອາຍຸ',         val: w.passport_expiry || '--', color: expColor },
+    { label: 'Tel',             sub: 'ໂທ',              val: w.tel || '--' },
+  ]));
+
+  // right column: photo box (image with cover-crop, or initials), couple chip
+  parts.push(_pptxSp(id++, G.photo.x, G.photo.y, G.photo.w, G.photo.h, { name: 'PhotoBox', fill: C.fieldBg }));
+  if (photo) {
+    parts.push(_pptxPic(id++, photo.relId, G.photo.x, G.photo.y, G.photo.w, G.photo.h,
+      _coverCrop(photo.w, photo.h, G.photo.w, G.photo.h)));
+  } else {
+    parts.push(_pptxSp(id++, G.photo.x, G.photo.y, G.photo.w, G.photo.h, { name: 'Initials' },
+      _pptxPara(_pptxRun(avatarInitials(w.en_name || '?'), { sz: _SZ(G.photo.initialsSize), b: 1, color: C.faint }), 'ctr')));
+  }
+  if (w.couple === 'yes') {
+    parts.push(_pptxSp(id++, G.couple.x, G.couple.y, G.couple.w, G.couple.h,
+      { name: 'Couple', round: 1, adj: 20000, fill: C.brown },
+      _pptxPara(_pptxRun('부부', { sz: _SZ(G.couple.size), color: C.white }), 'ctr')));
+  }
+
+  // summary block under the photo
+  const assigned = (g && g.assigned != null && g.assigned !== '') ? g.assigned : 0;
+  const arrivals = (g && g.arrivals != null && g.arrivals !== '') ? g.arrivals : 0;
+  const S = G.sum, sumW = CARD_W - S.x;
+  parts.push(_pptxSp(id++, S.x, S.y, sumW, S.headH, { name: 'SumHead', fill: C.brown },
+    _pptxPara(_pptxRun(t('kd_summary') || 'Summary', { sz: _SZ(S.size), b: 1, color: C.white }), 'ctr')));
+  const sumRows = [
+    ['여성 (ຍ)', String(gc.f)], ['남성 (ຊ)', String(gc.m)],
+    ['배정 · ' + (t('kd_assigned') || ''), String(assigned)],
+    ['입국 · ' + (t('kd_arrivals') || ''), String(arrivals)],
+  ];
+  sumRows.forEach((r, i) => {
+    const y = S.y + S.headH + i * S.rowH;
+    parts.push(_pptxSp(id++, S.x + S.padX, y, sumW - 2 * S.padX, S.rowH, { name: 'SumL' + i },
+      _pptxPara(_pptxRun(r[0], { sz: _SZ(S.size), color: C.muted }))));
+    parts.push(_pptxSp(id++, S.x + S.padX, y, sumW - 2 * S.padX, S.rowH, { name: 'SumV' + i },
+      _pptxPara(_pptxRun(r[1], { sz: _SZ(S.size), b: 1 }), 'r')));
+    if (i < sumRows.length - 1)
+      parts.push(_pptxSp(id++, S.x, y + S.rowH - 1, sumW, 1, { name: 'SumLine' + i, fill: C.line }));
+  });
+  parts.push(_pptxSp(id++, S.x, S.y, sumW, 1, { name: 'SumTop', fill: C.line }));
+  // vertical divider between field table and photo column
+  parts.push(_pptxSp(id++, G.tbl.w - 1, G.tbl.y, 1, CARD_H - G.tbl.y, { name: 'MidLine', fill: C.line }));
+
+  return parts.join('');
+}
+
+// Fetch + normalise a worker photo for embedding: keep png/jpg bytes as-is,
+// re-encode anything else (webp…) to PNG via canvas so PowerPoint accepts it.
+async function _preparePptxPhoto(src) {
+  const got = await _fetchImageBytes(src);
+  if (!got) return null;
+  try {
+    const blob = new Blob([got.bytes], { type: got.mime || 'image/jpeg' });
+    const bmp = await createImageBitmap(blob);
+    const out = { w: bmp.width, h: bmp.height };
+    if (/png/.test(got.mime))        { out.ext = 'png'; out.bytes = got.bytes; }
+    else if (/jpe?g/.test(got.mime)) { out.ext = 'jpg'; out.bytes = got.bytes; }
+    else {
+      const c = document.createElement('canvas');
+      c.width = bmp.width; c.height = bmp.height;
+      c.getContext('2d').drawImage(bmp, 0, 0);
+      const b = await new Promise(r => c.toBlob(r, 'image/png'));
+      out.ext = 'png'; out.bytes = new Uint8Array(await b.arrayBuffer());
+    }
+    if (bmp.close) bmp.close();
+    return out;
+  } catch (e) { return null; }
+}
+
 async function _buildPptx(slides) {
+  // slides: [{ spTree, images: [{relId, ext, bytes}] }] — native shapes per slide.
   const n = slides.length;
   const zip = new JSZip();
 
-  // [Content_Types].xml
   let ct = _XH + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
     '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
     '<Default Extension="xml" ContentType="application/xml"/>' +
     '<Default Extension="png" ContentType="image/png"/>' +
+    '<Default Extension="jpg" ContentType="image/jpeg"/>' +
+    '<Default Extension="jpeg" ContentType="image/jpeg"/>' +
     '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>' +
     '<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>' +
     '<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>' +
@@ -4636,7 +5114,109 @@ async function _buildPptx(slides) {
     { id: 'rId1', type: _RT.master, target: '../slideMasters/slideMaster1.xml' },
   ]));
 
-  // slides + media
+  // slides + media (photo images per slide)
+  for (let i = 0; i < n; i++) {
+    const s = slides[i], idx = i + 1;
+    const rels = [{ id: 'rId1', type: _RT.layout, target: '../slideLayouts/slideLayout1.xml' }];
+    (s.images || []).forEach((im, j) => {
+      const fname = 'image' + idx + '_' + j + '.' + im.ext;
+      zip.file('ppt/media/' + fname, im.bytes);
+      rels.push({ id: im.relId, type: _RT.image, target: '../media/' + fname });
+    });
+    zip.file('ppt/slides/slide' + idx + '.xml', _XH +
+      '<p:sld ' + _NS_P + '><p:cSld><p:spTree>' + _EMPTY_TREE + s.spTree +
+      '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>');
+    zip.file('ppt/slides/_rels/slide' + idx + '.xml.rels', _pptxRels(rels));
+  }
+
+  return zip.generateAsync({ type: 'blob',
+    mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
+}
+
+async function _doKdCardPptx(workers, g) {
+  if (typeof _loadJSZip === 'function') { try { await _loadJSZip(); } catch (e) {} }
+  if (!window.JSZip) { toast(bi('JSZip ບໍ່ໄດ້ໂຫລດ','JSZip not loaded','JSZip ยังไม่โหลด','JSZip가 로드되지 않음'), 'warn'); return; }
+  _progressShow(bi('ກຳລັງສ້າງ PowerPoint', 'Creating PowerPoint', 'กำลังสร้าง PowerPoint', 'PowerPoint 생성 중'));
+  try {
+    const gc = _kdGenderCounts(g);   // identical on every card — compute once
+    const slides = [];
+    for (let i = 0; i < workers.length; i++) {
+      const w = workers[i];
+      let photo = null;
+      if (w.photo) {
+        photo = await _preparePptxPhoto(w.photo);
+        if (photo) photo.relId = 'rId2';
+      }
+      slides.push({ spTree: _kdCardSlideXml(w, g, gc, photo), images: photo ? [photo] : [] });
+      _progressSet((i + 1) / workers.length * 90, bi('ສ້າງສະໄລ້ ', 'Creating slide ', 'สร้างสไลด์ ', '슬라이드 생성 중 ') + (i + 1) + '/' + workers.length);
+      await _paint();
+    }
+    if (!slides.length) { toast(bi('ບໍ່ມີຂໍ້ມູນ','No data','ไม่มีข้อมูล','데이터 없음'), 'warn'); return; }
+    _progressSet(95, bi('ປະກອບໄຟລ໌...', 'Assembling file…', 'ประกอบไฟล์...', '파일 조합 중…'));
+    const blob = await _buildPptx(slides);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = _safeFile(g && g.name, 'workers') + '.pptx';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('PowerPoint ✓', 'ok');
+  } catch (e) {
+    // native building failed → fall back to the old rasterised (image) slides
+    console.warn('native pptx failed, falling back to raster:', e);
+    try { await _doKdCardPptxRaster(workers, g); }
+    catch (e2) { toast('Export failed: ' + (e2 && e2.message || e2), 'warn'); }
+  } finally {
+    _progressDone();
+  }
+}
+
+// Legacy raster path (html2canvas screenshot, one picture per slide) — kept
+// only as the fallback when native slide construction throws.
+async function _buildPptxRaster(slides) {
+  const zip = new JSZip();
+  const n = slides.length;
+  let ct = _XH + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Default Extension="png" ContentType="image/png"/>' +
+    '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>' +
+    '<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>' +
+    '<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>' +
+    '<Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>';
+  for (let i = 1; i <= n; i++) ct += '<Override PartName="/ppt/slides/slide' + i + '.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>';
+  ct += '</Types>';
+  zip.file('[Content_Types].xml', ct);
+  zip.file('_rels/.rels', _pptxRels([{ id: 'rId1', type: _RT.off, target: 'ppt/presentation.xml' }]));
+  let sldIds = '', presRels = [{ id: 'rId1', type: _RT.master, target: 'slideMasters/slideMaster1.xml' }];
+  for (let i = 1; i <= n; i++) {
+    sldIds += '<p:sldId id="' + (255 + i) + '" r:id="rId' + (i + 1) + '"/>';
+    presRels.push({ id: 'rId' + (i + 1), type: _RT.slide, target: 'slides/slide' + i + '.xml' });
+  }
+  presRels.push({ id: 'rId' + (n + 2), type: _RT.theme, target: 'theme/theme1.xml' });
+  zip.file('ppt/presentation.xml', _XH +
+    '<p:presentation ' + _NS_P + '>' +
+    '<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>' +
+    '<p:sldIdLst>' + sldIds + '</p:sldIdLst>' +
+    '<p:sldSz cx="' + _PPTX_W + '" cy="' + _PPTX_H + '"/>' +
+    '<p:notesSz cx="6858000" cy="9144000"/></p:presentation>');
+  zip.file('ppt/_rels/presentation.xml.rels', _pptxRels(presRels));
+  zip.file('ppt/theme/theme1.xml', _PPTX_THEME);
+  zip.file('ppt/slideMasters/slideMaster1.xml', _XH +
+    '<p:sldMaster ' + _NS_P + '><p:cSld><p:bg><p:bgRef idx="1001"><a:schemeClr val="bg1"/></p:bgRef></p:bg>' +
+    '<p:spTree>' + _EMPTY_TREE + '</p:spTree></p:cSld>' +
+    '<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>' +
+    '<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst></p:sldMaster>');
+  zip.file('ppt/slideMasters/_rels/slideMaster1.xml.rels', _pptxRels([
+    { id: 'rId1', type: _RT.layout, target: '../slideLayouts/slideLayout1.xml' },
+    { id: 'rId2', type: _RT.theme,  target: '../theme/theme1.xml' },
+  ]));
+  zip.file('ppt/slideLayouts/slideLayout1.xml', _XH +
+    '<p:sldLayout ' + _NS_P + ' type="blank" preserve="1"><p:cSld name="Blank">' +
+    '<p:spTree>' + _EMPTY_TREE + '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>');
+  zip.file('ppt/slideLayouts/_rels/slideLayout1.xml.rels', _pptxRels([
+    { id: 'rId1', type: _RT.master, target: '../slideMasters/slideMaster1.xml' },
+  ]));
   for (let i = 0; i < n; i++) {
     const s = slides[i], idx = i + 1;
     // Fit the card image inside the slide, centred, preserving aspect.
@@ -4661,16 +5241,13 @@ async function _buildPptx(slides) {
       { id: 'rId2', type: _RT.image,  target: '../media/image' + idx + '.png' },
     ]));
   }
-
   return zip.generateAsync({ type: 'blob',
     mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
 }
 
-async function _doKdCardPptx(workers, g) {
+async function _doKdCardPptxRaster(workers, g) {
   if (!window.html2canvas) { toast(bi('html2canvas ບໍ່ໄດ້ໂຫລດ','html2canvas not loaded','html2canvas ยังไม่โหลด','html2canvas가 로드되지 않음'), 'warn'); return; }
   if (!window.JSZip)       { toast(bi('JSZip ບໍ່ໄດ້ໂຫລດ','JSZip not loaded','JSZip ยังไม่โหลด','JSZip가 로드되지 않음'), 'warn'); return; }
-  _progressShow(bi('ກຳລັງສ້າງ PowerPoint', 'Creating PowerPoint', 'กำลังสร้าง PowerPoint', 'PowerPoint 생성 중'));
-  try {
   const slides = [];
   for (let i = 0; i < workers.length; i++) {
     const wrap = document.createElement('div');
@@ -4688,7 +5265,7 @@ async function _doKdCardPptx(workers, g) {
   }
   if (!slides.length) { toast(bi('ບໍ່ມີຂໍ້ມູນ','No data','ไม่มีข้อมูล','데이터 없음'), 'warn'); return; }
   _progressSet(95, bi('ປະກອບໄຟລ໌...', 'Assembling file…', 'ประกอบไฟล์...', '파일 조합 중…'));
-  const blob = await _buildPptx(slides);
+  const blob = await _buildPptxRaster(slides);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -4696,11 +5273,398 @@ async function _doKdCardPptx(workers, g) {
   a.click();
   URL.revokeObjectURL(url);
   toast('PowerPoint ✓', 'ok');
-  } catch (e) {
-    toast('Export failed: ' + (e && e.message || e), 'warn');
-  } finally {
-    _progressDone();
+}
+
+// ── PDF export (pdf-lib + fontkit, fully client-side) ─────────────
+// Real .pdf files with selectable/searchable text — no print dialog, identical
+// output on every machine. Noto Sans / Thai / Lao TTFs are embedded (subset);
+// Hangul runs are rasterised via canvas (full shaping, no 5 MB Korean font).
+// pdf-lib + fontkit do not apply GPOS mark positioning; Lao carries anchored
+// forms that survive this, Thai stacked marks may sit slightly off — if that
+// proves unacceptable, route Thai runs through the same canvas path as Hangul.
+let _pdfLibPromise = null;
+function _loadPdfLib() {
+  if (!_pdfLibPromise) {
+    _pdfLibPromise = Promise.all([
+      _loadScript('../../vendor/pdf-lib/pdf-lib.min.js'),
+      _loadScript('../../vendor/pdf-lib/fontkit.umd.min.js'),
+    ]).then(() => {
+      if (!window.PDFLib || !window.fontkit) throw new Error('pdf-lib unavailable');
+    }).catch(e => { _pdfLibPromise = null; throw e; });
   }
+  return _pdfLibPromise;
+}
+const _PDF_FONT_FILES = {
+  latin: ['NotoSans-Regular.ttf', 'NotoSans-Bold.ttf'],
+  thai:  ['NotoSansThai-Regular.ttf', 'NotoSansThai-Bold.ttf'],
+  lao:   ['NotoSansLao-Regular.ttf', 'NotoSansLao-Bold.ttf'],
+};
+const _pdfFontBytes = {};
+async function _pdfFetchFont(file) {
+  if (!_pdfFontBytes[file]) {
+    _pdfFontBytes[file] = fetch(new URL('../../vendor/fonts/ttf/' + file, location.href))
+      .then(r => { if (!r.ok) throw new Error('font ' + file); return r.arrayBuffer(); });
+  }
+  return _pdfFontBytes[file];
+}
+async function _pdfNewDoc() {
+  await _loadPdfLib();
+  const doc = await PDFLib.PDFDocument.create();
+  doc.registerFontkit(window.fontkit);
+  const fonts = {};
+  for (const key of Object.keys(_PDF_FONT_FILES)) {
+    const [rf, bf] = _PDF_FONT_FILES[key];
+    // subset:false — fontkit's subsetter drops random glyphs from these Noto
+    // statics (letters vanish in Acrobat/MuPDF). Full embed is ~430 KB per
+    // Latin face, a fair price for text that always renders.
+    fonts[key] = {
+      reg:  await doc.embedFont(await _pdfFetchFont(rf), { subset: false }),
+      bold: await doc.embedFont(await _pdfFetchFont(bf), { subset: false }),
+    };
+  }
+  return { doc, fonts };
+}
+function _pdfRgb(hex) {
+  return PDFLib.rgb(parseInt(hex.slice(0, 2), 16) / 255,
+                    parseInt(hex.slice(2, 4), 16) / 255,
+                    parseInt(hex.slice(4, 6), 16) / 255);
+}
+function _pdfScriptOf(ch) {
+  const c = ch.codePointAt(0);
+  if (c < 0x0370)                 return 'latin';    // ASCII/Latin-1 — Noto Sans covers all of it
+  if (c >= 0x0E00 && c <= 0x0E7F) return 'thai';
+  if (c >= 0x0E80 && c <= 0x0EFF) return 'lao';
+  if ((c >= 0x1100 && c <= 0x11FF) || (c >= 0x3130 && c <= 0x318F) ||
+      (c >= 0xA960 && c <= 0xA97F) || (c >= 0xAC00 && c <= 0xD7FF)) return 'hangul';
+  if (c >= 0x2000 && c <= 0x206F) return 'latin';    // general punctuation (— · …)
+  if (c >= 0x2600 && c <= 0x27BF) return 'raster';   // ♂ ♀ etc — not in the embedded fonts
+  return 'latin';
+}
+// Split text into same-script runs. Spaces/digits/ASCII punctuation always go
+// to the Latin font — the Thai/Lao subsets don't carry full ASCII glyphs.
+function _pdfRuns(text) {
+  const runs = [];
+  let cur = null;
+  for (const ch of String(text)) {
+    const s = _pdfScriptOf(ch);
+    if (cur && cur.script === s) cur.text += ch;
+    else { cur = { script: s, text: ch }; runs.push(cur); }
+  }
+  return runs;
+}
+// A drawing "pen" bound to one document: measures and draws mixed-script text.
+// Hangul is rendered by the browser onto a canvas and embedded as a small PNG.
+function _pdfPen(doc, fonts) {
+  const hangulCache = {};
+  const isRasterRun = s => s === 'hangul' || s === 'raster';
+  async function hangulImg(text, size, colorHex, bold) {
+    const key = text + '|' + size + '|' + colorHex + '|' + (bold ? 1 : 0);
+    if (hangulCache[key]) return hangulCache[key];
+    const scale = 4, px = size * scale;
+    const font = (bold ? '700 ' : '400 ') + px + 'px "Malgun Gothic","Noto Sans KR",sans-serif';
+    const c = document.createElement('canvas');
+    let ctx = c.getContext('2d');
+    ctx.font = font;
+    const m = ctx.measureText(text);
+    const asc  = m.actualBoundingBoxAscent  || px * 0.8;
+    const desc = m.actualBoundingBoxDescent || px * 0.25;
+    c.width = Math.ceil(m.width) + 4; c.height = Math.ceil(asc + desc) + 4;
+    ctx = c.getContext('2d');
+    ctx.font = font; ctx.fillStyle = '#' + colorHex; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(text, 2, Math.ceil(asc) + 2);
+    const blob = await new Promise(r => c.toBlob(r, 'image/png'));
+    const img = await doc.embedPng(await blob.arrayBuffer());
+    const out = { img, w: c.width / scale, h: c.height / scale, asc: (Math.ceil(asc) + 2) / scale };
+    hangulCache[key] = out;
+    return out;
+  }
+  function measureRun(run, size, bold) {
+    if (isRasterRun(run.script)) {
+      const c = document.createElement('canvas').getContext('2d');
+      c.font = (bold ? '700 ' : '400 ') + (size * 4) + 'px "Malgun Gothic","Noto Sans KR",sans-serif';
+      return (c.measureText(run.text).width + 4) / 4;
+    }
+    const f = fonts[run.script] || fonts.latin;
+    return (bold ? f.bold : f.reg).widthOfTextAtSize(run.text, size);
+  }
+  return {
+    measure(text, size, bold) {
+      return _pdfRuns(text).reduce((sum, r) => sum + measureRun(r, size, bold), 0);
+    },
+    // Draw text centred vertically inside a box given in PDF points (top-based).
+    // o: { size, bold, color (hex), align 'l'|'c'|'r' }
+    async box(page, text, x, yTop, w, h, o) {
+      text = String(text == null ? '' : text);
+      if (!text) return;
+      const size = o.size, bold = !!o.bold, colorHex = o.color || _KD_COLORS.text;
+      const runs = _pdfRuns(text);
+      const total = runs.reduce((s, r) => s + measureRun(r, size, bold), 0);
+      let cx = o.align === 'c' ? x + (w - total) / 2 : o.align === 'r' ? x + w - total : x;
+      const pageH = page.getHeight();
+      const baseline = pageH - (yTop + h / 2 + size * 0.36);
+      for (const r of runs) {
+        const rw = measureRun(r, size, bold);
+        if (isRasterRun(r.script)) {
+          const hi = await hangulImg(r.text, size, colorHex, bold);
+          page.drawImage(hi.img, { x: cx, y: baseline - (hi.h - hi.asc), width: hi.w, height: hi.h });
+        } else {
+          const f = fonts[r.script] || fonts.latin;
+          page.drawText(r.text, { x: cx, y: baseline, size,
+            font: bold ? f.bold : f.reg, color: _pdfRgb(colorHex) });
+        }
+        cx += rw;
+      }
+    },
+  };
+}
+// Photo → cover-cropped JPEG bytes (top-anchored like the on-screen card),
+// normalising webp/EXIF through the browser decoder in the process. JPEG keeps
+// multi-page card PDFs small — these are photographic images, not line art.
+async function _photoToJpgBytes(src, boxW, boxH) {
+  const got = await _fetchImageBytes(src);
+  if (!got) return null;
+  try {
+    const bmp = await createImageBitmap(new Blob([got.bytes], { type: got.mime || 'image/jpeg' }));
+    const scale = 1.5, W = Math.round(boxW * scale), H = Math.round(boxH * scale);
+    const ba = W / H, ia = bmp.width / bmp.height;
+    let sx = 0, sy = 0, sw = bmp.width, sh = bmp.height;
+    if (ia > ba)      { sh = bmp.height; sw = sh * ba; sx = (bmp.width - sw) / 2; }
+    else if (ia < ba) { sw = bmp.width;  sh = sw / ba; sy = 0; }   // keep the top (forehead)
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);   // JPEG has no alpha
+    ctx.drawImage(bmp, sx, sy, sw, sh, 0, 0, W, H);
+    if (bmp.close) bmp.close();
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.82));
+    return new Uint8Array(await blob.arrayBuffer());
+  } catch (e) { return null; }
+}
+function _pdfDownload(bytes, filename) {
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// KD cards → one card per A4-landscape page, same _KD_GEO as the pptx export
+// so the locked layout stays pixel-identical across formats.
+async function _doKdCardPdfFile(workers, g) {
+  await _loadPdfLib();   // throws early → caller falls back to the print path
+  _progressShow(bi('ກຳລັງສ້າງ PDF', 'Creating PDF', 'กำลังสร้าง PDF', 'PDF 생성 중'));
+  try {
+    const { doc, fonts } = await _pdfNewDoc();
+    const pen = _pdfPen(doc, fonts);
+    const gc = _kdGenderCounts(g);
+    const PW = 841.89, PH = 595.28, MARGIN = 23;
+    const S = (PW - 2 * MARGIN) / 1000;                 // card-px → pt
+    const ox = MARGIN, oy = (PH - 625 * S) / 2;
+    const C = _KD_COLORS, G = _KD_GEO;
+    const X = px => ox + px * S, Y = px => oy + px * S; // top-based
+    const rect = (page, x, y, w, h, fill, line) => page.drawRectangle({
+      x: X(x), y: PH - Y(y) - h * S, width: w * S, height: h * S,
+      color: fill ? _pdfRgb(fill) : undefined,
+      borderColor: line ? _pdfRgb(line) : undefined,
+      borderWidth: line ? 0.7 : undefined,
+    });
+    const box = (page, text, x, y, w, h, o) =>
+      pen.box(page, text, X(x), Y(y), w * S, h * S, { ...o, size: o.size * S });
+
+    for (let i = 0; i < workers.length; i++) {
+      const w = workers[i];
+      const page = doc.addPage([PW, PH]);
+      rect(page, 0, 0, 1000, 625, C.card, C.line);
+      // top strip
+      await box(page, w.worker_id || w.employer_code || '—', G.top.codeX, 0, 400, G.top.h, { size: G.top.codeSize, bold: 1 });
+      if (w.sex === 'M' || w.sex === 'F') {
+        const m = w.sex === 'M';
+        rect(page, G.top.pillX, G.top.pillY, G.top.pillW, G.top.pillH, m ? C.genderMBg : C.genderFBg);
+        await box(page, m ? '♂' : '♀', G.top.pillX, G.top.pillY, G.top.pillW, G.top.pillH,
+          { size: G.top.pillSize, bold: 1, color: m ? C.genderMTx : C.genderFTx, align: 'c' });
+      }
+      let bx = G.top.bloodsEndX;
+      for (const b of ['AB', 'O', 'B', 'A']) {           // draw right → left
+        const on = w.blood === b;
+        const bw = pen.measure(b, G.top.bloodSize * S, on) / S;
+        bx -= bw;
+        await box(page, b, bx, G.top.bloodsY, bw, G.top.bloodsH,
+          { size: G.top.bloodSize, bold: on, color: on ? C.green : C.faint });
+        if (on) rect(page, bx, G.top.bloodsY + G.top.bloodsH - 1, bw, 2, C.green);
+        bx -= 10;
+      }
+      rect(page, 0, G.top.h - 1, 1000, 1, C.line);
+      // brown header
+      rect(page, 0, G.head.y, 1000, G.head.h, C.brown);
+      const seq = w.worker_id ? w.worker_id.split('-').pop() : '';
+      await box(page, w.group_supervisor || '—', G.head.padX, G.head.y, 700, G.head.h, { size: G.head.lSize, bold: 1, color: C.white });
+      await box(page, seq || '', 1000 - G.head.padX - 300, G.head.y, 300, G.head.h, { size: G.head.rSize, color: C.white, align: 'r' });
+      // field grid
+      const wh = (w.weight ? w.weight + 'Kg' : '--') + ' ; ' + (w.height ? w.height + 'Cm' : '--');
+      const expCls = expiryClass(w.passport_expiry);
+      const expColor = expCls === 'expiry-expired' ? C.expired
+                     : (expCls === 'expiry-warn' || expCls === 'expiry-near') ? 'B45309' : C.text;
+      const fields = [
+        ['Name', 'ຊື່', w.en_name || '--'],
+        ['ຊື່ ນາມສະກຸນ', '', w.lo_name || '--'],
+        ['Date of birth', 'ວັນເດືອນປີເກີດ', w.dob || '--'],
+        ['Village', 'ບ້ານ', w.village || '--'],
+        ['Weight ; Height', 'Kg ; Cm', wh],
+        ['Size', 'ຂະໜາດ', w.size || '--'],
+        ['Blood', 'ກຸ່ມເລືອດ', w.blood || '--'],
+        ['Passport No', 'ເລກໜັງສື', w.passport_no || '--'],
+        ['Date of expiry', 'ໝົດອາຍຸ', w.passport_expiry || '--', expColor],
+        ['Tel', 'ໂທ', w.tel || '--'],
+      ];
+      const T = G.tbl, valW = T.w - T.labelW;
+      for (let r = 0; r < fields.length; r++) {
+        const y = T.y + r * T.rowH;
+        rect(page, 0, y, T.labelW, T.rowH, C.thBg);
+        rect(page, 0, y + T.rowH - 1, T.w, 1, C.line);
+        const [lab, sub, val, vColor] = fields[r];
+        if (sub) {
+          await box(page, lab, T.padL, y + T.rowH * 0.14, T.labelW - 2 * T.padL, T.rowH * 0.45, { size: T.labelSize, color: C.muted });
+          await box(page, sub, T.padL, y + T.rowH * 0.52, T.labelW - 2 * T.padL, T.rowH * 0.36, { size: T.subSize, color: C.faint });
+        } else {
+          await box(page, lab, T.padL, y, T.labelW - 2 * T.padL, T.rowH, { size: T.labelSize, color: C.muted });
+        }
+        await box(page, val, T.labelW, y, valW, T.rowH, { size: T.valSize, bold: 1, align: 'c', color: vColor || C.text });
+      }
+      rect(page, T.w - 1, T.y, 1, 625 - T.y, C.line);
+      // photo
+      const P = G.photo;
+      rect(page, P.x, P.y, P.w, P.h, C.fieldBg);
+      const jpg = w.photo ? await _photoToJpgBytes(w.photo, P.w, P.h) : null;
+      if (jpg) {
+        const img = await doc.embedJpg(jpg);
+        page.drawImage(img, { x: X(P.x), y: PH - Y(P.y) - P.h * S, width: P.w * S, height: P.h * S });
+      } else {
+        await box(page, avatarInitials(w.en_name || '?'), P.x, P.y, P.w, P.h, { size: P.initialsSize, bold: 1, color: C.faint, align: 'c' });
+      }
+      if (w.couple === 'yes') {
+        rect(page, G.couple.x, G.couple.y, G.couple.w, G.couple.h, C.brown);
+        await box(page, '부부', G.couple.x, G.couple.y, G.couple.w, G.couple.h, { size: G.couple.size, color: C.white, align: 'c' });
+      }
+      // summary
+      const Su = G.sum, sumW = 1000 - Su.x;
+      const assigned = (g && g.assigned != null && g.assigned !== '') ? g.assigned : 0;
+      const arrivals = (g && g.arrivals != null && g.arrivals !== '') ? g.arrivals : 0;
+      rect(page, Su.x, Su.y, sumW, Su.headH, C.brown);
+      await box(page, t('kd_summary') || 'Summary', Su.x, Su.y, sumW, Su.headH, { size: Su.size, bold: 1, color: C.white, align: 'c' });
+      const sumRows = [
+        ['여성 (ຍ)', String(gc.f)], ['남성 (ຊ)', String(gc.m)],
+        ['배정 · ' + (t('kd_assigned') || ''), String(assigned)],
+        ['입국 · ' + (t('kd_arrivals') || ''), String(arrivals)],
+      ];
+      for (let r = 0; r < sumRows.length; r++) {
+        const y = Su.y + Su.headH + r * Su.rowH;
+        await box(page, sumRows[r][0], Su.x + Su.padX, y, sumW - 2 * Su.padX, Su.rowH, { size: Su.size, color: C.muted });
+        await box(page, sumRows[r][1], Su.x + Su.padX, y, sumW - 2 * Su.padX, Su.rowH, { size: Su.size, bold: 1, align: 'r' });
+        if (r < sumRows.length - 1) rect(page, Su.x, y + Su.rowH - 1, sumW, 1, C.line);
+      }
+      _progressSet((i + 1) / workers.length * 95, (i + 1) + '/' + workers.length);
+      await _paint();
+    }
+    _pdfDownload(await doc.save(), _safeFile(g && g.name, 'workers') + '_kd_cards.pdf');
+    toast('PDF ✓', 'ok');
+  } finally { _progressDone(); }
+}
+
+// Worker detail sheet → A4 portrait, header (photo + names) + the same five
+// sections as the on-screen detail view (_renderDetailBody). Reads the worker
+// record directly — never scrapes the DOM.
+async function _doWorkerDetailPdf(w, g) {
+  await _loadPdfLib();
+  _progressShow(bi('ກຳລັງສ້າງ PDF', 'Creating PDF', 'กำลังสร้าง PDF', 'PDF 생성 중'));
+  try {
+    const { doc, fonts } = await _pdfNewDoc();
+    const pen = _pdfPen(doc, fonts);
+    const C = _KD_COLORS;
+    const PW = 595.28, PH = 841.89, M = 42;
+    let page = doc.addPage([PW, PH]);
+    let y = M;                                     // top-based cursor (pt)
+    const ensure = (need) => {
+      if (y + need > PH - M) { page = doc.addPage([PW, PH]); y = M; }
+    };
+    // header: photo + names
+    const PHOTO = 84;
+    page.drawRectangle({ x: M, y: PH - M - PHOTO, width: PHOTO, height: PHOTO, color: _pdfRgb(C.fieldBg) });
+    const jpg = w.photo ? await _photoToJpgBytes(w.photo, PHOTO, PHOTO) : null;
+    if (jpg) {
+      const img = await doc.embedJpg(jpg);
+      page.drawImage(img, { x: M, y: PH - M - PHOTO, width: PHOTO, height: PHOTO });
+    } else {
+      await pen.box(page, avatarInitials(w.en_name || '?'), M, y, PHOTO, PHOTO, { size: 26, bold: 1, color: C.faint, align: 'c' });
+    }
+    const tx = M + PHOTO + 16;
+    await pen.box(page, w.en_name || '—', tx, y + 4, PW - tx - M, 24, { size: 19, bold: 1 });
+    await pen.box(page, w.lo_name || '', tx, y + 30, PW - tx - M, 18, { size: 13, color: C.muted });
+    if (w.worker_id) await pen.box(page, w.worker_id, tx, y + 52, PW - tx - M, 16, { size: 11, color: C.green, bold: 1 });
+    if (g && g.name) await pen.box(page, g.name, tx, y + 68, PW - tx - M, 14, { size: 9.5, color: C.faint });
+    y += PHOTO + 18;
+    page.drawRectangle({ x: M, y: PH - y, width: PW - 2 * M, height: 1, color: _pdfRgb(C.line) });
+    y += 14;
+
+    const age = (w.age != null && w.age !== '') ? w.age : calcAge(w.dob);
+    const expCls = expiryClass(w.passport_expiry);
+    const expColor = expCls === 'expiry-expired' ? C.expired
+                   : (expCls === 'expiry-warn' || expCls === 'expiry-near') ? 'B45309' : C.text;
+    const sections = [
+      ['ຂໍ້ມູນລະບຸຕົວຕົນ', 'Identity', [
+        ['Worker ID', 'ລະຫັດ', w.worker_id || '--'],
+        [t('vc_name') || 'Name', 'EN Name', w.en_name || '--'],
+        ['ຊື່ ນາມສະກຸນ', 'LO Name', w.lo_name || '--'],
+        [t('vc_dob') || 'Date of birth', 'ວັນເດືອນປີ', w.dob || '--'],
+        [t('vc_age') || 'Age', 'ອາຍຸ', age ? age + ' yrs' : '--'],
+        [t('vc_nationality') || 'Nationality', 'ສັນຊາດ', w.nationality || '--'],
+        [t('vc_sex') || 'Sex', 'ເພດ', w.sex === 'M' ? '♂ M' : w.sex === 'F' ? '♀ F' : '--'],
+      ]],
+      ['ທີ່ຢູ່', 'Address', [
+        ['Province', 'ແຂວງ', w.province || '--'],
+        ['District', 'ເມືອງ', w.district || '--'],
+        ['Village', 'ບ້ານ', w.village || '--'],
+      ]],
+      ['ຂໍ້ມູນຮ່າງກາຍ', 'Physical', [
+        [t('vc_weight_height') || 'Weight / Height', 'Kg / Cm',
+          (w.weight ? w.weight + ' Kg' : '--') + '   ·   ' + (w.height ? w.height + ' Cm' : '--')],
+        [t('vc_size') || 'Size', 'ຂະໜາດ', w.size || '--'],
+        [t('vc_hand') || 'Hand', 'ຊ້າຍ/ຂວາ', w.hand === 'R' ? 'R (Right)' : w.hand === 'L' ? 'L (Left)' : '--'],
+        [t('vc_blood') || 'Blood', 'ກຸ່ມເລືອດ', w.blood || '--'],
+      ]],
+      ['ເອກະສານເດີນທາງ', 'Passport', [
+        [t('vc_passport') || 'Passport No', 'ເລກທີ', w.passport_no || '--'],
+        [t('vc_issue') || 'Issue date', 'ວັນທີອອກ', w.passport_issue || '--'],
+        [t('vc_expiry') || 'Expiry', 'ໝົດອາຍຸ', w.passport_expiry || '--', expColor],
+      ]],
+      ['ຕິດຕໍ່', 'Contact', [
+        [t('vc_tel') || 'Tel', 'ໂທຫຼັກ', w.tel || '--'],
+        ['Emergency', 'ໂທສຸກເສີນ', w.emg_tel || '--'],
+      ]],
+    ];
+    const ROW = 24, LABW = 180;
+    for (const [lo, en, rows] of sections) {
+      ensure(30 + ROW);
+      await pen.box(page, lo, M, y, 300, 16, { size: 12, bold: 1, color: C.brown });
+      const loW = pen.measure(lo, 12, 1);
+      await pen.box(page, '/ ' + en, M + loW + 12, y, 200, 16, { size: 10, color: C.faint });
+      y += 22;
+      for (const r of rows) {
+        ensure(ROW);
+        page.drawRectangle({ x: M, y: PH - y - ROW, width: PW - 2 * M, height: ROW, color: _pdfRgb(C.thBg), opacity: rows.indexOf(r) % 2 ? 0 : 0.55 });
+        await pen.box(page, r[0], M + 8, y, LABW, ROW, { size: 9.5, color: C.muted });
+        if (r[1]) {
+          const lw = pen.measure(r[0], 9.5, 0);
+          await pen.box(page, '· ' + r[1], M + 8 + lw + 6, y, LABW - lw - 14, ROW, { size: 8.5, color: C.faint });
+        }
+        await pen.box(page, r[2], M + LABW + 12, y, PW - 2 * M - LABW - 20, ROW, { size: 10.5, bold: 1, color: r[3] || C.text });
+        page.drawRectangle({ x: M, y: PH - y - ROW, width: PW - 2 * M, height: 0.5, color: _pdfRgb(C.line) });
+        y += ROW;
+      }
+      y += 14;
+    }
+    _pdfDownload(await doc.save(), _safeFile(w.en_name || w.lo_name, 'worker') + '_detail.pdf');
+    toast('PDF ✓', 'ok');
+  } finally { _progressDone(); }
 }
 
 // ── OVERLAY HELPERS ───────────────────────────────────────────────
