@@ -1235,10 +1235,12 @@
             <div class="ssh-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></div>
             <div><div data-lo="ເອກະສານ" data-en="Documents" data-th="เอกสาร" data-ko="문서" class="ssh-title"></div><div data-lo="ກຳນົດປະເພດເອກະສານທີ່ຮັບໄດ້ (ບໍ່ຈຳກັດ 6 ຊ່ອງ)" data-en="Define which document types are accepted (not limited to 6)" data-th="กำหนดประเภทเอกสารที่รับได้ (ไม่จำกัด 6 ช่อง)" data-ko="허용되는 문서 유형 지정 (6개 제한 없음)" class="ssh-desc"></div></div>
           </div>
-          <div class="set-card" style="padding:5px 0"><div class="set-list" id="set-doccats-list"></div></div>
-          <div data-lo="ເພີ່ມປະເພດເອກະສານ" data-en="Add document type" data-th="เพิ่มประเภทเอกสาร" data-ko="문서 유형 추가" class="set-card-label"></div>
-          <div class="set-card" style="padding:13px 15px">
-            <div class="set-add-row">
+          <!-- Same card/row/add-row shape as the Location Dictionary (Dictionaries tab) —
+               both are reorderable lists of named things, so they share a look. -->
+          <div class="locdict-card">
+            <div data-lo="ປະເພດເອກະສານ — ລາກເພື່ອຈັດລຳດັບ" data-en="Document types — drag to reorder" data-th="ประเภทเอกสาร — ลากเพื่อจัดลำดับ" data-ko="문서 유형 — 끌어서 순서 변경" class="locdict-sub"></div>
+            <div id="set-doccats-list"></div>
+            <div class="set-add-row" style="margin-top:8px">
               <input data-ph-lo="ຊື່ປະເພດ ເຊັ່ນ ໃບຮັບຮອງທີ່ຢູ່" data-ph-en="Type name, e.g. Residence cert" data-ph-th="ชื่อประเภท เช่น ใบรับรองที่อยู่" data-ph-ko="유형 이름 (예: 거주 증명서)" id="set-doccat-name" placeholder="ຊື່ປະເພດ">
               <button class="btn btn-add btn-sm" onclick="addDocCat()" data-lo="ເພີ່ມ" data-en="Add" data-th="เพิ่ม" data-ko="추가"></button>
             </div>

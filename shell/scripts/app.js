@@ -6120,30 +6120,45 @@ function renderSettings() {
 }
 
 // ── Document categories (Settings → Documents) — admin-configurable ──
+// Document types. Deliberately the same card/row/handle vocabulary as the
+// Location Dictionary below — both are "a reorderable list of named things",
+// so they should not look like two different products.
 function renderDocCatsSettings(editIdx) {
   const el = document.getElementById('set-doccats-list'); if (!el) return;
   const cats = getDocCats();
-  el.innerHTML = cats.map((c, i) => {
+  const rows = cats.map((c, i) => {
     if (i === editIdx) {
-      return '<div class="set-item set-item-editing">' +
-        '<input id="set-doccat-edit-' + i + '" class="set-inline-input" value="' + esc(c.label) + '" ' +
+      return '<div class="locdict-row set-item-editing">' +
+        '<input id="set-doccat-edit-' + i + '" class="locdict-name-in" value="' + esc(c.label) + '" ' +
         'onkeydown="if(event.key===\'Enter\')saveDocCat(' + i + ');if(event.key===\'Escape\')renderDocCatsSettings();">' +
-        '<button class="set-act set-save" onclick="saveDocCat(' + i + ')" title="Save">&#x2713;</button>' +
-        '<button class="set-act set-cancel" onclick="renderDocCatsSettings()" title="Cancel">&#x2715;</button>' +
+        '<button class="locdict-ic" onclick="saveDocCat(' + i + ')" title="Save">&#x2713;</button>' +
+        '<button class="locdict-ic danger" onclick="renderDocCatsSettings()" title="Cancel">&#10005;</button>' +
         '</div>';
     }
-    return '<div class="set-item">' +
+    return '<div class="locdict-row" data-drag="' + esc(c.key) + '">' +
+      _dragHandle() +
       '<span class="set-name" style="flex:1">' + esc(c.label) + '</span>' +
-      '<button class="set-act set-move" onclick="moveDocCat(' + i + ',-1)" title="' + esc(t('move_up') || 'เลื่อนขึ้น') + '"' + (i === 0 ? ' disabled' : '') + '>&#9650;</button>' +
-      '<button class="set-act set-move" onclick="moveDocCat(' + i + ',1)" title="' + esc(t('move_down') || 'เลื่อนลง') + '"' + (i === cats.length - 1 ? ' disabled' : '') + '>&#9660;</button>' +
-      '<button class="set-act set-edit" onclick="renderDocCatsSettings(' + i + ')" title="Edit">&#x270E;</button>' +
-      (cats.length > 1 ? '<button class="set-act set-del" onclick="delDocCat(' + i + ')" title="Delete">&#x2715;</button>' : '') +
+      '<button class="locdict-ic" onclick="renderDocCatsSettings(' + i + ')" title="Edit">&#x270E;</button>' +
+      (cats.length > 1 ? '<button class="locdict-ic danger" onclick="delDocCat(' + i + ')" title="Delete">&#10005;</button>' : '') +
       '</div>';
-  }).join('') || '<div class="set-empty">—</div>';
+  }).join('');
+  el.innerHTML = '<div class="locdict-rows" id="doccat-rows">' + (rows || '<div class="set-empty">—</div>') + '</div>';
+  _initDragReorder(document.getElementById('doccat-rows'), _reorderDocCats);
   if (editIdx !== undefined) {
     const inp = document.getElementById('set-doccat-edit-' + editIdx);
     if (inp) { inp.focus(); inp.select(); }
   }
+}
+// The array order IS the display order everywhere (detail drawer, export), and
+// it is persisted server-side via doc_cats.
+function _reorderDocCats(keys) {
+  if (!isAdmin()) return;
+  const cats = getDocCats();
+  const by = new Map(cats.map(c => [c.key, c]));
+  const next = keys.map(k => by.get(k)).filter(Boolean);
+  cats.forEach(c => { if (!next.includes(c)) next.push(c); });   // never drop one the DOM didn't list
+  _saveDocCats(next);
+  renderDocCatsSettings();
 }
 // Required-field picker (Settings → Documents): which fields the data-% counts.
 function renderReqFields() {
@@ -6166,16 +6181,6 @@ function toggleReqField(key, on) {
   DB.setSetting('req_fields', cur);
 }
 function _saveDocCats(cats) { DB.setSetting('doc_cats', cats); }
-// Reorder a category up/down. The array order IS the display order everywhere
-// (detail drawer, export), and it's persisted server-side via doc_cats.
-function moveDocCat(i, dir) {
-  if (!isAdmin()) return;
-  const cats = getDocCats().slice();
-  const j = i + dir;
-  if (j < 0 || j >= cats.length) return;
-  const tmp = cats[i]; cats[i] = cats[j]; cats[j] = tmp;
-  _saveDocCats(cats); renderDocCatsSettings();
-}
 function addDocCat() {
   if (!isAdmin()) return;
   const inp = document.getElementById('set-doccat-name');
@@ -6289,18 +6294,17 @@ function renderLocDictSettings() {
 
   // ── Levels (categories) ──
   html += '<div class="locdict-card"><div class="locdict-sub">' +
-    esc(bi('ໝວດ (ຊັ້ນ) — ສູງສຸດ 3','Categories (levels) — max 3','หมวด (ชั้น) — สูงสุด 3','범주 (단계) — 최대 3')) + '</div>';
-  html += ld.levels.length
+    esc(bi('ໝວດ (ຊັ້ນ) — ສູງສຸດ 3 · ລາກເພື່ອຈັດລຳດັບ','Categories (levels) — max 3 · drag to reorder','หมวด (ชั้น) — สูงสุด 3 · ลากเพื่อจัดลำดับ','범주 (단계) — 최대 3 · 끌어서 순서 변경')) + '</div>';
+  html += '<div class="locdict-rows" id="locdict-levels-rows">' + (ld.levels.length
     ? ld.levels.map((lv, i) =>
-        '<div class="locdict-row">' +
+        '<div class="locdict-row" data-drag="' + esc(lv.id) + '">' +
+          _dragHandle() +
           '<span class="locdict-lvl-no">' + (i + 1) + '</span>' +
           '<input class="locdict-name-in" value="' + esc(lv.name) + '" onchange="locRenameLevel(\'' + lv.id + '\', this.value)">' +
-          '<button class="locdict-ic" onclick="locMoveLevel(\'' + lv.id + '\',-1)"' + (i === 0 ? ' disabled' : '') + '>&#9650;</button>' +
-          '<button class="locdict-ic" onclick="locMoveLevel(\'' + lv.id + '\',1)"' + (i === ld.levels.length - 1 ? ' disabled' : '') + '>&#9660;</button>' +
           '<button class="locdict-ic danger" onclick="locDelLevel(\'' + lv.id + '\')">&#10005;</button>' +
         '</div>')
       .join('')
-    : '<div class="set-empty">—</div>';
+    : '<div class="set-empty">—</div>') + '</div>';
   if (ld.levels.length < 3) {
     html += '<div class="set-add-row" style="margin-top:8px">' +
       '<input id="locdict-newlevel" placeholder="' + esc(bi('ຊື່ໝວດ ເຊັ່ນ ແຂວງ','Category e.g. Province','ชื่อหมวด เช่น จังหวัด','범주 예: 도')) + '">' +
@@ -6312,7 +6316,8 @@ function renderLocDictSettings() {
   if (ld.levels.length) {
     if (_locEditLevel >= ld.levels.length) _locEditLevel = 0;
     const lv = ld.levels[_locEditLevel];
-    html += '<div class="locdict-card"><div class="locdict-sub">' + esc(bi('ລາຍການ','Items','รายการ','항목')) + '</div>';
+    html += '<div class="locdict-card"><div class="locdict-sub">' +
+      esc(bi('ລາຍການ · ລາກເພື່ອຈັດລຳດັບ','Items · drag to reorder','รายการ · ลากเพื่อจัดลำดับ','항목 · 끌어서 순서 변경')) + '</div>';
     html += '<div class="locdict-tabs">' + ld.levels.map((l, i) =>
       '<button class="locdict-tab' + (i === _locEditLevel ? ' active' : '') + '" onclick="locSelectEditLevel(' + i + ')">' + esc(l.name) + '</button>').join('') + '</div>';
 
@@ -6333,17 +6338,16 @@ function renderLocDictSettings() {
       html += '<div class="set-empty">' + esc(bi('ເພີ່ມລາຍການຊັ້ນເທິງກ່ອນ','Add a parent item first','เพิ่มรายการชั้นบนก่อน','상위 항목을 먼저 추가하세요')) + '</div>';
     } else {
       const items = ld.items.filter(it => it.levelId === lv.id && (_locEditLevel === 0 || it.parentId === _locEditParent)).sort((a, b) => a.order - b.order);
-      html += items.length ? items.map((it, idx) => {
+      html += '<div class="locdict-rows" id="locdict-items-rows">' + (items.length ? items.map(it => {
         const en = _locEnName(it);
         const sub = it.names.lo && it.names.lo !== en ? ' <span style="color:var(--text-faint);font-weight:400">· ' + esc(it.names.lo) + '</span>' : '';
-        return '<div class="locdict-row">' +
+        return '<div class="locdict-row" data-drag="' + esc(it.id) + '">' +
+          _dragHandle() +
           '<span class="set-code">' + esc(it.code || '—') + '</span>' +
           '<span class="set-name" style="flex:1">' + esc(en) + sub + '</span>' +
-          '<button class="locdict-ic" onclick="locMoveItem(\'' + it.id + '\',-1)"' + (idx === 0 ? ' disabled' : '') + '>&#9650;</button>' +
-          '<button class="locdict-ic" onclick="locMoveItem(\'' + it.id + '\',1)"' + (idx === items.length - 1 ? ' disabled' : '') + '>&#9660;</button>' +
           '<button class="locdict-ic danger" onclick="locDelItem(\'' + it.id + '\')">&#10005;</button>' +
         '</div>';
-      }).join('') : '<div class="set-empty">—</div>';
+      }).join('') : '<div class="set-empty">—</div>') + '</div>';
       html += '<div class="set-add-row" style="margin-top:8px;flex-wrap:wrap">' +
         '<input id="locdict-item-en" style="flex:1 1 120px" placeholder="' + esc(bi('ຊື່ (EN)','Name (EN)','ชื่อ (EN)','이름 (EN)')) + '">' +
         '<input id="locdict-item-lo" style="flex:1 1 120px" placeholder="' + esc(bi('ຊື່ (ລາວ)','Name (Lao)','ชื่อ (ลาว)','이름 (Lao)')) + '" onblur="locAutofillEn(this)">' +
@@ -6375,6 +6379,69 @@ function renderLocDictSettings() {
   }
 
   host.innerHTML = html;
+  // Both containers are rebuilt by the line above, so bind fresh every render.
+  _initDragReorder(document.getElementById('locdict-levels-rows'), _reorderLocLevels);
+  _initDragReorder(document.getElementById('locdict-items-rows'),  _reorderLocItems);
+}
+
+// ── Drag-to-reorder (Settings lists) ──────────────────────────────
+// Pointer events, not HTML5 drag-and-drop: the latter is inert on touch and this
+// app is used on phones. Rows carry data-drag="<id>" and a .drag-handle; the row
+// is moved in the DOM live, and onReorder gets the final id order on drop.
+// Listeners live on the rows container, which every render recreates — so there
+// is nothing to tear down and no risk of double-binding.
+const _DRAG_SVG = '<svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true">' +
+  '<circle cx="6" cy="3" r="1.3"/><circle cx="10" cy="3" r="1.3"/><circle cx="6" cy="8" r="1.3"/>' +
+  '<circle cx="10" cy="8" r="1.3"/><circle cx="6" cy="13" r="1.3"/><circle cx="10" cy="13" r="1.3"/></svg>';
+
+function _dragHandle() {
+  return '<span class="drag-handle" title="' +
+    esc(bi('ລາກເພື່ອຈັດລຳດັບ', 'Drag to reorder', 'ลากเพื่อจัดลำดับ', '끌어서 순서 변경')) + '">' + _DRAG_SVG + '</span>';
+}
+
+function _initDragReorder(listEl, onReorder) {
+  if (!listEl || !isAdmin()) return;
+  let row = null, moved = false;
+  const rows = () => [...listEl.querySelectorAll('[data-drag]')];
+
+  function onMove(e) {
+    if (!row) return;
+    e.preventDefault();
+    moved = true;
+    // Insert before the first other row whose midpoint is below the pointer.
+    const after = rows().filter(r => r !== row).find(r => {
+      const b = r.getBoundingClientRect();
+      return e.clientY < b.top + b.height / 2;
+    });
+    if (after) listEl.insertBefore(row, after);
+    else       listEl.appendChild(row);
+  }
+  function onUp() {
+    if (!row) return;
+    row.classList.remove('dragging');
+    listEl.classList.remove('drag-active');
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    document.removeEventListener('pointercancel', onUp);
+    row = null;
+    if (moved) onReorder(rows().map(r => r.dataset.drag));   // a click that never moved must not re-save
+  }
+
+  listEl.addEventListener('pointerdown', e => {
+    const h = e.target.closest('.drag-handle');
+    if (!h) return;
+    const r = h.closest('[data-drag]');
+    if (!r) return;
+    e.preventDefault();
+    row = r; moved = false;
+    r.classList.add('dragging');
+    listEl.classList.add('drag-active');
+    // Bind on document, not the handle: the row gets re-inserted mid-drag and
+    // pointer capture does not reliably survive that in every browser.
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
+  });
 }
 
 function _locMutate(fn) {
@@ -6406,11 +6473,13 @@ function locDelLevel(id) {
       if (!ld.levels.length) ld.enabled = false;
     }));
 }
-function locMoveLevel(id, dir) {
+// Levels re-ordered by drag → rewrite the array to the dropped order.
+function _reorderLocLevels(ids) {
   _locMutate(ld => {
-    const i = ld.levels.findIndex(l => l.id === id), j = i + dir;
-    if (i < 0 || j < 0 || j >= ld.levels.length) return;
-    const tmp = ld.levels[i]; ld.levels[i] = ld.levels[j]; ld.levels[j] = tmp;
+    const by = new Map(ld.levels.map(l => [l.id, l]));
+    const next = ids.map(i => by.get(i)).filter(Boolean);
+    ld.levels.forEach(l => { if (!next.includes(l)) next.push(l); });
+    ld.levels = next;
     ld.levels.forEach((l, k) => { l.order = k; });
   });
 }
@@ -6444,13 +6513,11 @@ function locDelItem(id) {
     }
   });
 }
-function locMoveItem(id, dir) {
+// Items re-ordered by drag. `ids` is only the currently shown level+parent
+// slice, so stamping order by position is enough — siblings elsewhere keep theirs.
+function _reorderLocItems(ids) {
   _locMutate(ld => {
-    const it = ld.items.find(x => x.id === id); if (!it) return;
-    const sibs = ld.items.filter(x => x.levelId === it.levelId && x.parentId === it.parentId).sort((a, b) => a.order - b.order);
-    const i = sibs.findIndex(x => x.id === id), j = i + dir;
-    if (j < 0 || j >= sibs.length) return;
-    const o = sibs[i].order; sibs[i].order = sibs[j].order; sibs[j].order = o;
+    ids.forEach((id, k) => { const it = ld.items.find(x => x.id === id); if (it) it.order = k; });
   });
 }
 function locSetIdSource(v) { _locMutate(ld => { ld.idConfig.source = v; }); }
