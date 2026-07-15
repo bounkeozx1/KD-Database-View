@@ -361,7 +361,16 @@ function initAddrCombobox(inputId, listId, getItems) {
   }
 
   function closeList() { list.style.display = 'none'; focusIdx = -1; }
-  function pick(val) { input.value = val; closeList(); input.focus(); }
+  function pick(val) {
+    input.value = val;
+    // Setting .value fires nothing, so any oninput mirror (the Location
+    // Dictionary's free-text level writes through to its address column) would
+    // miss the pick. Dispatch before closeList — the echo re-opens the list and
+    // closeList then shuts it again.
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    closeList();
+    input.focus();
+  }
 
   list.addEventListener('mousedown', e => {
     const item = e.target.closest('.addr-combo-item');
@@ -3700,8 +3709,9 @@ const romanizePlace = (() => {
     'ญ':'y','ฎ':'d','ฏ':'t','ฐ':'th','ฑ':'th','ฒ':'th','ณ':'n','ด':'d','ต':'t','ถ':'th','ท':'th','ธ':'th','น':'n',
     'บ':'b','ป':'p','ผ':'ph','ฝ':'f','พ':'ph','ฟ':'f','ภ':'ph','ม':'m','ย':'y','ร':'r','ล':'l','ว':'w','ศ':'s',
     'ษ':'s','ส':'s','ห':'h','ฬ':'l','ฮ':'h',
-    // Lao consonants
-    'ກ':'k','ຂ':'kh','ຄ':'kh','ງ':'ng','ຈ':'ch','ສ':'s','ຊ':'s','ຍ':'ny','ດ':'d','ຕ':'t','ຖ':'th','ທ':'th',
+    // Lao consonants. ຊ is 'x', not 's' — that is the standard Lao convention and
+    // the one the app's own place names already follow (ໄຊຍະບູລີ → Xayaboury).
+    'ກ':'k','ຂ':'kh','ຄ':'kh','ງ':'ng','ຈ':'ch','ສ':'s','ຊ':'x','ຍ':'ny','ດ':'d','ຕ':'t','ຖ':'th','ທ':'th',
     'ນ':'n','ບ':'b','ປ':'p','ຜ':'ph','ຝ':'f','ພ':'ph','ຟ':'f','ມ':'m','ຢ':'y','ຣ':'r','ລ':'l','ວ':'v','ຫ':'h',
     'ຮ':'h','ໜ':'n','ໝ':'m',
   };
@@ -3709,25 +3719,64 @@ const romanizePlace = (() => {
     // Thai vowels (อ acts as the 'o' vowel between consonants)
     'ะ':'a','ั':'a','า':'a','ๅ':'a','ิ':'i','ี':'i','ึ':'ue','ื':'ue','ุ':'u','ู':'u','ฤ':'rue','ฦ':'lue','ำ':'am',
     'อ':'o','เ':'e','แ':'ae','โ':'o','ใ':'ai','ไ':'ai','ๆ':'',
-    // Lao vowels (ອ acts as 'o')
-    'ະ':'a','ັ':'a','າ':'a','ິ':'i','ີ':'i','ຶ':'ue','ື':'ue','ຸ':'u','ູ':'u','ໍ':'o','ົ':'o','ຳ':'am','ຽ':'ia',
+    // Lao vowels (ອ acts as 'o'). ຸ/ູ romanise to 'ou', not 'u' — again the Lao
+    // convention, and what the existing records use (ສຸກສາລາ → Souksala).
+    'ະ':'a','ັ':'a','າ':'a','ິ':'i','ີ':'i','ຶ':'ue','ື':'ue','ຸ':'ou','ູ':'ou','ໍ':'o','ົ':'o','ຳ':'am','ຽ':'ia',
     'ອ':'o','ເ':'e','ແ':'ae','ໂ':'o','ໃ':'ai','ໄ':'ai',
   };
   const drop = /[็่้๊๋์ํ๎່້໊໋໌຺ຼ]/g;  // tone/silent/ligature marks
   const consClass = '[' + Object.keys(cons).join('') + ']';
   const reorder  = new RegExp('([เแโใไເແໂໃໄ])(' + consClass + ')', 'g');
   const silentH  = new RegExp('[หຫ](?=' + consClass + ')', 'g');   // leading ห/ຫ before a consonant is silent
+  // Clusters the char-by-char mapper cannot get right, because they hinge on a
+  // tone mark that gets stripped, or on ວ/ຍ acting as a vowel rather than a
+  // consonant. Matched BEFORE tone-drop (the mark is what disambiguates, e.g.
+  // ຫ້ວຍ "houay" = stream vs ຫວານ "van" = sweet) and emitted as Latin, which the
+  // char loop passes through untouched. Longest first.
+  const clusters = [
+    [/ຫ້ວຍ/g, 'houay'], [/ຫວ້ຍ/g, 'houay'],      // stream — the most common village prefix
+    [/ສະຫງວນ/g, 'sanguan'], [/ຫງວນ/g, 'nguan'],
+    [/ຄວາຍ/g, 'khouay'], [/ຄວາ/g, 'khoua'], [/ຂວາ/g, 'khoua'],
+    [/ຫຼວງ/g, 'louang'], [/ຫລວງ/g, 'louang'],
+    [/ເຂົາ/g, 'khao'], [/ເລົາ/g, 'lao'],
+    [/ແກ້ວ/g, 'keo'],
+    [/ບວມ/g, 'bouam'], [/ນວມ/g, 'nouam'],
+    // ຫ before ວ is a silent tone marker, so the pair is just 'v' (ຫວານ → van).
+    // Emitted here rather than left to silentH, which would strip the ຫ and let
+    // the ວ rule below mistake the ວ for a syllable-final 'o'.
+    [/ຫວ/g, 'v'],
+  ];
   function one(tok) {
-    let s = tok.replace(/ຫຼ/g, 'ລ')         // Lao lo-ligature → l
-             .replace(drop, '')              // strip tones
-             .replace(reorder, '$2$1')       // move pre-posed vowels after their consonant
-             .replace(silentH, '');          // drop silent leading h
+    let s = tok;
+    for (const [re, to] of clusters) s = s.replace(re, to);
+    s = s.replace(/ຫຼ/g, 'ລ')               // Lao lo-ligature → l
+         .replace(drop, '')                 // strip tones
+         .replace(reorder, '$2$1')          // move pre-posed vowels after their consonant
+         .replace(silentH, '');             // drop silent leading h
+    const chars = [...s];
     let out = '';
-    for (const ch of s) {
-      if (cons[ch] !== undefined)      out += cons[ch];
-      else if (vow[ch] !== undefined)  out += vow[ch];
-      else if (/[A-Za-z0-9]/.test(ch)) out += ch;             // keep existing Latin/digits
-    }
+    chars.forEach((ch, i) => {
+      const prev = chars[i - 1], next = chars[i + 1];
+      // ວ is only the consonant 'v' when it opens a syllable. After a consonant
+      // it is the "oua" medial (ຄວາຍ → khouay); after a vowel it either opens a
+      // new syllable when a vowel follows (ສຸວັນ → souvan) or closes this one
+      // as 'o' (ຂາວ → khao, ກິ່ວ → kio).
+      if (ch === 'ວ') {
+        if (!prev)                           out += 'v';
+        else if (cons[prev] !== undefined)   out += 'ou';
+        else if (next && vow[next] !== undefined) out += 'v';
+        else                                 out += 'o';
+      }
+      // ຍ is 'ny' as an initial but a plain 'y' once a vowel precedes it (ຊາຍ → say).
+      else if (ch === 'ຍ')                   out += (prev && vow[prev] !== undefined) ? 'y' : 'ny';
+      // Lao stops de-voice when they close a syllable: ດ → 't', ບ → 'p'
+      // (ສະຫວັນນະເຂດ → Savannakhet, ຫາດ → Hat).
+      else if ((ch === 'ດ' || ch === 'ບ') && prev && (!next || cons[next] !== undefined))
+        out += (ch === 'ດ') ? 't' : 'p';
+      else if (cons[ch] !== undefined)       out += cons[ch];
+      else if (vow[ch] !== undefined)        out += vow[ch];
+      else if (/[A-Za-z0-9]/.test(ch))       out += ch;        // keep existing Latin/digits
+    });
     return out ? out.charAt(0).toUpperCase() + out.slice(1) : out;
   }
   return function (text) {
@@ -3806,9 +3855,16 @@ function renderFormLocation() {
   // dictionary) renders as a free-text input, so a Province+District-only
   // hierarchy stays fully usable and villages can still be typed.
   selBlock.innerHTML = ld.levels.map((lv, i) => {
+    // Free-text levels keep the same combobox the plain address form has, so the
+    // typist sees what everyone else already entered and reuses that spelling
+    // instead of inventing a new one.
     const control = _locLevelHasItems(ld, lv.id)
       ? '<select class="addr-input loc-select" id="locsel-' + esc(lv.id) + '" onchange="onLocSelect(' + i + ')"></select>'
-      : '<input class="addr-input loc-free" id="locfree-' + i + '" autocomplete="off" oninput="_writeLocFree(' + i + ')">';
+      : '<div class="addr-combo">' +
+          '<input class="addr-input loc-free" id="locfree-' + i + '" autocomplete="off"' +
+            ' oninput="_writeLocFree(' + i + ')" onblur="_locFreeBlur(' + i + ')">' +
+          '<div class="addr-combo-list" id="locfree-list-' + i + '" style="display:none"></div>' +
+        '</div>';
     return '<div class="addr-field"><label class="addr-lbl">' + esc(lv.name) + '</label>' + control + '</div>';
   }).join('');
   for (let i = 0; i < ld.levels.length; i++) {
@@ -3820,8 +3876,19 @@ function renderFormLocation() {
       const inp = document.getElementById('locfree-' + i);
       const col = document.getElementById(_LOC_INPUTS[i]);
       if (inp) { inp.value = pre || (col ? col.value : '') || ''; _writeLocFree(i); }
+      // Re-bind every render: innerHTML above replaced the element and its listeners.
+      const field = _LOC_INPUTS[i].replace(/^f-/, '');
+      initAddrCombobox('locfree-' + i, 'locfree-list-' + i, () => _collectAddrField(field));
     }
   }
+}
+
+// Free-text level lost focus → romanise Lao to English (places are stored in
+// English canonically) and mirror into the address column.
+function _locFreeBlur(i) {
+  const inp = document.getElementById('locfree-' + i);
+  if (inp) inp.value = romanizePlace(inp.value);
+  _writeLocFree(i);
 }
 
 function _locLevelHasItems(ld, levelId) { return ld.items.some(it => it.levelId === levelId); }
