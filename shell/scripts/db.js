@@ -151,6 +151,63 @@ const DB = (() => {
     };
   }
 
+  /* ── Default seed: Lao administrative hierarchy (18 provinces + districts) ──
+   * Seeded into the Location Dictionary on a fresh install so the address
+   * dropdowns work out of the box. English is the canonical stored/displayed
+   * name; province Lao names are included, districts fall back to English.
+   * The Village level is defined but left EMPTY on purpose — the worker form
+   * renders an empty level as a free-text field, so villages stay typed.
+   * [code, EN, LO, [districts…]] — a district is 'EN' or ['EN','LO'].
+   * Lao district spellings are added where existing records already use them,
+   * so those records match the dictionary instead of falling back to raw text. */
+  const _LAO_PROVINCES = [
+    ['VTE','Vientiane Capital','ນະຄອນຫຼວງວຽງຈັນ', ['Chanthabouly','Sikhottabong','Xaysetha','Sisattanak','Naxaithong','Xaythany','Hadxaifong','Sangthong','Pak Ngum']],
+    ['PSL','Phongsaly','ຜົ້ງສາລີ', ['Phongsaly','May','Khua','Samphanh','Boun Neua','Nhot Ou','Boun Tay']],
+    ['LNT','Luang Namtha','ຫຼວງນ້ຳທາ', ['Namtha','Sing','Long','Viengphoukha','Nalae']],
+    ['ODX','Oudomxay','ອຸດົມໄຊ', ['Xay','La','Namor','Nga','Beng','Houn','Pakbeng']],
+    ['BKO','Bokeo','ບໍ່ແກ້ວ', ['Houayxay','Tonpheung','Meung','Pha Oudom','Paktha']],
+    ['LPB','Luang Prabang','ຫຼວງພະບາງ', ['Luang Prabang','Xieng Ngeun','Nan','Pak Ou','Nambak','Ngoi','Pakxeng','Phonxay','Chomphet','Viengkham','Phoukhoune','Phonthong']],
+    ['HOU','Houaphanh','ຫົວພັນ', ['Xamneua','Xiengkhor','Viengthong','Viengxay','Huameuang','Xamtai','Sopbao','Et','Kuan','Sone']],
+    ['XAY','Xayaboury','ໄຊຍະບູລີ', ['Xayabouly','Khop','Hongsa','Ngeun','Xienghone',['Phiang','ພຽງ'],['Paklai','ປາກລາຍ'],'Kenethao','Botene',['Thongmyxay','ທົ່ງມີໄຊ'],'Xaysathan']],
+    ['XIE','Xiengkhuang','ຊຽງຂວາງ', ['Pek','Kham','Nonghet','Khoune','Mokmay','Phoukoud','Phaxay']],
+    ['VTP','Vientiane Province','ວຽງຈັນ', ['Phonhong',['Thoulakhom','ທຸລະຄົມ'],'Keo Oudom','Kasi','Vangvieng','Feuang','Xanakham','Mad','Viengkham','Hinheup','Meun']],
+    ['BLX','Bolikhamxay','ບໍລິຄຳໄຊ', ['Pakxan','Thaphabat','Pakkading','Borikhan','Khamkeut','Viengthong','Xaychamphone']],
+    ['KHM','Khammouane','ຄຳມ່ວນ', ['Thakhek','Mahaxay','Nongbok','Hinboun','Nhommalath','Bualapha','Nakai','Xebangfay','Xaybuathong','Kounkham']],
+    ['SAV','Savannakhet','ສະຫວັນນະເຂດ', ['Kaysone Phomvihane','Outhoumphone','Atsaphangthong','Phin','Sepon','Nong','Thapangthong','Songkhone','Champhone','Xonbouly','Xayphoothong','Vilabouly','Atsaphone','Xaybouly','Phalanxay']],
+    ['SAL','Saravane','ສາລະວັນ', ['Saravane','Ta Oy','Toumlan','Lakhonepheng','Vapy','Khongxedon','Lao Ngam','Samouay']],
+    ['SEK','Sekong','ເຊກອງ', ['Lamam','Kaleum','Dakcheung','Thateng']],
+    ['CHA','Champasak','ຈຳປາສັກ', ['Pakse','Sanasomboun','Bachiangchaleunsook','Paksong','Pathoumphone','Phonthong','Champasak','Sukhuma','Mounlapamok','Khong']],
+    ['ATT','Attapeu','ອັດຕະປື', ['Samakkhixay','Saysettha','Sanamxay','Sanxay','Phouvong']],
+    ['XSB','Xaisomboun','ໄຊສົມບູນ', ['Anouvong','Longcheng','Hom','Thathom','Longxan']],
+  ];
+  function _defaultLocDict() {
+    const PROV = 'LV-PROV', DIST = 'LV-DIST', VILL = 'LV-VILL';
+    const items = [];
+    _LAO_PROVINCES.forEach(([code, en, lo, dists], pi) => {
+      const pid = 'P-' + code;
+      items.push({ id: pid, levelId: PROV, parentId: null, names: { en, lo, th: '', ko: '' }, code, order: pi });
+      dists.forEach((d, di) => {
+        const den = Array.isArray(d) ? d[0] : d;
+        const dlo = Array.isArray(d) ? (d[1] || '') : '';
+        items.push({
+          id: 'D-' + code + '-' + String(di + 1).padStart(2, '0'),
+          levelId: DIST, parentId: pid,
+          names: { en: den, lo: dlo, th: '', ko: '' }, code: '', order: di,
+        });
+      });
+    });
+    return {
+      enabled: true,
+      levels: [
+        { id: PROV, name: 'Province', order: 0 },
+        { id: DIST, name: 'District', order: 1 },
+        { id: VILL, name: 'Village',  order: 2 },
+      ],
+      items,
+      idConfig: { source: 'la', seqPad: 3, seqStart: 1 },
+    };
+  }
+
   return {
 
     _newLocId,
@@ -277,7 +334,14 @@ const DB = (() => {
     },
 
     /* ── Location Dictionary (settings-backed, hierarchical) ── */
-    getLocDict() { return _normalizeLocDict(this.getSetting('loc_dict', null)); },
+    // Falls back to the seeded Lao hierarchy when no dictionary has actually been
+    // configured. "Set but empty" (levels: []) counts as unconfigured — it holds
+    // nothing worth preserving. A real user-built dictionary is respected untouched.
+    getLocDict() {
+      const stored = this.getSetting('loc_dict', null);
+      const configured = stored && Array.isArray(stored.levels) && stored.levels.length > 0;
+      return _normalizeLocDict(configured ? stored : _defaultLocDict());
+    },
     saveLocDict(obj) {
       const norm = _normalizeLocDict(obj);
       this.setSetting('loc_dict', norm);
