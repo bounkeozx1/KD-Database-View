@@ -28,7 +28,58 @@ const MIME = {
   '.css':'text/css; charset=utf-8', '.json':'application/json; charset=utf-8',
   '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.webp':'image/webp',
   '.svg':'image/svg+xml', '.pdf':'application/pdf', '.ico':'image/x-icon',
+  // Fonts + Tesseract assets — an explicit type matters once X-Content-Type-Options:
+  // nosniff is set: WebAssembly.instantiateStreaming REQUIRES application/wasm, and
+  // the browser won't sniff it. Without this the offline OCR core can fail to load.
+  '.woff2':'font/woff2', '.woff':'font/woff', '.ttf':'font/ttf',
+  '.wasm':'application/wasm',
 };
+
+// ── Security response headers ─────────────────────────────────────
+// Applied to EVERY response (static, API, uploads, R2 proxy, errors) via
+// setHeader before any writeHead — Node merges them with the per-response
+// Content-Type/Cache-Control/ETag (no name collisions).
+//
+// CSP: the app is 100% same-origin (every vendor lib is bundled, never a CDN),
+// so 'self' is the base. What the app genuinely needs, and why relaxing it is
+// unavoidable here — do NOT tighten these without testing or you break features:
+//   • 'unsafe-inline' (script/style): the UI is built from inline onclick=…
+//     handlers and inline style="…" throughout, plus the inline bootstrap loader.
+//   • 'unsafe-eval' / 'wasm-unsafe-eval' + blob: (script/worker): the offline
+//     Tesseract passport-OCR compiles WebAssembly and runs in a web worker.
+//   • data:/blob: (img/font/connect/media): generated avatars & photos stored as
+//     data: URLs, canvas/blob exports, and export code that fetch()es data: URLs.
+// object-src 'none', base-uri 'self', frame-ancestors 'self' and form-action
+// 'self' still give real clickjacking / injection hardening.
+const CSP = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'self'",
+  "form-action 'self'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "style-src 'self' 'unsafe-inline'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob:",
+  "worker-src 'self' blob:",
+  "connect-src 'self' data: blob:",
+  "media-src 'self' blob:",
+  "frame-src 'self' blob:",
+].join('; ');
+
+function applySecurityHeaders(res) {
+  // HSTS is ignored by browsers over plain HTTP (localhost dev) and enforced over
+  // HTTPS (behind the Cloudflare tunnel / any TLS front) — safe to always send.
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('Content-Security-Policy', CSP);
+  // SAMEORIGIN (not DENY): the document viewer frames same-origin PDFs from /uploads.
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  // camera=(self): needed by the passport scanner (getUserMedia); the rest off.
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=(), payment=(), usb=()');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+}
 
 function send(res, status, body, type) {
   res.writeHead(status, { 'Content-Type': type || 'application/json; charset=utf-8' });
@@ -240,6 +291,7 @@ async function handleApi(req, res, pathname) {
 }
 
 const server = http.createServer((req, res) => {
+  applySecurityHeaders(res);
   const pathname = url.parse(req.url).pathname;
   if (pathname.startsWith('/api/')) return handleApi(req, res, pathname);
   return serveStatic(req, res, pathname);
