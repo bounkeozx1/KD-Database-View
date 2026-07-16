@@ -60,20 +60,44 @@ if ($portUsed) {
   Write-Host "[OK] KD server ready at http://localhost:$port" -ForegroundColor Green
 }
 
-# Step 4: Open Cloudflare Tunnel
+# Step 4: Open the named Cloudflare Tunnel
+#
+# This used to be `cloudflared tunnel --url http://localhost:3000` -- a "quick
+# tunnel", which mints a NEW random *.trycloudflare.com name on every single run.
+# That meant the URL had to be re-shared each time, and worse: every user's
+# saved session vanished, because a new hostname is a new origin to the browser
+# and localStorage is per-origin.
+#
+# Now it runs the named tunnel "kd-database", which is permanently bound to
+# https://kdb.kdemployment.com. Routing + hostname live in ~/.cloudflared/config.yml.
+$tunnelName = 'kd-database'
+$publicUrl  = 'https://kdb.kdemployment.com'
+
+# Fail early with a useful message rather than a cloudflared stack trace.
+if (-not (Test-Path "$env:USERPROFILE\.cloudflared\cert.pem")) {
+  Write-Host "[ERROR] Not logged in to Cloudflare." -ForegroundColor Red
+  Write-Host "  Run once:  cloudflared tunnel login   (pick kdemployment.com)" -ForegroundColor Yellow
+  Read-Host "Press Enter to exit"; exit 1
+}
+if (-not (Test-Path "$env:USERPROFILE\.cloudflared\config.yml")) {
+  Write-Host "[ERROR] Missing ~/.cloudflared/config.yml (tunnel routing)." -ForegroundColor Red
+  Read-Host "Press Enter to exit"; exit 1
+}
+
 Write-Host ""
 Write-Host "============================================" -ForegroundColor DarkGray
 Write-Host "  Opening Cloudflare Tunnel ..." -ForegroundColor Yellow
-Write-Host "  Your public URL (*.trycloudflare.com)" -ForegroundColor Yellow
-Write-Host "  will appear below in a few seconds." -ForegroundColor Yellow
-Write-Host "  Share that URL with your users." -ForegroundColor Yellow
+Write-Host ""
+Write-Host "  $publicUrl" -ForegroundColor Green
+Write-Host ""
+Write-Host "  This address never changes -- share it once." -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "  !! Keep this window OPEN -- closing it" -ForegroundColor Red
 Write-Host "  !! takes the site offline immediately." -ForegroundColor Red
 Write-Host "============================================" -ForegroundColor DarkGray
 Write-Host ""
 
-& $cf tunnel --url http://localhost:$port
+& $cf tunnel run $tunnelName
 
 Write-Host ""
 Write-Host "[INFO] Tunnel closed -- site is now offline." -ForegroundColor DarkGray
