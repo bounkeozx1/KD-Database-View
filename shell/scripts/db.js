@@ -110,12 +110,21 @@ const DB = (() => {
    * Up to 3 levels (e.g. Province → District → Village). Each item carries a
    * short code + optional parent link. Kept additive & fully removable:
    * clearing the setting restores the original behaviour.                 */
+  // Which employee column each level fills. A level's `col` is bound explicitly
+  // and NOT derived from its position: the array index used to decide this, so
+  // reordering or deleting a level silently re-pointed it at another column —
+  // e.g. dragging Village to the top made village names save as the province.
+  const LOC_COLS = ['province', 'district', 'village'];
+
   function _normalizeLocDict(d) {
     d = (d && typeof d === 'object') ? d : {};
     const levels = (Array.isArray(d.levels) ? d.levels : []).slice(0, 3).map((l, i) => ({
       id:    l && l.id ? String(l.id) : _newLocId(),
       name:  String((l && l.name) || '').trim() || ('Level ' + (i + 1)),
       order: typeof (l && l.order) === 'number' ? l.order : i,
+      // Legacy dicts have no `col` — fall back to the old positional meaning so
+      // they keep working, then it stays pinned to that column from now on.
+      col:   (l && LOC_COLS.includes(l.col)) ? l.col : LOC_COLS[i],
     })).sort((a, b) => a.order - b.order).map((l, i) => ({ ...l, order: i }));
     const levelIds = new Set(levels.map(l => l.id));
     const items = (Array.isArray(d.items) ? d.items : [])
@@ -180,31 +189,68 @@ const DB = (() => {
     ['ATT','Attapeu','ອັດຕະປື', ['Samakkhixay','Saysettha','Sanamxay','Sanxay','Phouvong']],
     ['XSB','Xaisomboun','ໄຊສົມບູນ', ['Anouvong','Longcheng','Hom','Thathom','Longxan']],
   ];
+  // District codes feed the auto worker_id (CODE-YY-NNN). These three are pinned
+  // to the prefixes the existing records already use — changing them would
+  // restart the running sequence and mint ids that collide with history.
+  const _DIST_CODE_PINS = { 'Thoulakhom': 'TLK', 'Phiang': 'PHI', 'Paklai': 'PL' };
+
+  // Derive a short, unique-across-the-dictionary code from an English name.
+  // A pinned name returns its pin unconditionally: every pin is reserved in
+  // `taken` before generation starts, so nothing else can have claimed it, and
+  // checking `taken` here would only make the pin collide with itself.
+  function _distCode(en, taken) {
+    if (_DIST_CODE_PINS[en]) return _DIST_CODE_PINS[en];
+    const base = en.replace(/[^A-Za-z]/g, '').toUpperCase();
+    const tries = [
+      base.slice(0, 3),                                   // Phonhong -> PHO
+      base.replace(/[AEIOU]/g, '').slice(0, 3),           // ...then drop vowels -> PHN
+      base.slice(0, 2) + base.slice(-1),                  // ...then first two + last
+    ];
+    for (const c of tries) if (c.length >= 2 && !taken.has(c)) return c;
+    for (let i = 3; i < base.length; i++) {               // ...then walk the letters
+      const c = base.slice(0, 2) + base[i];
+      if (!taken.has(c)) return c;
+    }
+    for (let n = 1; n < 100; n++) {                       // ...finally give up and number it
+      const c = base.slice(0, 2) + n;
+      if (!taken.has(c)) return c;
+    }
+    return base.slice(0, 3);
+  }
+
   function _defaultLocDict() {
     const PROV = 'LV-PROV', DIST = 'LV-DIST', VILL = 'LV-VILL';
     const items = [];
+    const taken = new Set(Object.values(_DIST_CODE_PINS));   // reserve the pins up front
     _LAO_PROVINCES.forEach(([code, en, lo, dists], pi) => {
       const pid = 'P-' + code;
       items.push({ id: pid, levelId: PROV, parentId: null, names: { en, lo, th: '', ko: '' }, code, order: pi });
       dists.forEach((d, di) => {
         const den = Array.isArray(d) ? d[0] : d;
         const dlo = Array.isArray(d) ? (d[1] || '') : '';
+        const dcode = _distCode(den, taken);
+        taken.add(dcode);
         items.push({
           id: 'D-' + code + '-' + String(di + 1).padStart(2, '0'),
           levelId: DIST, parentId: pid,
-          names: { en: den, lo: dlo, th: '', ko: '' }, code: '', order: di,
+          names: { en: den, lo: dlo, th: '', ko: '' }, code: dcode, order: di,
         });
       });
     });
     return {
       enabled: true,
       levels: [
-        { id: PROV, name: 'Province', order: 0 },
-        { id: DIST, name: 'District', order: 1 },
-        { id: VILL, name: 'Village',  order: 2 },
+        { id: PROV, name: 'Province', order: 0, col: 'province' },
+        { id: DIST, name: 'District', order: 1, col: 'district' },
+        { id: VILL, name: 'Village',  order: 2, col: 'village'  },
       ],
       items,
-      idConfig: { source: 'la', seqPad: 3, seqStart: 1 },
+      // The id comes from the selected District, not from `la` (the Lao-city
+      // dictionary). `la` was the old default and it never worked here: la_city
+      // is empty on every record, and the four cities it offers are not ones
+      // this agency recruits from — so _idSourceCode returned '' and the auto id
+      // silently did nothing, leaving every worker_id typed by hand.
+      idConfig: { source: DIST, seqPad: 3, seqStart: 1 },
     };
   }
 

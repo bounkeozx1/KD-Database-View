@@ -3827,7 +3827,14 @@ function formatAllRecords() {
 
 // ── WORKER FORM: cascading Location Dictionary selects ────────────
 let _editLocNames = null;
-const _LOC_INPUTS = ['f-province', 'f-district', 'f-village'];   // level 0,1,2 → columns
+// A level writes to the column named by its own `col` — never to whatever its
+// position implies. Position used to decide this, so reordering or deleting a
+// level silently re-pointed it: with Village dragged to the top, a village name
+// was saved as the province. `col` is normalised/pinned in db.js.
+function _locInputFor(lv) {
+  const el = lv && lv.col ? document.getElementById('f-' + lv.col) : null;
+  return el || null;
+}
 
 // Item label in the user's current language (falls back to English / any).
 function _locName(it, lang) {
@@ -3874,11 +3881,10 @@ function renderFormLocation() {
       _fillLocSelect(i, pre);
     } else {
       const inp = document.getElementById('locfree-' + i);
-      const col = document.getElementById(_LOC_INPUTS[i]);
+      const col = _locInputFor(lv);
       if (inp) { inp.value = pre || (col ? col.value : '') || ''; _writeLocFree(i); }
       // Re-bind every render: innerHTML above replaced the element and its listeners.
-      const field = _LOC_INPUTS[i].replace(/^f-/, '');
-      initAddrCombobox('locfree-' + i, 'locfree-list-' + i, () => _collectAddrField(field));
+      initAddrCombobox('locfree-' + i, 'locfree-list-' + i, () => _collectAddrField(lv.col));
     }
   }
 }
@@ -3896,7 +3902,7 @@ function _locLevelHasItems(ld, levelId) { return ld.items.some(it => it.levelId 
 // Free-text level (e.g. Village) → mirror the typed value into its address column.
 function _writeLocFree(i) {
   const inp = document.getElementById('locfree-' + i);
-  const col = document.getElementById(_LOC_INPUTS[i]);
+  const col = _locInputFor(DB.getLocDict().levels[i]);
   if (inp && col) col.value = inp.value.trim();
 }
 
@@ -3941,7 +3947,7 @@ function _fillLocSelect(i, preselectName) {
 function _writeLocInput(i) {
   const ld  = DB.getLocDict();
   const lv  = ld.levels[i];
-  const inp = document.getElementById(_LOC_INPUTS[i]);
+  const inp = _locInputFor(lv);
   if (!lv || !inp) return;
   const sel = document.getElementById('locsel-' + lv.id);
   if (!sel) return;                                    // free-text level writes its own column
@@ -6293,14 +6299,19 @@ function renderLocDictSettings() {
     esc(bi('ສ້າງໝວດສະຖານທີ່ເປັນຊັ້ນ (ແຂວງ → ເມືອງ → ບ້ານ) ພ້ອມລະຫັດສັ້ນ. ບໍ່ມັກ? ລຶບໄດ້.','Build hierarchical place categories (Province → District → Village) with short codes. Don\'t like it? Delete it.','สร้างหมวดสถานที่เป็นชั้น (จังหวัด → เมือง → บ้าน) พร้อมรหัสสั้น ไม่ชอบ? ลบได้','계층형 위치 범주 (도 → 시·군 → 마을) 단축 코드 포함. 마음에 안 들면 삭제하세요.')) + '</div>';
 
   // ── Levels (categories) ──
+  // Levels are NOT drag-reorderable, unlike the items below. The order is the
+  // geographic hierarchy (Province contains District contains Village), not a
+  // preference: reordering only breaks the cascade, since a district's parent is
+  // a province no matter where the rows sit. Each level shows the employee
+  // column it fills, so that binding stops being invisible.
   html += '<div class="locdict-card"><div class="locdict-sub">' +
-    esc(bi('ໝວດ (ຊັ້ນ) — ສູງສຸດ 3 · ລາກເພື່ອຈັດລຳດັບ','Categories (levels) — max 3 · drag to reorder','หมวด (ชั้น) — สูงสุด 3 · ลากเพื่อจัดลำดับ','범주 (단계) — 최대 3 · 끌어서 순서 변경')) + '</div>';
-  html += '<div class="locdict-rows" id="locdict-levels-rows">' + (ld.levels.length
+    esc(bi('ໝວດ (ຊັ້ນ) — ສູງສຸດ 3','Categories (levels) — max 3','หมวด (ชั้น) — สูงสุด 3','범주 (단계) — 최대 3')) + '</div>';
+  html += '<div class="locdict-rows">' + (ld.levels.length
     ? ld.levels.map((lv, i) =>
-        '<div class="locdict-row" data-drag="' + esc(lv.id) + '">' +
-          _dragHandle() +
+        '<div class="locdict-row">' +
           '<span class="locdict-lvl-no">' + (i + 1) + '</span>' +
           '<input class="locdict-name-in" value="' + esc(lv.name) + '" onchange="locRenameLevel(\'' + lv.id + '\', this.value)">' +
+          '<span class="set-code" title="' + esc(bi('ບັນທຶກລົງຊ່ອງນີ້','Saved into this field','บันทึกลงช่องนี้','이 항목에 저장됨')) + '">' + esc(lv.col || '—') + '</span>' +
           '<button class="locdict-ic danger" onclick="locDelLevel(\'' + lv.id + '\')">&#10005;</button>' +
         '</div>')
       .join('')
@@ -6379,9 +6390,9 @@ function renderLocDictSettings() {
   }
 
   host.innerHTML = html;
-  // Both containers are rebuilt by the line above, so bind fresh every render.
-  _initDragReorder(document.getElementById('locdict-levels-rows'), _reorderLocLevels);
-  _initDragReorder(document.getElementById('locdict-items-rows'),  _reorderLocItems);
+  // Rebuilt by the line above, so bind fresh every render. Items only — see the
+  // note on the levels card for why those are not drag-reorderable.
+  _initDragReorder(document.getElementById('locdict-items-rows'), _reorderLocItems);
 }
 
 // ── Drag-to-reorder (Settings lists) ──────────────────────────────
@@ -6457,7 +6468,12 @@ function locAddLevel() {
   _locMutate(ld => {
     if (ld.levels.length >= 3) return;
     ld.enabled = true;
-    ld.levels.push({ id: DB._newLocId(), name, order: ld.levels.length });
+    // Claim the first address column nobody holds yet — a level must own its
+    // column outright, never inherit one from where it happens to sit.
+    const taken = new Set(ld.levels.map(l => l.col));
+    const col = ['province', 'district', 'village'].find(c => !taken.has(c));
+    if (!col) return;
+    ld.levels.push({ id: DB._newLocId(), name, order: ld.levels.length, col });
   });
 }
 function locRenameLevel(id, val) {
@@ -6472,16 +6488,6 @@ function locDelLevel(id) {
       ld.items = ld.items.filter(it => ids.has(it.levelId));
       if (!ld.levels.length) ld.enabled = false;
     }));
-}
-// Levels re-ordered by drag → rewrite the array to the dropped order.
-function _reorderLocLevels(ids) {
-  _locMutate(ld => {
-    const by = new Map(ld.levels.map(l => [l.id, l]));
-    const next = ids.map(i => by.get(i)).filter(Boolean);
-    ld.levels.forEach(l => { if (!next.includes(l)) next.push(l); });
-    ld.levels = next;
-    ld.levels.forEach((l, k) => { l.order = k; });
-  });
 }
 function locSelectEditLevel(i) { _locEditLevel = i; _locEditParent = ''; renderLocDictSettings(); }
 function locSelectEditParent(v) { _locEditParent = v; renderLocDictSettings(); }
