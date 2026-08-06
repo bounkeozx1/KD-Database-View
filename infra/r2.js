@@ -2,10 +2,11 @@
 /**
  * infra/r2.js — zero-dependency Cloudflare R2 (S3-compatible) client.
  *
- * WHY hand-rolled: the whole app is zero-npm-dependency and the Dockerfile does
- * not run `npm install`. Pulling in @aws-sdk/client-s3 would change the build and
- * add a large transitive tree. R2's S3 API only needs AWS Signature V4, which we
- * can produce with node:crypto (HMAC-SHA256 + SHA-256). ~1 file, no deps.
+ * WHY hand-rolled: the whole app is zero-npm-dependency and there is no install
+ * step — it is started with `node shell/server.js` and nothing else. Pulling in
+ * @aws-sdk/client-s3 would introduce one, and a large transitive tree with it.
+ * R2's S3 API only needs AWS Signature V4, which we can produce with
+ * node:crypto (HMAC-SHA256 + SHA-256). ~1 file, no deps.
  *
  * Enabled only when all of these env vars are set (otherwise the app keeps using
  * local disk exactly as before — safe to deploy before you configure R2):
@@ -134,6 +135,93 @@ async function put(key, buffer, contentType) {
   return true;
 }
 
+/**
+ * Upload a FILE by streaming it (P5.1).
+ *
+ * `put()` above takes a Buffer, which is right for a photograph and wrong for a
+ * backup: a 700 MB package would be resident in memory, on a server whose whole
+ * design is to stay small. This streams from disk instead.
+ *
+ * The trick that makes streaming compatible with SigV4 is that the caller
+ * already knows the payload's SHA-256 — the backup writer computed it while
+ * building the archive — so `x-amz-content-sha256` can be signed without
+ * reading the file first. That also makes the signature a end-to-end integrity
+ * check: if the bytes on disk no longer match the digest we signed, R2 rejects
+ * the upload rather than storing something we would later call verified.
+ *
+ * node:https rather than fetch: a PUT with a signed payload hash needs an exact
+ * Content-Length and no chunked encoding, and https.request gives that control
+ * directly instead of depending on how fetch decides to frame a stream body.
+ *
+ * @param {string} key
+ * @param {string} absPath
+ * @param {object} opts  { sha256 (required), contentType, meta: {k:v}, size }
+ */
+function putFile(key, absPath, opts) {
+  const o = opts || {};
+  const c = cfg();
+  if (!c) return Promise.reject(new Error('R2 not configured'));
+  if (!/^[0-9a-f]{64}$/i.test(String(o.sha256 || '')))
+    return Promise.reject(new Error('putFile requires the payload sha256'));
+
+  const fs2   = require('node:fs');
+  const size  = o.size != null ? o.size : fs2.statSync(absPath).size;
+  const amzDate = amzNow();
+  const canonicalUri = '/' + awsUriEncode(c.bucket, true) + '/' + awsUriEncode(key, false);
+  const payloadHash = String(o.sha256).toLowerCase();
+
+  /* Custom metadata is SIGNED, not merely sent: it records our own digest
+   * alongside the object so a later HEAD can confirm the remote copy is the one
+   * we uploaded, and signing it means it cannot be altered in flight. */
+  const signed = {
+    host: c.host,
+    'content-length': String(size),
+    'x-amz-content-sha256': payloadHash,
+    'x-amz-date': amzDate,
+  };
+  Object.keys(o.meta || {}).forEach(k => {
+    signed['x-amz-meta-' + String(k).toLowerCase()] = String(o.meta[k]);
+  });
+
+  const { authorization } = signV4({
+    method: 'PUT', host: c.host, canonicalUri, headers: signed, payloadHash,
+    accessKey: c.accessKey, secretKey: c.secretKey, amzDate,
+  });
+
+  const headers = Object.assign({}, signed, { authorization });
+  if (o.contentType) headers['content-type'] = o.contentType;   // unsigned, like put()
+
+  return new Promise((resolve, reject) => {
+    const url = new URL(c.endpoint + canonicalUri);
+    /* Transport chosen from the endpoint, not hardcoded. R2_ENDPOINT exists so a
+     * different host can be pointed at — an S3-compatible appliance, a proxy, a
+     * test double — and r2Request() already honours whatever protocol it names.
+     * Forcing https here made putFile the one operation that could not follow the
+     * configured endpoint. */
+    const isHttps = url.protocol === 'https:';
+    const mod = require(isHttps ? 'node:https' : 'node:http');
+    const req = mod.request({
+      protocol: url.protocol, hostname: url.hostname,
+      port: url.port || (isHttps ? 443 : 80), path: url.pathname + url.search,
+      method: 'PUT', headers,
+    }, (res) => {
+      let body = '';
+      res.on('data', (d) => { if (body.length < 2048) body += d.toString(); });
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve({ ok: true, status: res.statusCode, etag: res.headers.etag || null, bytes: size });
+        } else {
+          reject(new Error('R2 PUT ' + key + ' → ' + res.statusCode + ' ' + body.slice(0, 300)));
+        }
+      });
+    });
+    req.on('error', reject);
+    const rs = fs2.createReadStream(absPath);
+    rs.on('error', (e) => { req.destroy(); reject(e); });
+    rs.pipe(req);
+  });
+}
+
 /** GET → object with headers + ONE-SHOT body readers. A fetch body can only be
  *  consumed once, so call EITHER stream() OR buffer(), not both. */
 async function get(key) {
@@ -152,7 +240,22 @@ async function get(key) {
 /** HEAD → { exists, size }. */
 async function head(key) {
   const res = await r2Request('HEAD', key);
-  return { exists: res.ok, size: Number(res.headers.get('content-length') || 0), status: res.status };
+  /* P5.1 also needs the custom metadata and the length under both names.
+   * Verifying an offsite backup means comparing the digest we recorded as
+   * `x-amz-meta-sha256` against the one we hold locally — without reading the
+   * metadata back, "verified" would only ever mean "the PUT returned 200". */
+  const meta = {};
+  res.headers.forEach((v, k) => {
+    const m = /^x-amz-meta-(.+)$/.exec(k.toLowerCase());
+    if (m) meta[m[1]] = v;
+  });
+  const len = Number(res.headers.get('content-length') || 0);
+  return {
+    exists: res.ok, status: res.status,
+    size: len, contentLength: len,
+    etag: res.headers.get('etag') || null,
+    meta,
+  };
 }
 
 /** DELETE. Treats 404 as success (already gone). */
@@ -188,4 +291,4 @@ function selfTestSigner() {
   return { ok: authorization === expected, got: authorization, expected };
 }
 
-module.exports = { isEnabled, cfg, put, get, head, del, signV4, awsUriEncode, selfTestSigner };
+module.exports = { isEnabled, cfg, put, putFile, get, head, del, signV4, awsUriEncode, selfTestSigner };

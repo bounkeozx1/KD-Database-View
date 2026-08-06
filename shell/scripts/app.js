@@ -6,6 +6,7 @@
 // ── State ─────────────────────────────────────────────────────────
 let activeGroupId = '';
 let _currentViewUid = null;  // uid of worker currently shown in detail overlay
+let _presentDirty   = false; // Present flipped workers → detail drawer needs a catch-up refresh on close
 let _navUids = [];           // ordered uids for ←/→ navigation in the detail view
 let sidebarSearchQ = '';
 let tableFiltered  = [];
@@ -66,11 +67,18 @@ function applyThemeIcon() {} // no-op (header button removed)
 function toggleTheme() { setThemePref(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'); }
 
 // ── Init ──────────────────────────────────────────────────────────
-// Auth lives on a separate page (login.html). If there is no active
-// session, bounce straight there; otherwise boot the app.
+// Auth lives on a separate page (login.html). Permissions come from the
+// server-issued session created by that username+password sign-in — DB.init()
+// returns no user unless the session cookie is valid, so there is nothing to
+// boot without one.
 document.addEventListener('DOMContentLoaded', async () => {
   try {
     await DB.init();
+    // The session is valid but the account owes a step (set a real password, or
+    // enrol a second factor). Those screens live on login.html — go there
+    // rather than showing a "server down" error the user cannot act on.
+    if (DB.pendingStep && DB.pendingStep()) { window.location.replace('login.html'); return; }
+    if (!DB.getCurrentUser()) { window.location.replace('login.html'); return; }
     await _migrateDocCatsToServer();
   } catch (e) {
     document.body.innerHTML =
@@ -121,12 +129,60 @@ function initSaveStatusUI() {
 }
 
 // ── AUTH ──────────────────────────────────────────────────────────
+/**
+ * "Does this account hold the Admin role?"
+ *
+ * P4 note — prefer DB.can('resource.action'). This answers a question about
+ * IDENTITY, and almost every call site was really asking about CAPABILITY. The
+ * distinction stopped being academic when Manager, Employee and Auditor arrived:
+ * a Manager is not an admin, yet may approve records and export; an Auditor may
+ * read the audit trail that no isAdmin() check would ever have let them near.
+ *
+ * Kept because a handful of call sites genuinely mean "the admin role", and
+ * because the write paths behind them are all re-checked by the server anyway.
+ */
 function isAdmin() { return !!currentUser && currentUser.role === 'admin'; }
+
+/**
+ * The capability test the UI should use: mirrors the server's own decision.
+ * A thin wrapper so app.js never has to reach into DB internals, and so a single
+ * place can be instrumented if a control ever hides when it should not.
+ */
+function can(permission) { return DB.can(permission); }
+
+/**
+ * The translated name of a role.
+ *
+ * Before P4 the badge was `role === 'admin' ? 'Admin' : 'Viewer'`, so a Manager,
+ * an Employee and an Auditor were all labelled "Viewer" — the UI told four
+ * different people the same wrong thing about their own account.
+ */
+function roleLabel(role) {
+  const key = 'role_' + String(role || '').toLowerCase();
+  const label = t(key);
+  return label === key ? (role || t('role_unknown')) : label;
+}
+
+/** Badge colour family. Privileged roles read as accented, readers as neutral. */
+function roleBadgeTone(role) {
+  const r = String(role || '').toLowerCase();
+  if (r === 'admin') return 'admin';
+  if (r === 'manager') return 'manager';
+  if (r === 'auditor') return 'auditor';
+  return 'viewer';
+}
 
 function startApp(user) {
   currentUser = user;
   document.body.classList.add('authed');
   document.body.dataset.role = user.role;
+  /* Drives the CSS that hides write controls. `data-role` alone could not:
+   * `body[data-role="viewer"] .admin-only` hid controls from viewers and showed
+   * every one of them to Manager, Employee and Auditor accounts, which then
+   * collected a 403 on click. `data-can-write` is set from the permission the
+   * controls actually need. */
+  document.body.dataset.canWrite = DB.can('employee.update') || DB.can('employee.create') ? 'yes' : 'no';
+  loadAppVersion();     // sidebar version label — from the server, never literal
 
   // Reflect current language in the globe button
   const lc = document.getElementById('lang-current');
@@ -148,6 +204,7 @@ function startApp(user) {
     initProvinceCombobox();
     initSaveStatusUI();
     _fillNatDatalist();
+    bcUpgradeSelects();     // short, fixed <select>s become bento tile groups
     appInited = true;
   }
 
@@ -157,11 +214,8 @@ function startApp(user) {
   updateLogoDisplay();
 
   // Show dashboard view on initial load
-  const dw = document.getElementById('dashboard-welcome');
-  const gv = document.getElementById('group-view');
-  if (dw) dw.style.display = '';
-  if (gv) gv.style.display = 'none';
   renderDashboard();
+  showMainView('dashboard');
   rebuildFilters();
 }
 
@@ -173,6 +227,33 @@ document.addEventListener('keydown', e => {
     if (typeof toggleSidebarSearch === 'function') toggleSidebarSearch(true);
   }
 });
+
+// ── Press feedback ────────────────────────────────────────────────
+// CSS :active is not enough on touch: iOS Safari only applies it to <button>
+// and <a>, so every card, row and div-with-onclick stayed completely still
+// when tapped — the user could not tell whether the tap had landed. We mark
+// the pressed control ourselves; main.css styles [data-pressed] exactly like
+// :active. Capture phase, so a handler that stops propagation still gets it.
+(() => {
+  const PRESSABLE = 'button, a, summary, label.btn, [role="button"], [onclick], .btn,' +
+    '.bn-item, .pm-item, .sb-nav-item, .set-nav-item, .set-action, .vm-tab, .view-btn,' +
+    '.dz-seg-btn, .kebab, .theme-opt, .export-opt, .exp-btn, .worker-card,' +
+    '.tree-group-row, .tree-worker-item, .dz-team-item, .dz-project-item, .hist-item';
+  let held = null;
+  const release = () => { if (held) { held.removeAttribute('data-pressed'); held = null; } };
+  document.addEventListener('pointerdown', e => {
+    const el = e.target.closest && e.target.closest(PRESSABLE);
+    release();
+    if (!el || el.disabled || el.classList.contains('disabled')) return;
+    held = el;
+    el.setAttribute('data-pressed', '');
+  }, true);
+  // Lift, cancel, or a scroll that turns the tap into a swipe — all release it.
+  ['pointerup', 'pointercancel', 'dragstart'].forEach(ev =>
+    document.addEventListener(ev, release, true));
+  window.addEventListener('scroll', release, { capture: true, passive: true });
+  window.addEventListener('blur', release);
+})();
 
 // Close sidebar pop-ups (More menu, profile menu) on outside click
 document.addEventListener('click', e => {
@@ -190,10 +271,23 @@ document.addEventListener('click', e => {
   }
 });
 
-function doLogout() {
-  DB.logout();
+async function doLogout() {
   currentUser = null;
+  try { await DB.logout(); } catch (e) {}   // ends the session server-side too
   window.location.replace('login.html');
+}
+
+// Session expired (or was revoked — e.g. an admin reset this account's
+// password). Say so, then send them back to sign in with their credentials.
+if (typeof DB !== 'undefined' && DB.onAuthLost) {
+  DB.onAuthLost(() => {
+    currentUser = null;
+    try { toast(bi('ໝົດອາຍຸການເຂົ້າສູ່ລະບົບ — ກະລຸນາເຂົ້າສູ່ລະບົບໃໝ່',
+                   'Session expired — please sign in again',
+                   'เซสชันหมดอายุ — กรุณาเข้าสู่ระบบใหม่',
+                   '세션이 만료되었습니다 — 다시 로그인하세요'), 'warn'); } catch (e) {}
+    setTimeout(() => window.location.replace('login.html'), 1200);
+  });
 }
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -203,11 +297,11 @@ function parseDate(s) {
   if (p.length < 3) return null;
   return new Date(+p[2], +p[1] - 1, +p[0]);
 }
-function calcAge(dob) {
-  const d = parseDate(dob);
-  if (!d) return '';
-  return Math.floor((Date.now() - d) / (365.25 * 864e5));
-}
+/* One implementation, shared with the server — see infra/age.js for why. The
+ * old body here divided by an average year and read a year low on birthdays,
+ * which meant the spreadsheet in an export package could disagree with the
+ * summary next to it about whether somebody was 17 or 18. */
+function calcAge(dob) { return KDAge.age(dob); }
 // Passport-expiry alert thresholds (configurable in Settings → Notifications).
 // Stored in months; default 12 (urgent/red) and 24 (upcoming/yellow).
 function expiryWarnMonths() { return Math.max(1, parseInt(DB.getSetting('warn_months', 12), 10) || 12); }
@@ -257,13 +351,102 @@ function avatarHtml(name, sizeClass) {
   return '<div class="avatar ' + sizeClass + '" style="background:' + bg + '" title="' + esc(name) + '">' + ini + '</div>';
 }
 
-// Employee photo: real photo if uploaded/scanned, else initials avatar placeholder
+// Employee photo: real photo if uploaded/scanned, else initials avatar placeholder.
+// List/grid/table use the tiny thumbnail when available (falls back to the full
+// photo), so these dense views load a fraction of the bytes.
 function personPhoto(w, sizeClass) {
   if (w && w.photo) {
+    const src = w.photo_thumb || w.photo;
     return '<div class="avatar ' + sizeClass + ' has-photo" title="' + esc(w.en_name || '') + '">' +
-           '<img src="' + w.photo + '" alt="' + esc(w.en_name || '') + '" loading="lazy" decoding="async"></div>';
+           '<img src="' + src + '" alt="' + esc(w.en_name || '') + '" loading="lazy" decoding="async"></div>';
   }
   return avatarHtml(w ? w.en_name : '', sizeClass);
+}
+
+// Build a small (~max px) JPEG thumbnail data-URL from any same-origin image
+// source (a data: URL fresh from upload, or an existing /uploads/… path used by
+// the one-time backfill). Resolves '' on any failure so callers can no-op.
+function _genThumb(src, max) {
+  return new Promise(resolve => {
+    if (!src || typeof src !== 'string') return resolve('');
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const m = max || 240;
+        const iw = img.width || m, ih = img.height || m;
+        const scale = Math.min(1, m / Math.max(iw, ih));
+        const cw = Math.max(1, Math.round(iw * scale));
+        const ch = Math.max(1, Math.round(ih * scale));
+        const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+        c.getContext('2d').drawImage(img, 0, 0, cw, ch);
+        resolve(c.toDataURL('image/jpeg', 0.72));
+      } catch (e) { resolve(''); }
+    };
+    img.onerror = () => resolve('');
+    img.src = src;
+  });
+}
+
+// Fire-and-forget: generate a thumbnail for a just-saved photo and persist it as
+// a follow-up patch. Kept separate from the main save so the photo write is never
+// delayed or blocked by thumbnail work.
+function _queueThumb(uid, src) {
+  if (!/^data:image\//.test(src || '')) return;
+  const gid = activeGroupId;
+  _genThumb(src, 240).then(thumb => {
+    if (!thumb) return;
+    DB.updateWorker(gid, uid, { photo_thumb: thumb });
+    const g = DB.getGroup(gid);
+    const w = g && g.workers.find(x => x.uid === uid);
+    if (w) w.photo_thumb = thumb;   // keep the in-memory copy in sync
+    _refreshPhotoViews();           // swap the temporary full photo for the light thumb
+  });
+}
+
+// The list / dashboard cards show `photo_thumb || photo`, so after a photo
+// changes they keep showing the OLD thumbnail until a re-render. Call this after
+// any photo write to repaint whichever view is on screen (the detail drawer
+// refreshes itself separately). Callers also clear the stale in-memory
+// photo_thumb first, so the immediate repaint falls back to the fresh full photo
+// while _queueThumb regenerates the light one.
+function _refreshPhotoViews() {
+  if (document.getElementById('dashboard-welcome')?.style.display !== 'none') renderDashboard();
+  if (document.getElementById('group-view')?.style.display !== 'none') renderTable();
+}
+
+// One-time migration: build a thumbnail for every existing photo that lacks one.
+// Runs fully in the browser (canvas), a few images at a time, and reports progress
+// on the triggering button. Safe to re-run — it only touches rows still missing a
+// thumbnail, so an interrupted run just resumes.
+async function backfillThumbnails(btn) {
+  const todo = [];
+  DB.getGroups().forEach(g => (g.workers || []).forEach(w => {
+    if (w.photo && !w.photo_thumb) todo.push({ gid: g.id, uid: w.uid, src: w.photo });
+  }));
+  if (!todo.length) {
+    toast(bi('ມີ thumbnail ຄົບແລ້ວ', 'All thumbnails already generated', 'มี thumbnail ครบแล้ว', '썸네일이 이미 모두 생성됨'));
+    return;
+  }
+  const sub  = btn ? btn.querySelector('.set-action-sub') : null;
+  const orig = sub ? sub.textContent : '';
+  if (btn) btn.disabled = true;
+  let done = 0, failed = 0, i = 0;
+  const setLbl = () => { if (sub) sub.textContent = (done + failed) + ' / ' + todo.length + ' …'; };
+  setLbl();
+  const worker = async () => {
+    while (i < todo.length) {
+      const item = todo[i++];
+      const thumb = await _genThumb(item.src, 240);
+      if (thumb) { DB.updateWorker(item.gid, item.uid, { photo_thumb: thumb }); done++; }
+      else failed++;
+      if ((done + failed) % 5 === 0) setLbl();
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);   // 3 in parallel
+  if (btn) btn.disabled = false;
+  if (sub) sub.textContent = orig;
+  toast(bi('ສ້າງ thumbnail ' + done + ' ຮູບ', 'Generated ' + done + ' thumbnails' + (failed ? ' (' + failed + ' failed)' : ''),
+           'สร้าง thumbnail แล้ว ' + done + ' รูป' + (failed ? ' (พลาด ' + failed + ')' : ''), '썸네일 ' + done + '개 생성'));
 }
 
 // Passport status → {label, cls} for the "Status" column/badge
@@ -643,7 +826,7 @@ document.addEventListener('click', e => {
 function _groupRowHtml(g, s, totalGroups) {
   const active = g.id === activeGroupId;
   const pinned = pinnedGroups.has(g.id);
-  const alertDot = s.expiring ? '<span class="tree-alert" title="Passport expiring"></span>' : '';
+  const alertDot = s.expiring ? '<span class="tree-alert" data-i18n-title="tip_passport_expiring" title="' + esc(bi('ພາສປອດໃກ້ໝົດອາຍຸ', 'Passport expiring', 'พาสปอร์ตใกล้หมดอายุ', '여권 만료 임박')) + '"></span>' : '';
   return (
     '<div class="tree-group" id="tg-' + g.id + '">' +
       '<div class="tree-group-row' + (active ? ' active' : '') + '" onclick="switchGroup(\'' + g.id + '\')">' +
@@ -736,6 +919,7 @@ function openGroupMenu(id, ev) {
     moveup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>',
     movedn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>',
     pin:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14l-1.5-4V5a2 2 0 0 0-2-2h-5a2 2 0 0 0-2 2v8z"/></svg>',
+    history:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>',
     archive:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><line x1="10" y1="12" x2="14" y2="12"/></svg>',
     unarchive:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><polyline points="9 13 12 10 15 13"/><line x1="12" y1="10" x2="12" y2="17"/></svg>',
     del:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'
@@ -746,6 +930,7 @@ function openGroupMenu(id, ev) {
   menu.innerHTML =
     item('share',  I.share,  t('gm_share')) +
     item('pin',    I.pin,    pinned ? t('unpin') : t('gm_pin')) +
+    item('history', I.history, bi('ປະຫວັດ', 'History', 'ประวัติ', '기록')) +
     (isAdmin() ?
       item('rename',    I.rename,  t('gm_rename')) +
       item('move_up',   I.moveup,  t('gm_move_up')) +
@@ -770,6 +955,7 @@ function groupMenuAct(action) {
   const id = groupMenuId;
   closeRowMenu();
   if (action === 'pin')            togglePin(id);
+  else if (action === 'history')   openGroupHistory(id);
   else if (action === 'rename')    openGroupForm(id);
   else if (action === 'del')       confirmDeleteGroup(id);
   else if (action === 'share')     shareGroup(id);
@@ -850,15 +1036,6 @@ function navTo(view, el) {
   if (el) el.classList.add('active');
   _overviewMode = '';
 
-  const dashWelcome = document.getElementById('dashboard-welcome');
-  const groupView   = document.getElementById('group-view');
-  const groupsOv    = document.getElementById('groups-overview');
-
-  // Hide every main view first, then show the one we want
-  if (dashWelcome) dashWelcome.style.display = 'none';
-  if (groupView)   groupView.style.display   = 'none';
-  if (groupsOv)    groupsOv.style.display    = 'none';
-
   const clearSearch = () => {
     const s = document.getElementById('search'); if (s) s.value = '';
     const ts = document.getElementById('sidebar-search-input'); if (ts) ts.value = '';
@@ -868,34 +1045,69 @@ function navTo(view, el) {
   if (view === 'dashboard') {
     quickFilter = '';
     clearSearch();
-    if (dashWelcome) dashWelcome.style.display = '';
     renderDashboard();
+    showMainView('dashboard');
   } else if (view === 'workers') {
     // Landing = group overview. Pick a group to see its members.
     quickFilter = '';
     activeGroupId = '';
     clearSearch();
-    if (groupsOv) groupsOv.style.display = '';
     renderGroupsOverview();
+    showMainView('groups');
   } else if (view === 'alerts') {
     // Alerts = groups first (only those with expiring passports), then drill in
     _overviewMode = 'alerts';
     quickFilter = 'alerts';
     activeGroupId = '';
-    if (groupsOv) groupsOv.style.display = '';
     renderGroupsOverview();
+    showMainView('groups');
   } else if (view === 'selected') {
     // Selection = groups first, then drill into a group's selected members
     _overviewMode = 'selected';
     quickFilter = 'selected';
     activeGroupId = '';
-    if (groupsOv) groupsOv.style.display = '';
     renderGroupsOverview();
+    showMainView('groups');
   }
   updateSelectedBadge();
   document.querySelector('.main-content')?.scrollTo({ top: 0, behavior: 'smooth' });
   document.getElementById('sidebar').classList.remove('open');
 }
+
+// ── MAIN VIEW SWITCHING ───────────────────────────────────────────
+// Every switch goes through here, so the entrance animation is identical
+// wherever it was triggered from (nav, a card, search, the back link) and
+// there is exactly one place that knows which views exist.
+const MAIN_VIEWS = {
+  dashboard: 'dashboard-welcome',
+  groups:    'groups-overview',
+  group:     'group-view',
+};
+
+function showMainView(name) {
+  Object.keys(MAIN_VIEWS).forEach(key => {
+    const el = document.getElementById(MAIN_VIEWS[key]);
+    if (!el) return;
+    if (key !== name) { el.style.display = 'none'; return; }
+    el.style.display = '';
+    _playEnter(el);
+    el.querySelectorAll('.bento').forEach(replayTiles);
+  });
+}
+
+// Restart a CSS animation: drop the class, force the style engine to notice the
+// element is un-animated, then re-add. Without the reflow the browser coalesces
+// remove+add into no change at all and nothing replays.
+function _restart(el, cls) {
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+}
+function _playEnter(el)   { _restart(el, 'view-enter'); }
+function replayTiles(grid) { if (grid) _restart(grid, 'reveal'); }
+
+// Cascade a freshly rendered list of rows/cards. Called after innerHTML swaps.
+function playRowsIn(el) { if (el) _restart(el, 'rows-in'); }
 
 // ── Sidebar search (now always visible — just focus it) ───────────
 function toggleSidebarSearch() {
@@ -924,11 +1136,23 @@ function toggleMoreMenu(event) {
 }
 function closeMoreMenu() { document.getElementById('sb-more')?.classList.remove('open'); }
 
-// ── GRADE (applicant grade A / B+ / B / C) ────────────────────────
-const GRADE_COLORS = { A:'#16a34a', 'B+':'#0891b2', B:'#2563eb', C:'#d97706' };
+// ── GRADE (applicant grade A / B+ / B- / C) ───────────────────────
+// The grade set is A / B+ / B- / C (matches the KD form). The bare legacy "B"
+// is promoted to "B+" on read (_normGrade) so old records display correctly;
+// it is also kept in GRADE_COLORS as an alias so any raw colour lookup still
+// resolves instead of greying out. New saves always store the normalised value.
+const GRADE_ORDER = ['A', 'B+', 'B-', 'C'];
+/* Darkened so the WHITE label on the badge clears 4.5:1. The old values were
+ * chosen as brand colours, not as backgrounds for text, and measured 3.30 (A),
+ * 3.68 (B+) and 3.19 (C) — the letter was the least readable thing in the row.
+ * B- already passed at 5.17 and is unchanged. Each new value is the lightest
+ * one that reaches AA, so the palette shifts as little as possible. */
+const GRADE_COLORS = { A:'#12873d', 'B+':'#07819e', 'B-':'#2563eb', C:'#b26205', B:'#07819e' };
+function _normGrade(g) { return g === 'B' ? 'B+' : (g || ''); }
 function gradeBadge(grade) {
-  if (!grade) return '';
-  return '<span class="grade-badge" style="background:' + (GRADE_COLORS[grade] || '#6b7280') + '">' + esc(grade) + '</span>';
+  const g = _normGrade(grade);
+  if (!g) return '';
+  return '<span class="grade-badge" style="background:' + (GRADE_COLORS[g] || '#6b7280') + '">' + esc(g) + '</span>';
 }
 
 // ── SELECTION (shortlist of workers chosen "to go") ───────────────
@@ -956,6 +1180,274 @@ function updateSelectedBadge() {
   const n = getSelectedUids().length;
   const b = document.getElementById('sb-selected-badge');
   if (b) { b.textContent = n; b.style.display = n ? '' : 'none'; }
+}
+
+/* ── PICK — a working set for bulk actions ─────────────────────────
+ * Deliberately NOT the star above. The star is a lasting business decision
+ * ("this worker is going") that lives in app_settings and travels with a
+ * backup; this is a scratch set the user builds to act on right now — export
+ * these twelve, move those three. Conflating them would mean every export
+ * selection silently rewrote the shortlist.
+ *
+ * Held in sessionStorage so a refresh mid-task does not lose it, and tied to
+ * the group it was built in: a uid list carried into another group would act
+ * on records the user can no longer see. The tie is checked on every paint
+ * rather than only in switchGroup(), so no future navigation path can leak a
+ * stale set into a different list.
+ */
+const PICK_KEY = 'kd_pick';
+let _pick = new Set();
+let _pickGroup = null;         // the group the set was last reconciled against
+
+(function _pickRestore() {
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(PICK_KEY) || 'null');
+    if (raw && Array.isArray(raw.uids)) _pick = new Set(raw.uids);
+  } catch (e) { /* unreadable scratch state is not worth reporting */ }
+})();
+
+function _pickSave() {
+  try { sessionStorage.setItem(PICK_KEY, JSON.stringify({ group: activeGroupId, uids: [..._pick] })); } catch (e) {}
+}
+
+/** Drop picks that the list now being shown does not contain. */
+function _pickPrune() {
+  if (!_pick.size) return;
+  const pool = new Set((activeGroupId ? DB.getWorkers(activeGroupId) : _allWorkersFlat()).map(w => w.uid));
+  let dropped = 0;
+  [..._pick].forEach(uid => { if (!pool.has(uid)) { _pick.delete(uid); dropped++; } });
+  if (dropped) _pickSave();
+}
+
+/* Who gets checkboxes. A Viewer holds no export grant and no write grant, so
+ * offering them a selection would only lead to a refusal further along. */
+function _canPick() {
+  return isAdmin() || can('export.excel') || can('export.pdf') || can('export.bundle');
+}
+
+function isPicked(uid) { return _pick.has(uid); }
+function pickedCount()  { return _pick.size; }
+
+/** The picked workers, in the order the list is currently showing them. */
+function pickedWorkers() {
+  const pool = tableFiltered.length ? tableFiltered : (activeGroupId ? DB.getWorkers(activeGroupId) : _allWorkersFlat());
+  const inView = pool.filter(w => _pick.has(w.uid));
+  if (inView.length === _pick.size) return inView;
+  /* Some picks are filtered out of the current view. They were still chosen
+   * deliberately, so they are included — resolved from the full set rather
+   * than dropped because a search box happens to be non-empty. */
+  const seen = new Set(inView.map(w => w.uid));
+  const rest = (activeGroupId ? DB.getWorkers(activeGroupId) : _allWorkersFlat())
+    .filter(w => _pick.has(w.uid) && !seen.has(w.uid));
+  return inView.concat(rest);
+}
+
+/**
+ * The checkbox itself. `n` is the row's 1-based position in the current view —
+ * shown while unpicked so the "1,2,7-10" box has something to refer to, and
+ * replaced by a tick once picked. The card views pass no number.
+ */
+function _pickBox(uid, n) {
+  if (!_canPick()) return '';
+  const on = _pick.has(uid);
+  return '<button class="pick-box' + (on ? ' on' : '') + '" data-pick-uid="' + esc(uid) + '" ' +
+    'role="checkbox" aria-checked="' + (on ? 'true' : 'false') + '" ' +
+    'onclick="togglePick(\'' + esc(uid) + '\',event)" title="' + esc(t('pick_one')) + '">' +
+    (n ? '<span class="pick-n">' + n + '</span>' : '<span class="pick-n"></span>') +
+    '<svg class="pick-tick" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" ' +
+    'stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
+  '</button>';
+}
+
+function togglePick(uid, ev) {
+  if (ev) ev.stopPropagation();
+  if (!_canPick()) return;
+  if (_pick.has(uid)) _pick.delete(uid); else _pick.add(uid);
+  _pickSave();
+  _pickPaint();
+}
+
+/* Repaint only what the pick state affects. A full renderTable() here would
+ * rebuild every card (and re-decode every photo) on each tick, and would throw
+ * away the caret in the range box. */
+function _pickPaint() {
+  document.querySelectorAll('.pick-box[data-pick-uid]').forEach(el => {
+    const on = _pick.has(el.dataset.pickUid);
+    el.classList.toggle('on', on);
+    el.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-pick-row]').forEach(el => {
+    el.classList.toggle('picked', _pick.has(el.dataset.pickRow));
+  });
+  renderPickBar();
+}
+
+function _pickAdd(list) {
+  list.forEach(w => _pick.add(w.uid));
+  _pickSave();
+  _pickPaint();
+}
+
+function pickAllInGroup() {
+  _pickAdd(activeGroupId ? DB.getWorkers(activeGroupId) : _allWorkersFlat());
+}
+function pickFiltered() { _pickAdd(tableFiltered); }
+
+/** Everything currently starred, limited to what this list can show. */
+function pickStarred() {
+  const starred = new Set(getSelectedUids());
+  const pool = activeGroupId ? DB.getWorkers(activeGroupId) : _allWorkersFlat();
+  const hits = pool.filter(w => starred.has(w.uid));
+  if (!hits.length) { toast(t('pick_no_starred'), 'warn'); return; }
+  _pickAdd(hits);
+}
+
+function clearPick() {
+  _pick.clear();
+  _pickSave();
+  _pickPaint();
+}
+
+/* The header checkbox. All-of-the-current-results on, or all of them off —
+ * it never touches picks that the filter is hiding. */
+function pickToggleAllFiltered() {
+  if (!tableFiltered.length) return;
+  const allOn = tableFiltered.every(w => _pick.has(w.uid));
+  tableFiltered.forEach(w => { if (allOn) _pick.delete(w.uid); else _pick.add(w.uid); });
+  _pickSave();
+  _pickPaint();
+}
+
+/**
+ * "1,2,7-10" — positions in the list as it is currently shown and sorted,
+ * which is what the row numbers on the left say. Out-of-range positions are
+ * reported rather than silently ignored, because a range that quietly picked
+ * fewer people than asked for is exactly the kind of thing nobody notices
+ * until the export is already sent.
+ */
+function pickApplyRange() {
+  const el = document.getElementById('pick-range');
+  const spec = (el ? el.value : '').replace(/\s+/g, '');
+  if (!spec) return;
+  const list = tableFiltered;
+  const bad = [], missing = [];
+  let added = 0;
+  spec.split(',').filter(Boolean).forEach(part => {
+    const m = /^(\d+)(?:-(\d+))?$/.exec(part);
+    if (!m) { bad.push(part); return; }
+    const a = +m[1], b = m[2] ? +m[2] : a;
+    for (let i = Math.min(a, b); i <= Math.max(a, b); i++) {
+      const w = list[i - 1];
+      if (!w) { missing.push(i); continue; }
+      if (!_pick.has(w.uid)) added++;
+      _pick.add(w.uid);
+    }
+  });
+  _pickSave();
+  _pickPaint();
+  if (el) el.value = '';
+  if (bad.length)     toast(t('pick_range_bad') + ' ' + bad.join(', '), 'warn');
+  else if (missing.length) toast(t('pick_range_missing', { list: missing.slice(0, 8).join(', ') }), 'warn');
+  else toast(t('pick_range_added', { n: added }), 'ok');
+}
+
+/** The bar itself: shown only when something is picked. */
+function renderPickBar() {
+  const bar = document.getElementById('pick-bar');
+  if (!bar) return;
+
+  /* A pick may only ever contain workers the current list could show — a uid
+   * carried over from another group would act on a record the user can no
+   * longer see. Pruned when the context changes rather than on every paint:
+   * the pool query deep-clones the group, which is far too heavy to run on
+   * each tick of a checkbox. */
+  if (_pickGroup !== activeGroupId) {
+    _pickPrune();
+    _pickGroup = activeGroupId;
+  }
+
+  const n = _pick.size;
+
+  // The header checkbox is outside the bar, so it is kept in step even when the
+  // bar itself is hidden — otherwise it would stay ticked after a Clear.
+  const head = document.getElementById('pick-all-box');
+  if (head) {
+    const allOn = tableFiltered.length > 0 && tableFiltered.every(w => _pick.has(w.uid));
+    head.classList.toggle('on', allOn);
+    head.setAttribute('aria-checked', allOn ? 'true' : 'false');
+  }
+
+  bar.hidden = !(n && _canPick());
+  if (bar.hidden) return;
+
+  const cnt = document.getElementById('pick-count');
+  if (cnt) cnt.textContent = n;
+  const lbl = document.getElementById('pick-label');
+  if (lbl) lbl.textContent = t('pick_selected');
+
+  // Move and Trash rewrite records; Export only reads them.
+  bar.querySelectorAll('.pick-act-admin').forEach(b => { b.hidden = !isAdmin(); });
+}
+
+// ── BULK ACTIONS on the picked set ────────────────────────────────
+
+function pickExport() {
+  if (!_pick.size) return;
+  openExportDialog('picked');
+}
+
+/** Move every picked worker into another group. Admin-only, and confirmed. */
+function pickMove() {
+  if (!isAdmin() || !_pick.size) return;
+  const list = document.getElementById('pickmove-list');
+  if (!list) return;
+  const groups = DB.getGroups().filter(g => g.id !== activeGroupId && !g.archived);
+  const sub = document.getElementById('pickmove-sub');
+  if (sub) sub.textContent = t('pick_move_sub', { n: _pick.size });
+  list.innerHTML = groups.length
+    ? groups.map(g =>
+        '<button class="pm-group" onclick="doPickMove(\'' + esc(g.id) + '\')">' +
+          '<span class="pm-group-name">' + esc(g.name || g.id) + '</span>' +
+          '<span class="pm-group-n">' + ((g.workers || []).length) + '</span>' +
+        '</button>').join('')
+    : '<p class="pm-empty">' + esc(t('pick_move_nogroups')) + '</p>';
+  openOverlay('pickmove-overlay');
+}
+
+function doPickMove(gid) {
+  const dest = DB.getGroup(gid);
+  if (!dest) return;
+  const ws = pickedWorkers();
+  closeOverlay('pickmove-overlay');
+  showConfirm(
+    t('pick_move_title'),
+    t('pick_move_msg', { n: ws.length, name: dest.name || gid }),
+    () => {
+      ws.forEach(w => DB.moveWorker(w.uid, gid));
+      clearPick();
+      refreshAll();
+      toast(t('pick_moved', { n: ws.length, name: dest.name || gid }), 'ok');
+    }
+  );
+  // Moving is not a deletion — keep the confirm button neutral.
+  const ok = document.getElementById('cm-confirm-btn');
+  if (ok) { ok.className = 'btn btn-primary'; ok.textContent = t('pick_move_go'); }
+}
+
+/** Soft-delete: the rows go to the trash bin and can be restored from there. */
+function pickTrash() {
+  if (!isAdmin() || !_pick.size) return;
+  const ws = pickedWorkers();
+  showConfirm(
+    t('pick_trash_title'),
+    t('pick_trash_msg', { n: ws.length }),
+    () => {
+      ws.forEach(w => DB.deleteWorker(activeGroupId, w.uid));
+      clearPick();
+      refreshAll();
+      toast(t('pick_trashed', { n: ws.length }), 'ok');
+    }
+  );
 }
 
 // ── CUSTOMIZE SIDEBAR (choose which items show) ───────────────────
@@ -1031,6 +1523,131 @@ function closeProfileMenu() {
 }
 
 // Language flyout inside the profile menu (only the 4 supported languages)
+/* ── BENTO CHOICE — one picker for the whole app ───────────────────
+ * Language, theme, view mode, form fields: all of them are now the same
+ * object, a bento tile (see "BENTO CHOICE" in main.css). Two entry points:
+ *
+ *   bcGroup(el, items, current, onPick)  — build tiles from a list
+ *   bentoizeSelect(id, opts)             — upgrade an existing <select>
+ *
+ * bentoizeSelect keeps the original <select> in the DOM, hidden, as the value
+ * holder. Everything that already reads or writes `getElementById('f-sex').value`
+ * — form fill, save, filters, exports — keeps working with no changes; the tiles
+ * are just a nicer way to move that value. bcSyncAll() redraws them after code
+ * (or a language switch) changes the underlying options or value.            */
+const BC_CHECK = '<svg class="bc-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+  'stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+
+// The four UI languages, each shown by a letter of its own script (the option
+// the brand review picked over flags).
+const BC_LANGS = [
+  { v: 'en', glyph: 'A',  name: 'English', code: 'EN' },
+  { v: 'th', glyph: 'ก',  name: 'ไทย',     code: 'TH' },
+  { v: 'lo', glyph: 'ກ',  name: 'ລາວ',     code: 'LO' },
+  { v: 'ko', glyph: '한', name: '한국어',   code: 'KO' },
+];
+
+// One tile. `glyph` may be raw SVG (icons), so it is NOT escaped — callers pass
+// their own markup; every text field is escaped.
+function bcTileHtml(o) {
+  return '<button type="button" class="bc-tile' + (o.center ? ' bc-center' : '') +
+      (o.selected ? ' selected' : '') + '" role="radio" aria-checked="' + (o.selected ? 'true' : 'false') +
+      '" data-val="' + esc(o.v == null ? '' : String(o.v)) + '"' +
+      (o.title ? ' title="' + esc(o.title) + '"' : '') + '>' +
+    (o.glyph ? '<span class="bc-glyph">' + o.glyph + '</span>' : '') +
+    (o.name  ? '<span class="bc-name">' + esc(o.name) + '</span>' : '') +
+    (o.code  ? '<span class="bc-code">' + esc(o.code) + '</span>' : '') +
+    BC_CHECK + '</button>';
+}
+
+// Fill a container with tiles and call back with the picked value.
+function bcGroup(el, items, current, onPick) {
+  if (!el) return;
+  el.setAttribute('role', 'radiogroup');
+  el.innerHTML = items.map(it => bcTileHtml({ ...it, selected: String(it.v) === String(current) })).join('');
+  if (el.dataset.bcWired !== '1') {
+    el.dataset.bcWired = '1';
+    el.addEventListener('click', e => {
+      const tile = e.target.closest('.bc-tile');
+      if (!tile || !el.contains(tile)) return;
+      onPick(tile.dataset.val);
+    });
+  }
+}
+
+// Mark the selected tile without rebuilding the group (keeps focus + avoids a
+// flash when only the selection changed).
+function bcMark(el, current) {
+  if (!el) return;
+  el.querySelectorAll('.bc-tile').forEach(t => {
+    const on = String(t.dataset.val) === String(current);
+    t.classList.toggle('selected', on);
+    t.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+}
+
+// A placeholder option ("-- Select --") becomes a dash tile: still selectable,
+// because clearing a field has to stay possible.
+function _bcOptLabel(text) { return /^\s*-{2,}/.test(text) ? '—' : text.trim(); }
+
+function bentoizeSelect(id, opts) {
+  const sel = document.getElementById(id);
+  if (!sel || sel.dataset.bento === 'on') return;
+  opts = opts || {};
+  sel.dataset.bento = 'on';
+  sel.classList.add('bc-source');
+  const grid = document.createElement('div');
+  grid.id = 'bc-for-' + id;
+  grid.className = 'bento-choice' + (opts.chip ? ' bc-chip' : '') + (opts.cls ? ' ' + opts.cls : '');
+  if (opts.cols) grid.dataset.cols = opts.cols;
+  sel.insertAdjacentElement('afterend', grid);
+  grid.addEventListener('click', e => {
+    const tile = e.target.closest('.bc-tile');
+    if (!tile || !grid.contains(tile)) return;
+    sel.value = tile.dataset.val;
+    bcMark(grid, sel.value);
+    // Fire the select's own change so existing onchange="applyFilters()" etc. run.
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  bcSync(id);
+}
+
+// Redraw one upgraded select's tiles from its current options + value.
+function bcSync(id) {
+  const sel  = document.getElementById(id);
+  const grid = document.getElementById('bc-for-' + id);
+  if (!sel || !grid) return;
+  grid.innerHTML = Array.from(sel.options).map(o => bcTileHtml({
+    v: o.value,
+    name: _bcOptLabel(o.textContent),
+    title: o.textContent.trim(),
+    selected: o.value === sel.value,
+  })).join('');
+}
+
+// Every upgraded select at once — after a form fill, a filter rebuild, or a
+// language switch (which rewrites the option labels under us).
+function bcSyncAll() {
+  document.querySelectorAll('select[data-bento="on"]').forEach(s => bcSync(s.id));
+  if (typeof _pmMarkLang === 'function') _pmMarkLang();
+  if (typeof _syncSetLangDD === 'function') _syncSetLangDD();
+}
+
+// Which selects become tiles: short, fixed lists only. Long or runtime-filled
+// ones (cities, groups, employers, doc categories) keep a real <select> — it
+// just wears the same bento shell, see select.bento-field in main.css.
+const BC_SELECTS = [
+  { id: 'f-sex',          cols: 3 },
+  { id: 'f-couple',       cols: 3 },
+  { id: 'f-hand',         cols: 3 },
+  { id: 'f-grade'                 },
+  { id: 'f-visa-status'           },
+  { id: 'f-size',         chip: 1 },
+  { id: 'fm-blood',       chip: 1 },
+  { id: 'set-u-role',     cols: 2 },
+];
+function bcUpgradeSelects() { BC_SELECTS.forEach(s => bentoizeSelect(s.id, s)); }
+
 function togglePmLang(e) {
   if (e) e.stopPropagation();
   const list = document.getElementById('pm-lang-list');
@@ -1054,8 +1671,13 @@ function togglePmLang(e) {
   list.style.top  = top + 'px';
 }
 function _pmMarkLang() {
-  const cur = (typeof currentLang !== 'undefined' ? currentLang : 'en');
-  document.querySelectorAll('#pm-lang-list button').forEach(b => b.classList.toggle('on', b.dataset.lang === cur));
+  const cur  = (typeof currentLang !== 'undefined' ? currentLang : 'en');
+  const grid = document.getElementById('pm-lang-grid');
+  if (!grid) return;
+  // Build once, then only move the selection — rebuilding on every language
+  // switch would flash the whole flyout.
+  if (!grid.children.length) bcGroup(grid, BC_LANGS, cur, pmSetLang);
+  else bcMark(grid, cur);
 }
 function pmSetLang(lang) {
   changeLangFromSettings(lang);   // switch language + live re-render
@@ -1068,7 +1690,7 @@ function profileAddAccount() {
 }
 function profileShow(kind) {
   closeProfileMenu();
-  if (kind === 'profile')  showInfo(t('pm_profile'),  t('info_profile_msg', { name: currentUser?.name || '', role: t(isAdmin() ? 'role_admin' : 'role_viewer') }));
+  if (kind === 'profile')  showInfo(t('pm_profile'),  t('info_profile_msg', { name: currentUser?.name || '', role: roleLabel(currentUser?.role) }));
   if (kind === 'help')     showInfo(t('pm_help'),     t('info_help_msg'));
   if (kind === 'policies') showInfo(t('pm_policies'), t('info_policies_msg'));
 }
@@ -1132,6 +1754,224 @@ function renderTopHeader() {
     '</div>';
 }
 
+// ── BENTO DASHBOARD ───────────────────────────────────────────────
+// Every tile lives in the markup once (#dz-bento). A "view" is just an ordered
+// pick of tiles plus the span each one gets, so adding a dashboard costs one
+// entry here and no new HTML. The user's own tweaks (hide / resize / reorder)
+// are stored per view and layered on top of the preset.
+//
+// Sizes: s = ¼ · m = ⅓ · l = ½ · full = whole row (of a 12-column grid).
+const BENTO_SIZES = ['s', 'm', 'l', 'full'];
+const BENTO_SIZE_LABEL = { s: '¼', m: '⅓', l: '½', full: '1' };
+
+const DZ_VIEWS = [
+  {
+    key: 'overview', lo: 'ພາບລວມ', en: 'Overview', th: 'ภาพรวม', ko: '개요',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+    tiles: [
+      ['stat-groups', 's'], ['stat-active', 's'], ['stat-workers', 's'], ['stat-alerts', 's'],
+      ['stat-cmp', 's'], ['analytics', 'l'], ['reminders', 's'],
+      ['projects', 'm'], ['team', 'm'], ['passport', 'm'],
+      ['compare', 'full'],
+    ],
+  },
+  {
+    key: 'passport', lo: 'ພາສປອດ', en: 'Passport', th: 'พาสปอร์ต', ko: '여권',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="10" r="3"/><path d="M9 17h6"/></svg>',
+    tiles: [
+      ['stat-alerts', 's'], ['stat-workers', 's'], ['stat-active', 's'], ['stat-groups', 's'],
+      ['passport', 'l'], ['reminders', 'l'],
+      ['analytics', 'full'], ['compare', 'full'],
+    ],
+  },
+  {
+    key: 'documents', lo: 'ເອກະສານ', en: 'Documents', th: 'เอกสาร', ko: '문서',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+    tiles: [
+      ['stat-workers', 's'], ['stat-cmp', 's'], ['stat-docs', 's'], ['stat-alerts', 's'],
+      ['docs-by-type', 'l'], ['missing-docs', 'l'],
+      ['team', 'full'],
+    ],
+  },
+  {
+    key: 'destinations', lo: 'ປາຍທາງ', en: 'Destinations', th: 'ปลายทาง', ko: '목적지',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
+    tiles: [
+      ['stat-groups', 's'], ['stat-active', 's'], ['stat-workers', 's'], ['stat-cmp', 's'],
+      ['top-kr', 'l'], ['top-la', 'l'],
+      ['analytics', 'l'], ['compare', 'l'],
+    ],
+  },
+];
+
+const DZ_TILE_META = {
+  'stat-groups':  { lo: 'ຈຳນວນກຸ່ມ',            en: 'Total groups',         th: 'จำนวนกลุ่ม',           ko: '전체 그룹' },
+  'stat-active':  { lo: 'ກຸ່ມທີ່ມີຄົນ',            en: 'Active groups',        th: 'กลุ่มที่มีคน',          ko: '활성 그룹' },
+  'stat-workers': { lo: 'ຈຳນວນຄົນງານ',         en: 'Total workers',        th: 'จำนวนแรงงาน',        ko: '전체 근로자' },
+  'stat-alerts':  { lo: 'ການແຈ້ງເຕືອນ',         en: 'Pending alerts',       th: 'การแจ้งเตือน',        ko: '알림' },
+  'stat-cmp':     { lo: 'ຄວາມຄົບຖ້ວນຂໍ້ມູນ',      en: 'Data completeness',    th: 'ความครบถ้วนข้อมูล',   ko: '데이터 완성도' },
+  'stat-docs':    { lo: 'ຄວາມຄົບຖ້ວນເອກະສານ',  en: 'Document completeness',th: 'ความครบถ้วนเอกสาร',  ko: '문서 완성도' },
+  'analytics':    { lo: 'ສະຖິຕິກຸ່ມ',             en: 'Group analytics',      th: 'สถิติกลุ่ม',            ko: '그룹 분석' },
+  'reminders':    { lo: 'ເຕືອນຄວາມຈຳ',          en: 'Reminders',            th: 'เตือนความจำ',         ko: '알림 목록' },
+  'projects':     { lo: 'ໂປຣເຈັກ',              en: 'Projects',             th: 'โปรเจกต์',            ko: '프로젝트' },
+  'team':         { lo: 'ທີມງານ',               en: 'Team',                 th: 'ทีมงาน',              ko: '팀' },
+  'passport':     { lo: 'ສະຖານະພາສປອດ',        en: 'Passport status',      th: 'สถานะพาสปอร์ต',      ko: '여권 상태' },
+  'compare':      { lo: 'ປຽບທຽບກຸ່ມ',           en: 'Group comparison',     th: 'เปรียบเทียบกลุ่ม',      ko: '그룹 비교' },
+  'docs-by-type': { lo: 'ເອກະສານຕາມປະເພດ',     en: 'Documents by type',    th: 'เอกสารตามประเภท',    ko: '유형별 문서' },
+  'missing-docs': { lo: 'ຂາດເອກະສານຫຼາຍທີ່ສຸດ',  en: 'Most missing documents', th: 'ขาดเอกสารมากที่สุด', ko: '문서 누락 상위' },
+  'top-kr':       { lo: 'ປາຍທາງ ເກົາຫຼີ',        en: 'Korean destinations',  th: 'ปลายทางเกาหลี',       ko: '한국 목적지' },
+  'top-la':       { lo: 'ພູມລຳເນົາ ລາວ',         en: 'Lao home towns',       th: 'ภูมิลำเนาลาว',         ko: '라오스 출신지' },
+};
+
+let dzView = localStorage.getItem('kd_dz_view') || 'overview';
+
+function _dzViewDef(key) { return DZ_VIEWS.find(v => v.key === key) || DZ_VIEWS[0]; }
+
+function _dzPrefs() {
+  try { return JSON.parse(localStorage.getItem('kd_bento') || '{}') || {}; } catch (e) { return {}; }
+}
+function _dzSavePrefs(p) {
+  try { localStorage.setItem('kd_bento', JSON.stringify(p)); } catch (e) {}
+}
+
+// Preset + the user's overrides → the tile list to actually paint.
+// The preset stays the source of truth for *which* tiles a view may contain, so
+// a saved layout from an older build can never resurrect a tile we dropped.
+function _dzLayout(viewKey) {
+  const def    = _dzViewDef(viewKey);
+  const saved  = _dzPrefs()[viewKey] || {};
+  const hidden = new Set(saved.hidden || []);
+  const sizes  = saved.size || {};
+  const preset = new Map(def.tiles);
+
+  let keys = def.tiles.map(t => t[0]);
+  if (Array.isArray(saved.order) && saved.order.length) {
+    const ordered = [...new Set(saved.order.filter(k => preset.has(k)))];
+    const rest    = keys.filter(k => !ordered.includes(k));   // tiles added since the layout was saved
+    keys = ordered.concat(rest);
+  }
+  return keys.map(key => ({
+    key,
+    size: BENTO_SIZES.includes(sizes[key]) ? sizes[key] : preset.get(key),
+    on:   !hidden.has(key),
+  }));
+}
+
+function _dzMutatePrefs(viewKey, fn) {
+  const all = _dzPrefs();
+  all[viewKey] = all[viewKey] || {};
+  fn(all[viewKey]);
+  _dzSavePrefs(all);
+  applyBentoLayout();
+}
+
+function renderDashViews() {
+  const el = document.getElementById('dz-views');
+  if (!el) return;
+  el.innerHTML = DZ_VIEWS.map(v =>
+    '<button class="dz-view-btn' + (v.key === dzView ? ' active' : '') + '" role="tab" ' +
+      'aria-selected="' + (v.key === dzView) + '" onclick="setDzView(\'' + v.key + '\')">' +
+      v.icon + '<span>' + esc(bi(v.lo, v.en, v.th, v.ko)) + '</span>' +
+    '</button>').join('');
+}
+
+function setDzView(key) {
+  const next = _dzViewDef(key).key;
+  const changed = next !== dzView;
+  dzView = next;
+  try { localStorage.setItem('kd_dz_view', dzView); } catch (e) {}
+  renderDashViews();
+  applyBentoLayout();
+  // Switching dashboards is a view change of its own — let the new set of tiles
+  // arrive rather than snap. Re-clicking the current tab replays nothing.
+  if (changed) replayTiles(document.getElementById('dz-bento'));
+}
+
+// Show/size/order the tiles for the active view. Tiles are positioned with
+// `order`, which nth-child does not follow, so --i (the stagger index) is set
+// here to match what the eye actually sees top-to-bottom.
+function applyBentoLayout() {
+  const bento = document.getElementById('dz-bento');
+  if (!bento) return;
+  const layout = _dzLayout(dzView);
+  const shown  = new Map(layout.filter(x => x.on).map((x, i) => [x.key, { size: x.size, i }]));
+
+  bento.querySelectorAll('.bento-tile').forEach(el => {
+    const item = shown.get(el.dataset.tile);
+    if (!item) { el.style.display = 'none'; return; }
+    // Clear the inline display so `.admin-only` and role CSS still decide.
+    el.style.removeProperty('display');
+    el.style.order = item.i;
+    el.style.setProperty('--i', Math.min(item.i, 11));
+    el.dataset.size = item.size;
+  });
+}
+
+// ── Customize dashboard dialog ────────────────────────────────────
+function openCustomizeBento() {
+  renderBentoCustomize();
+  openOverlay('bento-overlay');
+}
+
+function renderBentoCustomize() {
+  const list = document.getElementById('bento-cz-list');
+  if (!list) return;
+  const def = _dzViewDef(dzView);
+  const sub = document.getElementById('bento-cz-sub');
+  if (sub) sub.textContent = bi(
+    'ເລືອກ ຫຼື ລາກກ່ອງໃນໜ້າ “' + bi(def.lo, def.en, def.th, def.ko) + '” ແລະ ປັບຂະໜາດ',
+    'Choose, resize and drag the tiles on the “' + bi(def.lo, def.en, def.th, def.ko) + '” dashboard.',
+    'เลือก ปรับขนาด และลากจัดลำดับกล่องในหน้า “' + bi(def.lo, def.en, def.th, def.ko) + '”',
+    '“' + bi(def.lo, def.en, def.th, def.ko) + '” 대시보드의 타일을 선택·크기 조절·드래그하세요.'
+  );
+
+  list.innerHTML = _dzLayout(dzView).map(item => {
+    const m = DZ_TILE_META[item.key] || {};
+    return '<div class="bz-row' + (item.on ? '' : ' off') + '" data-drag="' + esc(item.key) + '">' +
+      _dragHandle() +
+      '<button class="bz-toggle" onclick="toggleBentoTile(\'' + esc(item.key) + '\')">' +
+        '<span class="cz-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>' +
+        '<span class="bz-label">' + esc(bi(m.lo, m.en, m.th, m.ko) || item.key) + '</span>' +
+      '</button>' +
+      '<span class="bz-sizes">' +
+        BENTO_SIZES.map(s =>
+          '<button class="bz-size-btn' + (s === item.size ? ' active' : '') + '" ' +
+            'onclick="setBentoSize(\'' + esc(item.key) + '\',\'' + s + '\')">' + BENTO_SIZE_LABEL[s] + '</button>').join('') +
+      '</span>' +
+    '</div>';
+  }).join('');
+
+  _initDragReorder(list, order => {
+    _dzMutatePrefs(dzView, p => { p.order = order; });
+  }, { anyRole: true });
+}
+
+function toggleBentoTile(key) {
+  _dzMutatePrefs(dzView, p => {
+    const hidden = new Set(p.hidden || []);
+    if (hidden.has(key)) hidden.delete(key); else hidden.add(key);
+    p.hidden = [...hidden];
+  });
+  renderBentoCustomize();
+}
+
+function setBentoSize(key, size) {
+  if (!BENTO_SIZES.includes(size)) return;
+  _dzMutatePrefs(dzView, p => {
+    p.size = p.size || {};
+    p.size[key] = size;
+  });
+  renderBentoCustomize();
+}
+
+function resetBentoView() {
+  const all = _dzPrefs();
+  delete all[dzView];
+  _dzSavePrefs(all);
+  applyBentoLayout();
+  renderBentoCustomize();
+}
+
 // ── Dashboard render (Donezo-style) ───────────────────────────────
 function renderDashboard() {
   const groups     = DB.getGroups().filter(g => !g.archived);
@@ -1168,6 +2008,18 @@ function renderDashboard() {
   if (el('dz-cmp-num'))  el('dz-cmp-num').textContent  = avgData + '%';
   if (el('dz-cmp-foot')) el('dz-cmp-foot').textContent = bi('ຄົບສົມບູນ ', 'Complete ', 'ครบสมบูรณ์ ', '완료 ') + fullDone + '/' + workers + bi(' ຄົນ', ' people', ' คน', '명');
 
+  // Documents completeness (average across workers + how many have every type)
+  let docsSum = 0, docsDone = 0;
+  allWorkers.forEach(w => {
+    const kc = docsCompleteness(w);
+    docsSum += kc.pct;
+    if (kc.pct >= 100) docsDone++;
+  });
+  const avgDocs = workers ? Math.round(docsSum / workers) : 0;
+  if (el('dz-docs-num'))  el('dz-docs-num').textContent  = avgDocs + '%';
+  if (el('dz-docs-foot')) el('dz-docs-foot').textContent =
+    bi('ຄົບທຸກປະເພດ ', 'All types ', 'ครบทุกประเภท ', '전체 유형 ') + docsDone + '/' + workers + bi(' ຄົນ', ' people', ' คน', '명');
+
   // Notification badge in header
   const nb = el('th-notif-badge');
   if (nb) { nb.textContent = alertCount; nb.style.display = alertCount > 0 ? 'flex' : 'none'; }
@@ -1184,6 +2036,96 @@ function renderDashboard() {
   _dzTeam(allWorkers, groups);
   _dzProgress(allWorkers);
   _dzCompare(groups);
+  _dzDocsByType(allWorkers);
+  _dzMissingDocs(allWorkers, groups);
+  _dzTopCity('dz-top-kr', allWorkers, 'kr_city', '#2563eb');
+  _dzTopCity('dz-top-la', allWorkers, 'la_city', '#2d6a4f');
+
+  renderDashViews();
+  applyBentoLayout();
+}
+
+// A ranked horizontal-bar list — the shape shared by the document and
+// destination tiles. `rows` is [{ label, value, note }], already sorted.
+function _dzRankList(elId, rows, color, emptyMsg) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!rows.length) { el.innerHTML = '<div class="dz-empty">' + esc(emptyMsg) + '</div>'; return; }
+  const max = Math.max(...rows.map(r => r.value), 1);
+  el.innerHTML = '<div class="dz-rank">' + rows.map((r, i) =>
+    '<div class="dz-rank-row">' +
+      '<span class="dz-rank-name" title="' + esc(r.label) + '">' + esc(r.label) + '</span>' +
+      '<span class="dz-rank-val">' + esc(r.note) + '</span>' +
+      '<span class="dz-rank-track">' +
+        '<span class="dz-rank-fill" style="width:' + Math.round((r.value / max) * 100) + '%;background:' +
+          (typeof color === 'function' ? color(r) : color) + ';animation-delay:' + (i * 0.05).toFixed(2) + 's"></span>' +
+      '</span>' +
+    '</div>').join('') + '</div>';
+}
+
+// How many workers actually have each document type on file.
+function _dzDocsByType(allWorkers) {
+  const cats = getDocCats();
+  const rows = cats.map(c => {
+    const have = allWorkers.filter(w => {
+      const docs = (_docCache && _docCache[w.uid]) || w.documents || {};
+      const a = docs[c.key];
+      return a && a.length;
+    }).length;
+    const pct = allWorkers.length ? Math.round(have / allWorkers.length * 100) : 0;
+    return { label: c.label, value: pct, note: have + '/' + allWorkers.length + ' · ' + pct + '%' };
+  }).sort((a, b) => b.value - a.value);
+  _dzRankList('dz-docs-by-type', rows, r => _pctColor(r.value),
+    bi('ຍັງບໍ່ມີຂໍ້ມູນ', 'No data yet', 'ยังไม่มีข้อมูล', '데이터 없음'));
+}
+
+// The workers to chase first: most document types still missing.
+function _dzMissingDocs(allWorkers, groups) {
+  const el = document.getElementById('dz-missing-docs');
+  if (!el) return;
+  const gMap = {};
+  groups.forEach(g => (g.workers || []).forEach(w => { gMap[w.uid] = g.name || g.destination || '—'; }));
+
+  const worst = allWorkers
+    .map(w => ({ w, k: docsCompleteness(w) }))
+    .filter(x => x.k.have < x.k.total)
+    .sort((a, b) => (a.k.have - a.k.total) - (b.k.have - b.k.total))
+    .slice(0, 5);
+
+  if (!worst.length) {
+    el.innerHTML = '<div class="dz-empty">' +
+      esc(bi('ເອກະສານຄົບທຸກຄົນ 🎉', 'Every worker has a full set 🎉', 'เอกสารครบทุกคน 🎉', '모든 근로자 서류 완비 🎉')) + '</div>';
+    return;
+  }
+  el.innerHTML = worst.map(({ w, k }) => {
+    const missing = k.total - k.have;
+    return '<div class="dz-team-item" onclick="openView(\'' + esc(w.uid) + '\')">' +
+      personPhoto(w, 'avatar-sm') +
+      '<div class="dz-team-info">' +
+        '<div class="dz-team-name">' + esc(w.en_name || w.lo_name || '—') + '</div>' +
+        '<div class="dz-team-sub">' + esc(gMap[w.uid] || '—') + '</div>' +
+      '</div>' +
+      '<span class="dz-status-pill ' + (k.have === 0 ? 'dz-pill-bad' : 'dz-pill-warn') + '">' +
+        bi('ຂາດ ', 'missing ', 'ขาด ', '누락 ') + missing +
+      '</span>' +
+    '</div>';
+  }).join('');
+}
+
+// Top destinations / home towns by headcount.
+function _dzTopCity(elId, allWorkers, field, color) {
+  const counts = new Map();
+  allWorkers.forEach(w => {
+    const v = (w[field] || '').trim();
+    if (!v) return;
+    counts.set(v, (counts.get(v) || 0) + 1);
+  });
+  const total = allWorkers.length || 1;
+  const rows = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([label, n]) => ({ label, value: n, note: n + ' · ' + Math.round(n / total * 100) + '%' }));
+  _dzRankList(elId, rows, color, bi('ຍັງບໍ່ໄດ້ລະບຸເມືອງ', 'No city recorded yet', 'ยังไม่ได้ระบุเมือง', '도시 정보 없음'));
 }
 
 // Grouped-bar comparison between two groups (passport status + headcount)
@@ -1446,8 +2388,8 @@ function renderSidebarUser() {
   const el = document.getElementById('sidebar-footer');
   if (!el || !currentUser) return;
   const name = currentUser.name || currentUser.username;
-  const roleCls = currentUser.role === 'admin' ? 'role-admin' : 'role-viewer';
-  const roleTxt = t(currentUser.role === 'admin' ? 'role_admin' : 'role_viewer');
+  const roleCls = 'role-' + roleBadgeTone(currentUser.role);
+  const roleTxt = roleLabel(currentUser.role);
 
   // Footer chip (collapsed: shows only avatar; expanded: avatar + name + chevron)
   el.innerHTML =
@@ -1472,12 +2414,12 @@ function renderSidebarUser() {
   renderTopHeader();
 }
 
-// Switch to another account without a full logout (demo convenience)
-function profileSwitchAccount(username) {
+// Changing account = signing out and signing in with that account's own
+// username + password. There is deliberately no "switch account" shortcut:
+// permissions must come from a real login, not from picking a name.
+function profileSwitchAccount() {
   closeProfileMenu();
-  if (!DB.switchAccount) return;
-  const u = DB.switchAccount(username);
-  if (u) startApp(u);
+  doLogout();
 }
 
 function renderTreeWorkers(g) {
@@ -1518,10 +2460,22 @@ function toggleGroupExpand(id, event) {
 })();
 
 // ── SIDEBAR RESIZE ────────────────────────────────────────────────
+/* Below 769px the sidebar is not a column that can narrow — it is an off-canvas
+ * DRAWER. sidebar.css gates every `.collapsed` rule behind `min-width: 769px`
+ * and then explicitly gives `.sidebar.collapsed` the same width as `.sidebar`,
+ * so at tablet width the class changes the DOM and nothing on the screen. */
+const _sidebarIsDrawer = () => window.matchMedia('(max-width: 768px)').matches;
+
 function initSidebarResize() {
   const toggle = document.getElementById('sidebar-toggle');
   if (toggle) toggle.addEventListener('click', () => {
-    document.getElementById('sidebar')?.classList.toggle('collapsed');
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    /* Same button, the action the mode actually supports: collapse the column on
+     * a desktop, close the drawer on a tablet. Toggling `collapsed` here was a
+     * dead click on every screen ≤768px — the button responded to nothing. */
+    if (_sidebarIsDrawer()) sidebar.classList.remove('open');
+    else sidebar.classList.toggle('collapsed');
   });
 }
 
@@ -1533,41 +2487,140 @@ function initMobileMenu() {
   if (backdrop) backdrop.addEventListener('click', () => sidebar?.classList.remove('open'));
 }
 
-// ── DETAIL TABS ───────────────────────────────────────────────────
-function switchDetailTab(tab, el) {
-  document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.detail-pane').forEach(p => p.classList.remove('active'));
-  if (el) el.classList.add('active');
-  document.getElementById('detail-pane-' + tab)?.classList.add('active');
-  if (tab === 'activity' && _currentViewUid) loadActivityLog(_currentViewUid);
-  if (tab === 'docs'     && _currentViewUid) _loadAndRenderDocs(_currentViewUid);
+// Fetch the worker's history the first time the section is expanded, not on
+// every drawer open — most views never look at it.
+function onWorkerHistoryToggle(el) {
+  if (el.open && _currentViewUid) loadActivityLog(_currentViewUid);
 }
+
+// Detail overlay tabs: Details / Documents / Activity. The activity log costs a
+// request, so it loads the first time its tab is opened for the current worker.
+let _histTabLoaded = false;
+function switchDetailTab(tab) {
+  document.querySelectorAll('#vm-tabs .vm-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('#view-overlay .vm-tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === tab));
+  const body = document.querySelector('#view-overlay .detail-body');
+  if (body) body.scrollTop = 0;
+  if (tab === 'history' && !_histTabLoaded && _currentViewUid) {
+    _histTabLoaded = true;
+    loadActivityLog(_currentViewUid);
+  }
+}
+
+// ── HISTORY MODULE ────────────────────────────────────────────────
+// One timeline, three callers: a worker's activity log, a group's history and a
+// document's version list. Everything funnels through renderHistory(), which
+// takes plain entries — so a caller only has to map its own data onto the entry
+// shape { action, detail, by, at, onClick, badge } and never touches markup.
+
+const HIST_ACTIONS = {
+  created:        { icon: '✦', tone: 'ok',    lo: 'ສ້າງ',            en: 'Created',        th: 'สร้าง',            ko: '생성' },
+  updated:        { icon: '✎', tone: '',      lo: 'ແກ້ໄຂ',           en: 'Updated',        th: 'แก้ไข',            ko: '수정' },
+  renamed:        { icon: '✎', tone: '',      lo: 'ປ່ຽນຊື່',          en: 'Renamed',        th: 'เปลี่ยนชื่อ',        ko: '이름 변경' },
+  photo_updated:  { icon: '◉', tone: '',      lo: 'ປ່ຽນຮູບ',          en: 'Photo changed',  th: 'เปลี่ยนรูป',        ko: '사진 변경' },
+  archived:       { icon: '▤', tone: 'warn',  lo: 'ເກັບເຂົ້າ',         en: 'Archived',       th: 'เก็บเข้าคลัง',      ko: '보관' },
+  unarchived:     { icon: '▢', tone: 'ok',    lo: 'ເອົາອອກຈາກຄັງ',   en: 'Unarchived',     th: 'เอาออกจากคลัง',    ko: '보관 해제' },
+  trashed:        { icon: '✕', tone: 'bad',   lo: 'ຍ້າຍໄປຖັງຂີ້ເຫຍື້ອ', en: 'Moved to trash', th: 'ย้ายไปถังขยะ',     ko: '휴지통으로' },
+  deleted:        { icon: '✕', tone: 'bad',   lo: 'ລຶບ',             en: 'Deleted',        th: 'ลบ',               ko: '삭제' },
+  restored:       { icon: '↺', tone: 'ok',    lo: 'ກູ້ຄືນ',            en: 'Restored',       th: 'กู้คืน',            ko: '복원' },
+  worker_added:   { icon: '＋', tone: 'ok',   lo: 'ເພີ່ມຄົນງານ',       en: 'Worker added',   th: 'เพิ่มแรงงาน',       ko: '근로자 추가' },
+  worker_removed: { icon: '－', tone: 'bad',  lo: 'ເອົາຄົນງານອອກ',    en: 'Worker removed', th: 'นำแรงงานออก',     ko: '근로자 제외' },
+  uploaded:       { icon: '⇪', tone: 'ok',    lo: 'ອັບໂຫລດ',          en: 'Uploaded',       th: 'อัปโหลด',          ko: '업로드' },
+};
+
+function _histLabel(action) {
+  const a = HIST_ACTIONS[action];
+  return a ? bi(a.lo, a.en, a.th, a.ko) : action;
+}
+
+// Absolute date is what matters for records, but "3 days ago" is what the eye
+// reads — so show relative up to a month, then fall back to the real date.
+function _histWhen(at) {
+  if (!at) return '';
+  // SQLite datetime('now') is UTC but has no zone marker; tell Date so the
+  // relative maths is not off by the local offset.
+  const iso = /Z|[+-]\d{2}:?\d{2}$/.test(at) ? at : at.replace(' ', 'T') + 'Z';
+  const d = new Date(iso);
+  if (isNaN(d)) return at;
+  const secs = Math.round((Date.now() - d) / 1000);
+  const abs  = d.toLocaleString();
+  if (secs < 60)     return { rel: bi('ຕອນນີ້', 'just now', 'เมื่อครู่', '방금'), abs };
+  const mins = Math.floor(secs / 60);
+  if (mins < 60)     return { rel: mins + bi(' ນາທີກ່ອນ', 'm ago', ' นาทีที่แล้ว', '분 전'), abs };
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24)      return { rel: hrs + bi(' ຊົ່ວໂມງກ່ອນ', 'h ago', ' ชั่วโมงที่แล้ว', '시간 전'), abs };
+  const days = Math.floor(hrs / 24);
+  if (days <= 30)    return { rel: days + bi(' ມື້ກ່ອນ', 'd ago', ' วันที่แล้ว', '일 전'), abs };
+  return { rel: d.toLocaleDateString(), abs };
+}
+
+// entries: [{ action, detail, by, at, onClick, badge, extra }]
+// `onClick` and `extra` are raw handler/markup strings supplied by the caller —
+// items stay divs (not buttons) so `extra` can hold its own button without
+// nesting one inside another.
+function renderHistory(container, entries, opts) {
+  const el = typeof container === 'string' ? document.getElementById(container) : container;
+  if (!el) return;
+  const o = opts || {};
+  if (!entries || !entries.length) {
+    el.innerHTML = '<div class="hist-empty">' +
+      esc(o.empty || bi('ຍັງບໍ່ມີປະຫວັດ', 'No history yet', 'ยังไม่มีประวัติ', '기록 없음')) + '</div>';
+    return;
+  }
+  el.innerHTML = '<div class="hist-list">' + entries.map(e => {
+    const meta = HIST_ACTIONS[e.action] || {};
+    const when = _histWhen(e.at);
+    return '<div class="hist-item' + (e.onClick ? ' hist-clickable' : '') + '"' +
+        (e.onClick ? ' role="button" tabindex="0" onclick="' + e.onClick + '"' : '') + '>' +
+      '<span class="hist-dot' + (meta.tone ? ' hist-' + meta.tone : '') + '">' + (meta.icon || '•') + '</span>' +
+      '<span class="hist-body">' +
+        '<span class="hist-line">' +
+          '<span class="hist-action">' + esc(_histLabel(e.action)) + '</span>' +
+          (e.badge ? '<span class="hist-badge">' + esc(e.badge) + '</span>' : '') +
+        '</span>' +
+        (e.detail ? '<span class="hist-detail">' + esc(e.detail) + '</span>' : '') +
+        '<span class="hist-meta">' +
+          (when ? '<span class="hist-time" title="' + esc(when.abs || '') + '">' + esc(when.rel || when) + '</span>' : '') +
+          (e.by ? '<span class="hist-by">' + esc(bi('ໂດຍ ', 'by ', 'โดย ', '') + e.by) + '</span>' : '') +
+        '</span>' +
+      '</span>' +
+      (e.extra || '') +
+    '</div>';
+  }).join('') + '</div>';
+}
+
+// Map a raw activity_log row onto a history entry.
+const _histFromLog = r => ({ action: r.action, detail: r.detail, by: r.performed_by, at: r.created_at });
 
 async function loadActivityLog(uid) {
   const container = document.getElementById('vm-activity-content');
   if (!container) return;
-  container.innerHTML = '<div class="act-empty">Loading…</div>';
+  container.innerHTML = '<div class="hist-empty">' + esc(bi('ກຳລັງໂຫລດ…', 'Loading…', 'กำลังโหลด…', '불러오는 중…')) + '</div>';
   let log = [];
   try { log = await DB.getActivity(uid); } catch (e) { log = []; }
-  if (!log.length) {
-    container.innerHTML = '<div class="act-empty">No activity yet</div>';
-    return;
-  }
-  const actionIcons = { created: '✦', updated: '✎', deleted: '✕', photo_updated: '◉' };
-  container.innerHTML = log.map(entry => {
-    const icon = actionIcons[entry.action] || '•';
-    const ts = entry.created_at ? new Date(entry.created_at).toLocaleString() : '';
-    return '<div class="act-item">' +
-      '<div class="act-dot">' + icon + '</div>' +
-      '<div class="act-body">' +
-        '<div class="act-action">' + esc(entry.action) +
-          (entry.performed_by ? ' <span class="act-by">by ' + esc(entry.performed_by) + '</span>' : '') +
-        '</div>' +
-        (entry.detail ? '<div class="act-detail">' + esc(entry.detail) + '</div>' : '') +
-        (ts ? '<div class="act-time">' + ts + '</div>' : '') +
-      '</div>' +
-    '</div>';
-  }).join('');
+  renderHistory(container, log.map(_histFromLog), {
+    empty: bi('ຍັງບໍ່ມີການເຄື່ອນໄຫວ', 'No activity yet', 'ยังไม่มีความเคลื่อนไหว', '활동 없음'),
+  });
+}
+
+async function loadGroupActivity(groupId) {
+  const container = document.getElementById('gh-content');
+  if (!container) return;
+  container.innerHTML = '<div class="hist-empty">' + esc(bi('ກຳລັງໂຫລດ…', 'Loading…', 'กำลังโหลด…', '불러오는 중…')) + '</div>';
+  let log = [];
+  try { log = await DB.getGroupActivity(groupId); } catch (e) { log = []; }
+  renderHistory(container, log.map(_histFromLog), {
+    empty: bi('ຍັງບໍ່ມີປະຫວັດຂອງກຸ່ມນີ້', 'No history for this group yet', 'ยังไม่มีประวัติของกลุ่มนี้', '이 그룹의 기록 없음'),
+  });
+}
+
+function openGroupHistory(id) {
+  const g = DB.getGroup(id || activeGroupId);
+  if (!g) return;
+  const ttl = document.getElementById('gh-title');
+  if (ttl) ttl.textContent = g.name || g.destination || '—';
+  openOverlay('grouphist-overlay');
+  loadGroupActivity(g.id);
 }
 
 // ── DASHBOARD CHARTS (SVG, pure, offline-first) ───────────────────
@@ -1648,13 +2701,7 @@ function switchGroup(id) {
   document.getElementById('f-employer').value   = '';
   document.getElementById('f-supervisor').value = '';
   document.getElementById('f-blood').value      = '';
-  // Show group view, hide dashboard + groups overview
-  const dw = document.getElementById('dashboard-welcome');
-  const gv = document.getElementById('group-view');
-  const go = document.getElementById('groups-overview');
-  if (dw) dw.style.display = 'none';
-  if (go) go.style.display = 'none';
-  if (gv) gv.style.display = '';
+  showMainView('group');
   document.querySelectorAll('.sb-nav-item').forEach(b => b.classList.remove('active'));
   document.getElementById('nav-workers')?.classList.add('active');
   renderSidebar();
@@ -1716,7 +2763,7 @@ function _goCard(g, count, mode) {
     stats = '<div class="go-stat"><span class="n">' + ws.length + '</span><span class="l">' + (t('dz_workers_suffix') || 'ຄົນ') + '</span></div>' +
             '<div class="go-stat' + (expiring ? ' go-alert' : '') + '"><span class="n">' + expiring + '</span><span class="l">' + (t('dz_near') || 'ໃກ້ໝົດ') + '</span></div>';
   }
-  return '<div class="go-card" onclick="' + onclick + '">' +
+  return '<div class="go-card bento-tile" data-size="m" onclick="' + onclick + '">' +
     '<div class="go-card-top">' +
       '<div class="go-ic">' + esc(short) + '</div>' +
       '<div style="min-width:0">' +
@@ -1782,17 +2829,13 @@ function sidebarSearch(value) {
   // Searching inside an already-open group → just filter it
   if (activeGroupId) { applyFilters(); return; }
 
-  const gv = document.getElementById('group-view');
-  const go = document.getElementById('groups-overview');
-  const dw = document.getElementById('dashboard-welcome');
-
   if (value) {
     // Global worker search across ALL groups → show the member table
     ['f-employer','f-supervisor','f-blood'].forEach(id => { const e = document.getElementById(id); if (e) e.value = ''; });
     quickFilter = '';
-    if (dw) dw.style.display = 'none';
-    if (go) go.style.display = 'none';
-    if (gv) gv.style.display = '';
+    // Typing re-enters this on every keystroke; only animate the first time, or
+    // the results would restart their entrance under the user's fingers.
+    if (document.getElementById('group-view')?.style.display === 'none') showMainView('group');
     const t1 = document.getElementById('page-title-group'); if (t1) t1.textContent = '🔍 ' + value;
     const t2 = document.getElementById('page-sub');         if (t2) t2.textContent = (t('all_groups') || 'All groups');
     rebuildFilters();
@@ -1804,6 +2847,59 @@ function sidebarSearch(value) {
 }
 // Back-compat shim (old top-header handler name)
 function syncSearch(input) { sidebarSearch(input.value); }
+
+// ── ROUTE HEADER ──────────────────────────────────────────────────
+// The page header of an open group answers "which flight is this?" —
+// `VTE → ICN · departure date`, taken from the GROUP, never from a worker.
+// Two workers in one group can carry different kr_city values; the group's
+// route is the one answer that is true for the whole list.
+//
+// The route is one free-text field and stays one: it has been typed as
+// "VTE → ICN", "VTE -> ICN", "VTE to ICN" and "VTE/ICN" in the live data, and
+// splitting it at read time keeps every one of those readable without a
+// migration. Anything that does not split into exactly two halves is shown
+// verbatim rather than guessed at.
+//
+// The block between the markers below is lifted verbatim by
+// infra/scripts/test-header.js and exercised there — it is the shipped code
+// that is tested, not a copy of it. Keep the markers.
+/* ── route-parse:start ── */
+const _ROUTE_SPLIT = /\s*(?:→|➔|➜|⇒|-->|->|—|–|\/|\s-\s|\bto\b)\s*/i;
+
+/** "VTE → ICN" → { from:'VTE', to:'ICN' }. Anything else → null. */
+function routeParts(route) {
+  const s = String(route == null ? '' : route).trim();
+  if (!s) return null;
+  const bits = s.split(_ROUTE_SPLIT).map(x => x.trim()).filter(Boolean);
+  return bits.length === 2 ? { from: bits[0], to: bits[1] } : null;
+}
+/* ── route-parse:end ── */
+
+/** The group's destination, for a worker who has no kr_city of their own. */
+function _routeDest(g) {
+  const p = routeParts(g && g.route);
+  return p ? p.to : '';
+}
+
+/** `VTE → ICN · date` as HTML, or '' when the group carries neither. */
+function _routeHeadHtml(g) {
+  const arrow = '<svg class="ph-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<line x1="4" y1="12" x2="19" y2="12"/><polyline points="13 6 19 12 13 18"/></svg>';
+  const parts = routeParts(g && g.route);
+  const date  = String((g && g.departure) || '').trim();
+  const bits  = [];
+  if (parts) {
+    bits.push('<span class="ph-route">' +
+      '<span class="ph-city">' + esc(parts.from) + '</span>' + arrow +
+      '<span class="ph-city">' + esc(parts.to) + '</span>' +
+    '</span>');
+  } else if (g && g.route) {
+    bits.push('<span class="ph-route"><span class="ph-city">' + esc(g.route) + '</span></span>');
+  }
+  if (date) bits.push('<span class="ph-date">' + esc(date) + '</span>');
+  return bits.join('<span class="ph-dot" aria-hidden="true">&middot;</span>');
+}
 
 // ── STATS ─────────────────────────────────────────────────────────
 function renderStats() {
@@ -1838,16 +2934,23 @@ function renderStats() {
     }
   }
 
-  // Page title = active group name; sub = departure / route
+  // Page title = active group name; sub = the route header (VTE → ICN · date)
   const g = DB.getGroup(activeGroupId);
   const titleEl = document.getElementById('page-title-group');
   const subEl   = document.getElementById('page-sub');
   if (titleEl) titleEl.textContent = g ? g.name : 'Dashboard';
   if (subEl) {
-    const bits = [];
-    if (g && g.departure) bits.push('✈ ' + g.departure);
-    if (g && g.route) bits.push(g.route);
-    subEl.textContent = bits.length ? bits.join('  ·  ') : t('app_sub');
+    const head = g ? _routeHeadHtml(g) : '';
+    if (head) {
+      // data-i18n has to go while markup is in there: applyTranslations()
+      // assigns textContent to every [data-i18n], which would flatten the route
+      // to the generic subtitle on the next language switch.
+      subEl.removeAttribute('data-i18n');
+      subEl.innerHTML = head;
+    } else {
+      subEl.setAttribute('data-i18n', 'app_sub');
+      subEl.textContent = t('app_sub');
+    }
   }
 }
 
@@ -1930,6 +3033,13 @@ function renderTable() {
   document.getElementById('count-bar').innerHTML =
     t('showing', { n: tableFiltered.length, total: ws.length }) + alertTag;
 
+  // Before the early returns below, so the bar is right in every view and when
+  // the list comes back empty.
+  const pickCol = _canPick();
+  const pickTh  = document.getElementById('pick-th');
+  if (pickTh) pickTh.hidden = !pickCol;
+  renderPickBar();
+
   const cardsWrap = document.getElementById('cards-wrap');
   const tableWrap = document.querySelector('.table-wrap');
 
@@ -1948,26 +3058,31 @@ function renderTable() {
   applyViewMode();
 
   // Only build the view the user is actually looking at. Rendering BOTH the
-  // table rows AND every KD card on each pass (then hiding one) doubled the DOM
+  // table rows AND every card on each pass (then hiding one) doubled the DOM
   // and image-decode work — the main cause of the jank on larger groups.
-  if (currentView() === 'kdcard') {
-    renderCards(g);
+  const view = currentView();
+  if (view === 'kdcard' || view === 'photo') {
+    if (view === 'photo') renderPhotoCards(g);
+    else                  renderCards(g);
     if (tbody) tbody.innerHTML = '';
     return;
   }
   const cg = document.getElementById('cards-grid');
   if (cg) cg.innerHTML = '';
 
-  tbody.innerHTML = tableFiltered.map(w => {
+  tbody.innerHTML = tableFiltered.map((w, i) => {
     const age = calcAge(w.dob);
     const ec  = expiryClass(w.passport_expiry);
     const idHtml = w.worker_id
       ? '<span class="worker-id">' + esc(w.worker_id) + '</span>'
       : '<span class="worker-id no-id">No ID</span>';
-    return '<tr id="row-' + w.uid + '" onclick="openView(\'' + w.uid + '\')">' +
+    return '<tr id="row-' + w.uid + '" data-pick-row="' + esc(w.uid) + '"' +
+      (isPicked(w.uid) ? ' class="picked"' : '') +
+      ' onclick="openView(\'' + w.uid + '\')">' +
+      (pickCol ? '<td class="pick-cell" onclick="event.stopPropagation()">' + _pickBox(w.uid, i + 1) + '</td>' : '') +
       '<td>' + idHtml + '</td>' +
       '<td><div class="name-cell">' + personPhoto(w,'avatar-sm') + '<span style="font-weight:700">' + esc(w.en_name) + '</span>' + gradeBadge(w.grade) + '</div></td>' +
-      '<td style="color:var(--text-muted);font-size:0.8rem">' + esc(w.lo_name) + '</td>' +
+      '<td class="col-lo">' + esc(w.lo_name) + '</td>' +
       '<td>' + empBadge(w.employer_code) + '</td>' +
       '<td>' + esc(w.group_supervisor) + '</td>' +
       '<td>' + esc(w.dob) + '</td>' +
@@ -1984,11 +3099,15 @@ function renderTable() {
       '</td>' +
     '</tr>';
   }).join('');
+  playRowsIn(tbody);
 }
 
-// ── VIEW MODE (Table / Cards) ─────────────────────────────────────
-const VIEW_MODES = ['table', 'kdcard'];
-function _normViewMode(m) { return (m === 'cards' || m === 'idcard' || m === 'slide') ? 'kdcard' : (VIEW_MODES.includes(m) ? m : 'table'); }
+// ── VIEW MODE (Table / KD Form / Photo cards) ─────────────────────
+const VIEW_MODES = ['table', 'kdcard', 'photo'];
+function _normViewMode(m) {
+  if (m === 'cards' || m === 'idcard' || m === 'slide') return 'kdcard';   // legacy aliases
+  return VIEW_MODES.includes(m) ? m : 'table';
+}
 function currentView()  { return _normViewMode(viewMode); }
 
 function setViewMode(mode) {
@@ -2001,10 +3120,16 @@ function applyViewMode() {
   const view      = currentView();
   const tableWrap = document.querySelector('.table-wrap');
   const cardsWrap = document.getElementById('cards-wrap');
-  if (tableWrap) tableWrap.style.display = view === 'table'  ? '' : 'none';
-  if (cardsWrap) cardsWrap.style.display = view === 'kdcard' ? 'block' : 'none';
-  document.getElementById('view-table')?.classList.toggle('active',  view === 'table');
-  document.getElementById('view-kdcard')?.classList.toggle('active', view === 'kdcard');
+  // Both card modes (KD form + photo) live in the same #cards-wrap container.
+  if (tableWrap) tableWrap.style.display = view === 'table' ? '' : 'none';
+  if (cardsWrap) cardsWrap.style.display = view === 'table' ? 'none' : 'block';
+  // Bento tiles use `selected` (shared with every other picker in the app).
+  [['view-table', 'table'], ['view-kdcard', 'kdcard'], ['view-photo', 'photo']].forEach(([id, mode]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle('selected', view === mode);
+    el.setAttribute('aria-checked', view === mode ? 'true' : 'false');
+  });
 }
 
 // ── KD FORM GRID ──────────────────────────────────────────────────
@@ -2018,13 +3143,128 @@ function renderCards(g) {
   const gc = _kdGenderCounts(g);
   grid.className = 'cards-grid kd-grid';
   grid.innerHTML = tableFiltered.map(w =>
-    '<div class="idc-cell" onclick="openView(\'' + esc(w.uid) + '\')">' +
+    '<div class="idc-cell' + (isPicked(w.uid) ? ' picked' : '') + '" data-pick-row="' + esc(w.uid) + '"' +
+      ' onclick="openView(\'' + esc(w.uid) + '\')">' +
+      _pickBox(w.uid) +
       _selStar(w.uid) +
       _completenessChip(w) +
-      _renderKdCard(w, g, false, gc) +
+      _renderKdCard(w, g, false, gc, true) +
     '</div>'
   ).join('');
+  _kdFitAll(grid);
+  playRowsIn(grid);
 }
+
+// ── PHOTO CARD GRID (Apple bento, portrait) ───────────────────────
+// A minimal browse card the user designed: full uploaded photo (not cropped),
+// bold EN name, muted Lao name, a worker-ID pill, and a small status badge
+// (grade + passport-expiry). Third view mode; the KD 16:10 form and every
+// export path are untouched.
+function renderPhotoCards(g) {
+  const grid = document.getElementById('cards-grid');
+  if (!grid) return;
+  grid.className = 'cards-grid photo-grid';
+  grid.innerHTML = tableFiltered.map(w =>
+    '<div class="pcard' + (isPicked(w.uid) ? ' picked' : '') + '" data-pick-row="' + esc(w.uid) + '"' +
+      ' onclick="openView(\'' + esc(w.uid) + '\')">' +
+      _pickBox(w.uid) +
+      _selStar(w.uid) +
+      _renderPhotoCard(w) +
+    '</div>'
+  ).join('');
+  playRowsIn(grid);
+}
+
+function _renderPhotoCard(w) {
+  // Full photo, uncropped (object-fit: contain in CSS) so the whole scan shows.
+  const photo = w.photo
+    ? '<img src="' + esc(w.photo_thumb || w.photo) + '" alt="" loading="lazy" decoding="async">'
+    : '<span class="pcard-noimg">' + esc(avatarInitials(w.en_name || '?')) + '</span>';
+
+  const grade = _normGrade(w.grade);
+  const gradeChip = grade
+    ? '<span class="pcard-grade" style="background:' + (GRADE_COLORS[grade] || '#6b7280') + '">' + esc(grade) + '</span>'
+    : '';
+
+  // Passport-expiry status badge — only shown when it needs attention.
+  const ec = expiryClass(w.passport_expiry);
+  const expLabel = ec === 'expiry-expired' ? bi('ໝົດອາຍຸ','Expired','หมดอายุ','만료')
+                 : ec === 'expiry-warn'    ? bi('ໃກ້ໝົດ','Expiring','ใกล้หมด','임박')
+                 : '';
+  const expChip = expLabel
+    ? '<span class="pcard-exp ' + ec + '">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>' +
+        esc(expLabel) + '</span>'
+    : '';
+
+  const idPill = w.worker_id || w.employer_code || '';
+  return '<div class="pcard-photo">' + photo + gradeChip + '</div>' +
+    '<div class="pcard-name">' + esc(w.en_name || '—') + '</div>' +
+    '<div class="pcard-lo">' + esc(w.lo_name || '') + '</div>' +
+    '<div class="pcard-foot">' +
+      (idPill ? '<span class="pcard-id">' + esc(idPill) + '</span>' : '') +
+      expChip +
+    '</div>';
+}
+
+// ── KD card: PowerPoint slide model ───────────────────────────────
+// The card is a single immutable design surface, laid out at a fixed
+// 1920×1200 (16:10) everywhere, and fitted to its container the way a slide
+// show fits a slide to the projector: ONE transform: scale() on the whole
+// surface, never a re-layout of anything inside it. `.kd-fit` is the box that
+// takes part in page layout; `--kd-scale` on it drives the surface's transform
+// (see the .kd-fit / .kd-card rules in main.css).
+const KD_SURFACE_W = 1920, KD_SURFACE_H = 1200;
+
+function _kdFit(fit) {
+  // Used width, untransformed and WITH its fraction: getBoundingClientRect()
+  // would be multiplied by any ancestor scale (e.g. a modal's pop-in) and
+  // clientWidth rounds the fraction away — either one would leave the surface a
+  // hair off its box, i.e. a visible seam or a clipped edge.
+  const w = parseFloat(getComputedStyle(fit).width) || 0;
+  if (!w) return;                       // not laid out yet (hidden / off-screen)
+  const s = w / KD_SURFACE_W;
+  if (fit._kdScale === s) return;
+  fit._kdScale = s;
+  fit.style.setProperty('--kd-scale', s);
+}
+
+let _kdRO = null;
+// Measure (and keep measuring) every card under `root`. Safe to call repeatedly:
+// re-observing an element is a no-op.
+function _kdFitAll(root) {
+  root = root || document;
+  if (!root.querySelectorAll) return;
+  if (!_kdRO && window.ResizeObserver)
+    _kdRO = new ResizeObserver(es => es.forEach(e => _kdFit(e.target)));
+  const fits = root.querySelectorAll('.kd-fit');
+  fits.forEach(f => { _kdFit(f); if (_kdRO) _kdRO.observe(f); });
+  // Grid cells use content-visibility, so the off-screen ones cannot be measured
+  // yet. --kd-scale inherits, so publishing the first measured scale on the
+  // container gives every not-yet-laid-out card the right value up front (all
+  // cards in a grid share one column width) instead of a wrong default of 1.
+  if (root.nodeType === 1 && fits.length) {
+    for (const f of fits) if (f._kdScale) { root.style.setProperty('--kd-scale', f._kdScale); break; }
+  }
+}
+// Backstop for size changes the observer can miss (entering/leaving fullscreen,
+// browser zoom, a window resized while the tab sat in the background — where the
+// whole rendering loop, ResizeObserver included, is frozen). Debounced with a
+// timer rather than rAF for exactly that reason: rAF does not run in a hidden
+// tab, so a rAF-based refit would be asleep precisely when it is needed.
+// Two passes: one right after the change settles, one a beat later, because a
+// resize can land mid-flight (grid columns re-flowing, a drawer still opening),
+// and a scale measured against a half-settled box would stick until the next
+// event. The second pass is a no-op when nothing moved — _kdFit() bails on an
+// unchanged scale.
+let _kdFitT = null, _kdFitT2 = null;
+function _kdFitSoon() {
+  clearTimeout(_kdFitT);  _kdFitT  = setTimeout(() => _kdFitAll(document), 60);
+  clearTimeout(_kdFitT2); _kdFitT2 = setTimeout(() => _kdFitAll(document), 320);
+}
+window.addEventListener('resize', _kdFitSoon, { passive: true });
+document.addEventListener('fullscreenchange', _kdFitSoon);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) _kdFitSoon(); });
 
 // ── KD original-form card (brown layout) ──────────────────────────
 function _kdGenderCounts(g) {
@@ -2032,7 +3272,9 @@ function _kdGenderCounts(g) {
   ((g && g.workers) || []).forEach(w => { if (w.sex === 'F') f++; else if (w.sex === 'M') m++; });
   return { f, m };
 }
-function _renderKdCard(w, g, editable, gc) {
+// `lazy` = defer off-screen photos (grid of many cards). Left OFF for the
+// print/PNG/PDF/PPTX paths, which must have every image loaded up front.
+function _renderKdCard(w, g, editable, gc, lazy, present) {
   const seq    = w.worker_id ? w.worker_id.split('-').pop() : '';
   const bloods = ['A', 'B', 'O', 'AB'];
   const bloodRow = bloods.map(b => '<span class="kd-blood' + (w.blood === b ? ' on' : '') + '">' + b + '</span>').join('');
@@ -2042,8 +3284,11 @@ function _renderKdCard(w, g, editable, gc) {
   const cell = (label, sub, val) =>
     '<div class="kd-l"><span>' + label + '</span>' + (sub ? '<i>' + sub + '</i>' : '') + '</div>' +
     '<div class="kd-v">' + val + '</div>';
+  // Grid of cards (lazy) uses the light thumbnail; the single detail/export card
+  // keeps the full-resolution photo for a crisp print.
+  const photoSrc = (lazy && w.photo_thumb) ? w.photo_thumb : w.photo;
   const photo = w.photo
-    ? '<img src="' + esc(w.photo) + '" alt="">'
+    ? '<img src="' + esc(photoSrc) + '" alt=""' + (lazy ? ' loading="lazy" decoding="async"' : '') + '>'
     : '<span class="kd-noimg">' + esc(avatarInitials(w.en_name || '?')) + '</span>';
   // In the worker detail view (admin) the photo box is tap-to-edit: opens an
   // inline editor with upload + rotate, no need to switch to the Excel form.
@@ -2059,24 +3304,31 @@ function _renderKdCard(w, g, editable, gc) {
     : w.sex === 'F'
       ? '<span class="kd-gender kd-gender-f">&#9792;</span>'
       : '';
-  return '<div class="kd-card">' +
+  // .kd-fit = layout box (scaled footprint) · .kd-card = the 1920×1200 surface.
+  return '<div class="kd-fit"><div class="kd-card' + (present ? ' kd-present' : '') + '">' +
     '<div class="kd-top">' +
       '<span class="kd-code">' + esc(w.worker_id || w.employer_code || '—') + '</span>' +
       '<div class="kd-top-mid">' + genderBadge + '<span class="kd-bloods">' + bloodRow + '</span></div>' +
     '</div>' +
-    '<div class="kd-head"><span>' + esc(w.group_supervisor || '—') + '</span><span>' + esc(seq || '') + '</span></div>' +
+    // Present mode puts the worker's ID code in the green band (the now-duplicate
+    // code in the top strip is blanked — space kept — via .kd-present CSS).
+    '<div class="kd-head"><span>' + esc(present ? (w.worker_id || w.employer_code || '—') : (w.group_supervisor || '—')) + '</span><span>' + esc(seq || '') + '</span></div>' +
     '<div class="kd-body">' +
       '<div class="kd-tbl">' +
-        cell('Name', 'ຊື່', esc(w.en_name || '--')) +
-        cell('ຊື່ ນາມສະກຸນ', '', esc(w.lo_name || '--')) +
-        cell('Date of birth', 'ວັນເດືອນປີເກີດ', esc(w.dob || '--')) +
-        cell('Village', 'ບ້ານ', esc(w.village || '--')) +
-        cell('Weight ; Height', 'Kg ; Cm', (w.weight ? w.weight + 'Kg' : '--') + ' ; ' + (w.height ? w.height + 'Cm' : '--')) +
-        cell('Size', 'ຂະໜາດ', esc(w.size || '--')) +
-        cell('Blood', 'ກຸ່ມເລືອດ', esc(w.blood || '--')) +
-        cell('Passport No', 'ເລກໜັງສື', '<span style="font-family:monospace">' + esc(w.passport_no || '--') + '</span>') +
-        cell('Date of expiry', 'ໝົດອາຍຸ', '<span class="' + expiryClass(w.passport_expiry) + '">' + esc(w.passport_expiry || '--') + '</span>') +
-        cell('Tel', 'ໂທ', esc(w.tel || '--')) +
+        // Field labels follow the SELECTED app language (bi → en/th/lo/ko), so
+        // Present / list / detail all read in the user's language instead of the
+        // old fixed English+Lao. The Korean summary block below stays fixed (it's
+        // part of the official KD sheet). `Kg ; Cm` stays as a unit hint sub.
+        cell(esc(bi('ຊື່','Name','ชื่อ','이름')), '', esc(w.en_name || '--')) +
+        cell(esc(bi('ຊື່ ນາມສະກຸນ','Full name','ชื่อ-นามสกุล','성명')), '', esc(w.lo_name || '--')) +
+        cell(esc(bi('ວັນເດືອນປີເກີດ','Date of birth','วันเกิด','생년월일')), '', esc(w.dob || '--')) +
+        cell(esc(bi('ບ້ານ','Village','หมู่บ้าน','마을')), '', esc(w.village || '--')) +
+        cell(esc(bi('ນ້ຳໜັກ ; ສ່ວນສູງ','Weight ; Height','น้ำหนัก ; ส่วนสูง','체중 ; 신장')), 'Kg ; Cm', (w.weight ? w.weight + 'Kg' : '--') + ' ; ' + (w.height ? w.height + 'Cm' : '--')) +
+        cell(esc(bi('ຂະໜາດ','Size','ขนาด','사이즈')), '', esc(w.size || '--')) +
+        cell(esc(bi('ກຸ່ມເລືອດ','Blood','กรุ๊ปเลือด','혈액형')), '', esc(w.blood || '--')) +
+        cell(esc(bi('ເລກໜັງສືຜ່ານແດນ','Passport No','เลขพาสปอร์ต','여권번호')), '', '<span style="font-family:monospace">' + esc(w.passport_no || '--') + '</span>') +
+        cell(esc(bi('ວັນໝົດອາຍຸ','Date of expiry','วันหมดอายุ','만료일')), '', '<span class="' + expiryClass(w.passport_expiry) + '">' + esc(w.passport_expiry || '--') + '</span>') +
+        cell(esc(bi('ໂທລະສັບ','Tel','โทร','전화')), '', esc(w.tel || '--')) +
       '</div>' +
       '<div class="kd-right">' +
         '<div class="' + photoCls + '"' + photoClick + '>' + photo + (w.couple === 'yes' ? '<span class="kd-couple">부부</span>' : '') + photoEdit + '</div>' +
@@ -2089,7 +3341,7 @@ function _renderKdCard(w, g, editable, gc) {
         '</div>' +
       '</div>' +
     '</div>' +
-  '</div>';
+  '</div></div>';
 }
 
 // ── Contextual 3-dot action menu (View / Edit / Delete) ───────────
@@ -2246,6 +3498,21 @@ function _optsWithCurrent(values, cur) {
   return opts;
 }
 function _natOpts() { return _NATIONALITIES.map(([v, t]) => ({ v, t })); }
+// la_city / kr_city hold a CODE ('VTE'), not a name — the dictionary turns it
+// back into something readable. A code that has since been removed from the
+// dictionary still shows (and, in edit mode, still saves) as itself: a record
+// must never lose a value because a list was edited around it.
+function _cityLabel(cities, country, code) {
+  if (!code) return '';
+  const hit = ((cities && cities[country]) || []).find(c => c.code === code);
+  return hit ? hit.name + ' (' + hit.code + ')' : String(code);
+}
+function _cityOpts(cities, country, cur) {
+  const list = (cities && cities[country]) || [];
+  const opts = [{ v: '', t: '--' }].concat(list.map(c => ({ v: c.code, t: c.name + ' (' + c.code + ')' })));
+  if (cur && !list.some(c => c.code === cur)) opts.push({ v: String(cur), t: String(cur) });
+  return opts;
+}
 // Fill the worker-form nationality <datalist> (suggestions; still free-typeable).
 function _fillNatDatalist() {
   const dl = document.getElementById('nat-list');
@@ -2287,21 +3554,42 @@ function _ev(w, field, viewHtml, type, opts) {
   return '<input class="vm-edit-in" data-ef="' + field + '" value="' + esc(cur) + '">';
 }
 
+// Address value cell (province/district/village): view text, or in edit mode a
+// cascading combobox (dictionary list + free text). The custom .addr-combo popup
+// is used (same as the worker form) rather than a native datalist, so the list
+// can filter live by the parent level. _initDetailEdit() wires it up post-render.
+function _evAddr(w, col) {
+  const cur = (w[col] == null) ? '' : w[col];
+  if (!detailEditMode) return esc(cur || '--');
+  return '<div class="addr-combo">' +
+    '<input class="addr-input vm-edit-in" id="evloc-' + col + '" data-ef="' + col + '" autocomplete="off" value="' + esc(cur) + '">' +
+    '<div class="addr-combo-list" id="evloc-list-' + col + '" style="display:none"></div>' +
+  '</div>';
+}
+
 // Builds the Info-pane HTML (two columns). Same fixed set of rows always renders
 // so the popup never changes size with the amount of data.
 function _renderDetailBody(w, g) {
   const ed  = detailEditMode;
+  // One clone for both city blocks — getCities() deep-copies the dictionary.
+  const cities = DB.getCities() || {};
   // Age: use manually stored value if present, else calculate from DOB
   const age = (w.age != null && w.age !== '') ? w.age : calcAge(w.dob);
   const visaLabels = { not_started:'ຍັງບໍ່ເລີ່ມ', applied:'ຍື່ນຂໍແລ້ວ', approved:'ອະນຸມັດ ✓', rejected:'ຖືກປະຕິເສດ ✗' };
   const warn = !ed && expiryClass(w.passport_expiry) !== 'expiry-ok';
-  const row = (label, sub, val) =>
-    '<div class="vd-row">' +
+  const row = (label, sub, val) => {
+    // A very long value (e.g. a long surname) is clamped to one line in the
+    // bento view so the row height — and the whole page — stays locked and never
+    // shifts between workers. The full text is exposed on hover via title. `val`
+    // is already escaped HTML, so the tag-stripped text is attribute-safe as-is.
+    const ttl = String(val).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    return '<div class="vd-row">' +
       '<span class="vd-lbl">' + label + (sub ? '<span class="vd-sub">' + sub + '</span>' : '') + '</span>' +
-      '<span class="vd-val">' + val + '</span>' +
+      '<span class="vd-val"' + (ttl && ttl !== '--' ? ' title="' + ttl + '"' : '') + '>' + val + '</span>' +
     '</div>';
-  const sec = (icon, lo, en, rows) =>
-    '<div class="vd-section">' +
+  };
+  const sec = (icon, lo, en, rows, cls) =>
+    '<div class="vd-section' + (cls ? ' ' + cls : '') + '">' +
       '<div class="vd-section-head">' +
         '<span class="vd-sec-icon">' + icon + '</span>' +
         '<span class="vd-sec-title">' + lo + '</span>' +
@@ -2326,13 +3614,34 @@ function _renderDetailBody(w, g) {
         row(t('vc_dob'), 'ວັນເດືອນປີ', _ev(w,'dob', esc(w.dob||'--'), 'text')) +
         row(t('vc_age'), 'ອາຍຸ', _ev(w,'age', age ? age + ' yrs' : '--', 'text')) +
         row(t('vc_nationality'), 'ສັນຊາດ', _ev(w,'nationality', esc(w.nationality||'--'), 'datalist', _natOpts())) +
-        row(t('vc_sex'), 'ເພດ', ed ? _ev(w,'sex','','select',sexOpts) : (w.sex==='M'?'♂ '+t('fm_sex_m'):w.sex==='F'?'♀ '+t('fm_sex_f'):'--'))
+        row(t('vc_sex'), 'ເພດ', ed ? _ev(w,'sex','','select',sexOpts) : (w.sex==='M'?'♂ '+t('fm_sex_m'):w.sex==='F'?'♀ '+t('fm_sex_f'):'--')),
+        'vd-wide'
       ) +
 
-      sec('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>', 'ທີ່ຢູ່', 'Address',
-        row('ແຂວງ', 'Province', _ev(w,'province', esc(w.province||'--'), 'text')) +
-        row('ເມືອງ', 'District', _ev(w,'district', esc(w.district||'--'), 'text')) +
-        row('ບ້ານ',  'Village',  _ev(w,'village',  esc(w.village||'--'),  'text'))
+      // Home and destination were one "Address" block, which read as one place.
+      // They are two countries and two purposes — where somebody is from, and
+      // where they are going — so they are two blocks, side by side.
+      sec('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>',
+        bi('ທີ່ຢູ່ ລາວ', 'Laos', 'ที่อยู่ลาว', '라오스'), 'Home',
+        row('ແຂວງ', 'Province', _evAddr(w,'province')) +
+        row('ເມືອງ', 'District', _evAddr(w,'district')) +
+        row('ບ້ານ',  'Village',  _evAddr(w,'village')) +
+        row(bi('ເມືອງຕົ້ນທາງ', 'Origin city', 'เมืองต้นทาง', '출발 도시'), 'ຕົ້ນທາງ',
+          ed ? _ev(w,'la_city','','select', _cityOpts(cities,'la',w.la_city))
+             : esc(_cityLabel(cities,'la',w.la_city) || '--'))
+      ) +
+
+      sec('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3.5S19 3 17.5 4.5L14 8 5.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 4.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>',
+        bi('ເກົາຫຼີ', 'Korea', 'เกาหลี', '한국'), 'Assignment',
+        row(bi('ເມືອງປາຍທາງ', 'Destination', 'เมืองปลายทาง', '도착 도시'), 'ປາຍທາງ',
+          ed ? _ev(w,'kr_city','','select', _cityOpts(cities,'kr',w.kr_city))
+             : (_cityLabel(cities,'kr',w.kr_city)
+                 ? esc(_cityLabel(cities,'kr',w.kr_city))
+                 // No city of their own → the group's route, marked as borrowed
+                 // rather than printed as if the worker carried it.
+                 : (_routeDest(g) ? '<span class="vd-inherited">' + esc(_routeDest(g)) + '</span>' : '--'))) +
+        row(t('fm_employer_code'), 'Employer',   _ev(w,'employer_code',    esc(w.employer_code||'--'),    'text')) +
+        row(t('fm_supervisor'),    'Supervisor', _ev(w,'group_supervisor', esc(w.group_supervisor||'--'), 'text'))
       ) +
 
       sec('<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg>', 'ຂໍ້ມູນຮ່າງກາຍ', 'Physical',
@@ -2357,60 +3666,195 @@ function _renderDetailBody(w, g) {
 
     '</div>';
 
-  if (ed) {
-    return '<div class="vm-info-layout editing"><div class="vm-info-main">' + tableHtml + '</div></div>';
-  }
-
-  // View mode → single column: photo header at top, full-width data table below
+  // BOTH view and edit use the SAME full-page BENTO (redesign v6): a hero photo +
+  // progress card on the left, the data as rounded tiles on the right. Edit mode
+  // just swaps each tile value for an input (handled inside `tableHtml` via _ev),
+  // so the layout never changes between viewing and editing — same page, less
+  // confusing. In edit mode the hero name/ID mirror what you type (wired by
+  // _initDetailEdit); the photo stays tap-to-edit.
   const photoAttr = isAdmin() ? ' onclick="event.stopPropagation();openPhotoEditor(\'' + esc(w.uid) + '\')"' : '';
-  const editCls   = isAdmin() ? ' vph-editable' : '';
+  const editCls   = isAdmin() ? ' vbp-editable' : '';
   const editHint  = isAdmin()
-    ? '<div class="vph-edit-hint">&#9998; ' + esc(t('photo_edit') || 'แก้ไขรูป') + '</div>' : '';
+    ? '<div class="vbp-edit-hint">&#9998; ' + esc(t('photo_edit') || 'แก้ไขรูป') + '</div>' : '';
   const photoImg  = w.photo
     ? '<img src="' + esc(w.photo) + '" alt="">'
-    : '<span class="vph-initials">' + esc(avatarInitials(w.en_name || '?')) + '</span>';
+    : '<span class="vbp-initials">' + esc(avatarInitials(w.en_name || '?')) + '</span>';
 
-  const photoHeader =
-    '<div class="vm-profile-header">' +
-      '<div class="vph-photo' + editCls + '"' + photoAttr + '>' + photoImg + editHint + '</div>' +
-      '<div class="vph-names">' +
-        '<div class="vph-name-en">' + esc(w.en_name || '—') + '</div>' +
-        '<div class="vph-name-lo">' + esc(w.lo_name || '') + '</div>' +
-        (w.worker_id ? '<div class="vph-id">' + esc(w.worker_id) + '</div>' : '') +
+  const leftCol =
+    '<div class="bento-card vbp-card' + editCls + '"' + photoAttr + '>' +
+      '<div class="vbp-photo">' + photoImg + editHint + '</div>' +
+      '<div class="vbp-name-en" id="vbp-live-en">' + esc(w.en_name || '—') + '</div>' +
+      // Always render the Lao-name line (reserved even when empty) and keep the
+      // ID in its own fixed slot, so a worker with no Lao name doesn't shift the
+      // block up — every card lines up identically.
+      '<div class="vbp-name-lo" id="vbp-live-lo">' + esc(w.lo_name || '') + '</div>' +
+      '<div class="vbp-id-slot" id="vbp-live-id">' + (w.worker_id ? '<span class="vbp-id">' + esc(w.worker_id) + '</span>' : '') + '</div>' +
+    '</div>' +
+    '<div class="bento-card vbp-progress">' +
+      '<div class="vbp-prog-head">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>' +
+        '<span>' + bi('ຄວາມຄືບໜ້າ', 'Progress', 'ความคืบหน้า', '진행률') + '</span>' +
       '</div>' +
       _completenessBox(w) +
     '</div>';
 
-  return '<div class="vm-single-view">' + photoHeader + tableHtml + '</div>';
+  return '<div class="vm-bento-page' + (ed ? ' editing' : '') + '">' +
+    '<aside class="vm-bento-left">' + leftCol + '</aside>' +
+    '<div class="vm-bento-right">' + tableHtml + '</div>' +
+  '</div>';
+}
+
+// After the edit body is painted: turn province/district/village into cascading
+// comboboxes (dictionary + free text), and mirror the name/ID fields into the
+// left hero card as the user types. No-op unless we're in edit mode.
+function _initDetailEdit() {
+  if (!detailEditMode) return;
+  ['province', 'district', 'village'].forEach(col => {
+    if (document.getElementById('evloc-' + col))
+      initAddrCombobox('evloc-' + col, 'evloc-list-' + col, () => _evAddrItems(col));
+  });
+  const mirror = {
+    en_name:   el => { const t = document.getElementById('vbp-live-en'); if (t) t.textContent = el.value.trim() || '—'; },
+    lo_name:   el => { const t = document.getElementById('vbp-live-lo'); if (t) t.textContent = el.value.trim(); },
+    worker_id: el => { const t = document.getElementById('vbp-live-id'); if (t) t.innerHTML = el.value.trim() ? '<span class="vbp-id">' + esc(el.value.trim()) + '</span>' : ''; },
+  };
+  Object.keys(mirror).forEach(ef => {
+    const inp = document.querySelector('#vm-content [data-ef="' + ef + '"]');
+    if (inp) inp.addEventListener('input', () => mirror[ef](inp));
+  });
+}
+
+// Options for a detail-edit address combobox — cascades from the sibling value.
+// Prefers the seeded Location Dictionary (English canonical value, label in the
+// current language); merges in any spelling already used by other workers; and
+// falls back to the province list / used values when the dictionary is off.
+function _evAddrItems(col) {
+  const ld  = DB.getLocDict();
+  const dyn = _collectAddrField(col);
+  const dedupePush = (opts, seen, v, label) => {
+    const k = String(v || '').trim().toLowerCase();
+    if (v && !seen.has(k)) { seen.add(k); opts.push({ value: v, label: label || v }); }
+  };
+  if (ld && ld.levels && ld.levels.length) {
+    const i = ld.levels.findIndex(lv => lv.col === col);
+    if (i >= 0 && _locLevelHasItems(ld, ld.levels[i].id)) {
+      const lv = ld.levels[i];
+      let items = ld.items.filter(it => it.levelId === lv.id);
+      if (i > 0) {                                    // cascade: filter by the parent's value
+        const pcol = ld.levels[i - 1].col;
+        const pval = (document.getElementById('evloc-' + pcol) || {}).value || '';
+        const pid  = _locIdForName(ld, ld.levels[i - 1].id, pval);
+        if (pid) items = items.filter(it => it.parentId === pid);
+        else if (pval.trim()) items = [];             // parent typed but unknown → child is free text
+      }
+      items = items.slice().sort((a, b) => a.order - b.order);
+      const opts = [], seen = new Set();
+      items.forEach(it => dedupePush(opts, seen, _locEnName(it), _locName(it) + (it.code ? ' (' + it.code + ')' : '')));
+      dyn.forEach(v => dedupePush(opts, seen, v));
+      return opts;
+    }
+  }
+  // Dictionary off / level empty → predefined province list, else used values.
+  if (col === 'province') {
+    const opts = [], seen = new Set();
+    LA_PROVINCES.forEach(p => dedupePush(opts, seen, p.en, p.lo + ' — ' + p.en));
+    dyn.forEach(v => dedupePush(opts, seen, v));
+    return opts;
+  }
+  return dyn.map(v => ({ value: v, label: v }));
+}
+
+// Resolve a dictionary item id from a stored place name (English canonical, but
+// tolerate any-language / case / spacing variants that exist in old records).
+function _locIdForName(ld, levelId, name) {
+  if (!name || !name.trim()) return null;
+  const items = ld.items.filter(it => it.levelId === levelId);
+  const norm  = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const target = norm(name);
+  const m = items.find(it => _locEnName(it) === name)
+         || items.find(it => [it.names.en, it.names.lo, it.names.th, it.names.ko].some(n => n && norm(n) === target));
+  return m ? m.id : null;
 }
 
 function _renderDetailTopbar(w, uid) {
   const el = document.getElementById('vm-topbar-actions'); if (!el) return;
+  // Real shape icons (inline SVG) instead of text glyphs, per redesign. Nav
+  // arrows + zoom stay icon-only (with tooltips); labelled actions pair the icon
+  // with its text.
+  const svg = inner => '<svg class="vm-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + inner + '</svg>';
+  const ICON = {
+    prev:   '<polyline points="15 18 9 12 15 6"/>',
+    next:   '<polyline points="9 18 15 12 9 6"/>',
+    star:   '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',
+    zoom:   '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>',
+    export: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+    edit:   '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    save:   '<polyline points="20 6 9 17 4 12"/>',
+    cancel: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+  };
+  ICON.more = '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>';
+  const admin = isAdmin();
   let h = '';
-  // Prev / next worker (also bound to ← / → keys)
-  const ni = _navUids.indexOf(uid);
-  if (_navUids.length > 1 && ni >= 0) {
-    const prevDis = ni <= 0 ? ' disabled' : '';
-    const nextDis = ni >= _navUids.length - 1 ? ' disabled' : '';
-    h += '<button class="vm-action-btn vm-nav-btn" onclick="_navWorker(-1)" title="'+esc(t('nav_prev')||'ก่อนหน้า (←)')+'"'+prevDis+'>&#8249;</button>';
-    h += '<button class="vm-action-btn vm-nav-btn" onclick="_navWorker(1)" title="'+esc(t('nav_next')||'ถัดไป (→)')+'"'+nextDis+'>&#8250;</button>';
-    h += '<span class="vm-nav-count">'+(ni+1)+'/'+_navUids.length+'</span>';
-  }
-  if (isAdmin()) {
-    const on = isSelected(uid);
-    h += '<button class="vm-action-btn vm-select' + (on ? ' on' : '') + '" id="vm-select-btn" onclick="toggleSelected(\''+esc(uid)+'\')" title="'+esc(on?bi('ເອົາອອກຈາກຄັດເລືອກ','Remove from selected','เอาออกจากคัดเลือก','선택 해제'):bi('ຄັດເລືອກ (ຈະໄປ)','Select (to go)','คัดเลือก (จะไป)','선택 (출국)'))+'">&#9733; '+esc(bi('ຄັດເລືອກ','Select','คัดเลือก','선택'))+'</button>';
-  }
-  h += '<button class="vm-action-btn" onclick="zoomCard(\''+esc(uid)+'\')" title="'+esc(t('vd_zoom'))+'">&#10530;</button>';
-  h += '<button class="vm-action-btn" onclick="openExportDialog(\'worker\',\''+esc(uid)+'\')">&#11015; Export</button>';
-  if (isAdmin()) {
+
+  // ── Main bar: Export + Edit / Save·Cancel ──
+  h += '<button class="mb-btn" onclick="openExportDialog(\'worker\',\''+esc(uid)+'\')" title="'+esc(bi('ສົ່ງອອກ','Export','ส่งออก','내보내기'))+'">'+svg(ICON.export)+'<span>'+esc(bi('ສົ່ງອອກ','Export','ส่งออก','내보내기'))+'</span></button>';
+  if (admin) {
     if (detailEditMode) {
-      h += '<button class="vm-action-btn" onclick="cancelDetailEdit(\''+esc(uid)+'\')">&#10005; '+esc(t('fm_cancel'))+'</button>';
-      h += '<button class="vm-action-btn vm-action-save" onclick="saveDetailEdit(\''+esc(uid)+'\')">&#10003; '+esc(t('vd_save'))+'</button>';
+      h += '<button class="mb-btn" onclick="cancelDetailEdit(\''+esc(uid)+'\')">'+svg(ICON.cancel)+'<span>'+esc(t('fm_cancel'))+'</span></button>';
+      h += '<button class="mb-btn mb-btn-primary" onclick="saveDetailEdit(\''+esc(uid)+'\')">'+svg(ICON.save)+'<span>'+esc(t('vd_save'))+'</span></button>';
     } else {
-      h += '<button class="vm-action-btn" onclick="toggleDetailEdit(\''+esc(uid)+'\')">&#9998; '+esc(t('act_edit'))+'</button>';
+      h += '<button class="mb-btn mb-btn-primary" onclick="toggleDetailEdit(\''+esc(uid)+'\')">'+svg(ICON.edit)+'<span>'+esc(t('act_edit'))+'</span></button>';
     }
   }
+
+  // ── More (⋯) menu: prev/next + counter, select, present ──
+  const ni = _navUids.indexOf(uid);
+  const hasNav = _navUids.length > 1 && ni >= 0;
+  const on = admin && isSelected(uid);
+  let menu = '';
+  if (hasNav) {
+    const prevDis = ni <= 0 ? ' disabled' : '';
+    const nextDis = ni >= _navUids.length - 1 ? ' disabled' : '';
+    menu += '<button class="mb-menu-item" onclick="_navWorker(-1)"'+prevDis+'>'+svg(ICON.prev)+'<span>'+esc(bi('ກ່ອນໜ້າ','Previous','ก่อนหน้า','이전'))+'</span></button>';
+    menu += '<button class="mb-menu-item" onclick="_navWorker(1)"'+nextDis+'>'+svg(ICON.next)+'<span>'+esc(bi('ຕໍ່ໄປ','Next','ถัดไป','다음'))+'</span><span class="mb-menu-count">'+(ni+1)+' / '+_navUids.length+'</span></button>';
+    menu += '<div class="mb-menu-sep"></div>';
+  }
+  if (admin) {
+    menu += '<button class="mb-menu-item'+(on?' on':'')+'" onclick="_detailToggleSelect(\''+esc(uid)+'\')">'+svg(ICON.star)+'<span>'+esc(on?bi('ເລືອກແລ້ວ','Selected','เลือกแล้ว','선택됨'):bi('ຄັດເລືອກ','Select','คัดเลือก','선택'))+'</span></button>';
+  }
+  menu += '<button class="mb-menu-item" onclick="_closeMoreMenu();zoomCard(\''+esc(uid)+'\')">'+svg(ICON.zoom)+'<span>'+esc(bi('ເຕັມຈໍ','Present','เต็มจอ','전체화면'))+'</span></button>';
+  h += '<div class="mb-more">' +
+         '<button class="mb-btn mb-icon" onclick="_toggleMoreMenu(event)" title="'+esc(bi('ເພີ່ມເຕີມ','More','เพิ่มเติม','더보기'))+'">'+svg(ICON.more)+'</button>' +
+         '<div class="mb-menu" id="mb-menu">'+menu+'</div>' +
+       '</div>';
+
   el.innerHTML = h;
+}
+
+// ── Detail menu-bar "More" dropdown ──────────────────────────────
+function _toggleMoreMenu(e) {
+  if (e) e.stopPropagation();
+  const m = document.getElementById('mb-menu'); if (!m) return;
+  const open = m.classList.toggle('open');
+  // Close on the next outside click (deferred so THIS click doesn't close it).
+  if (open) setTimeout(() => document.addEventListener('click', _closeMoreMenuOutside), 0);
+  else document.removeEventListener('click', _closeMoreMenuOutside);
+}
+function _closeMoreMenuOutside(e) {
+  if (e && e.target.closest && e.target.closest('.mb-more')) return;   // click inside → let it act
+  _closeMoreMenu();
+}
+function _closeMoreMenu() {
+  const m = document.getElementById('mb-menu'); if (m) m.classList.remove('open');
+  document.removeEventListener('click', _closeMoreMenuOutside);
+}
+// Toggle shortlist selection from the detail bar, then refresh the bar so the
+// star's on-state updates in place.
+function _detailToggleSelect(uid) {
+  _closeMoreMenu();
+  toggleSelected(uid);
+  const g = DB.getGroup(activeGroupId); const w = g && g.workers.find(x => x.uid === uid);
+  if (w) _renderDetailTopbar(w, uid);
 }
 
 function toggleDetailEdit(uid) {
@@ -2418,6 +3862,7 @@ function toggleDetailEdit(uid) {
   const g = DB.getGroup(activeGroupId); const w = g && g.workers.find(x => x.uid === uid); if (!w) return;
   document.getElementById('vm-content').innerHTML = _renderDetailBody(w, g);
   _renderDetailTopbar(w, uid);
+  _initDetailEdit();
 }
 function cancelDetailEdit(uid) { detailEditMode = false; openView(uid); }
 function saveDetailEdit(uid) {
@@ -2459,16 +3904,159 @@ function exportGroupPDF() {
   setTimeout(() => window.print(), 80);
 }
 
-// Zoom the ID card to fill the screen
+// Zoom the ID card to fill the screen — real browser fullscreen ("Present" mode)
 function zoomCard(uid) {
-  const g = DB.getGroup(activeGroupId); const w = g && g.workers.find(x => x.uid === uid); if (!w) return;
-  const body = document.getElementById('cardzoom-body');
-  if (body) body.innerHTML = _renderKdCard(w, g);   // full KD form at 100%
+  if (!_presentRenderCard(uid)) return;
   openOverlay('cardzoom-overlay');
+  // The card was painted while the overlay was still hidden (nothing to measure);
+  // now that it has a size, fit the slide. Going fullscreen changes the box again
+  // — the fullscreenchange handler re-fits.
+  _kdFitAll(document.getElementById('cardzoom-body'));
+  _enterFullscreen(document.getElementById('cardzoom-overlay'));
+  _previewUpdateHud();
+  _czWake();
+}
+
+// Paint ONLY the card for `uid` into the Present stage. Split out of zoomCard so
+// flipping between workers while presenting swaps just the card — no overlay
+// re-open, no repeated fullscreen request, no detail-drawer rebuild. That
+// combination was what made every flip stutter.
+function _presentRenderCard(uid) {
+  const g = DB.getGroup(activeGroupId);
+  const w = g && g.workers.find(x => x.uid === uid);
+  if (!w) return false;
+  const body = document.getElementById('cardzoom-body');
+  if (body) { body.innerHTML = _renderKdCard(w, g, false, null, false, true); _kdFitAll(body); }   // full KD form, Present variant
+  _presentPreloadNeighbours(uid, g);
+  return true;
+}
+
+// Warm the browser cache with the previous/next worker's photo so flipping never
+// shows an empty photo box while the image downloads.
+function _presentPreloadNeighbours(uid, g) {
+  const i = _navUids.indexOf(uid);
+  if (i < 0 || !g) return;
+  [i - 1, i + 1].forEach(k => {
+    if (k < 0 || k >= _navUids.length) return;
+    const nw = g.workers.find(x => x.uid === _navUids[k]);
+    const src = nw && nw.photo;
+    if (!src) return;
+    const im = new Image();
+    im.decoding = 'async';
+    im.src = src;
+  });
+}
+
+// Present mode: fade the close button (and the cursor) out once the mouse rests,
+// so nothing sits over the card mid-presentation. Any movement brings them back.
+let _czIdleT = null;
+function _czWake() {
+  const cz = document.getElementById('cardzoom-overlay');
+  if (!cz) return;
+  cz.classList.remove('cz-idle');
+  clearTimeout(_czIdleT);
+  _czIdleT = setTimeout(() => { if (cz.classList.contains('open')) cz.classList.add('cz-idle'); }, 2200);
+}
+document.addEventListener('mousemove', () => {
+  const cz = document.getElementById('cardzoom-overlay');
+  if (cz && cz.classList.contains('open')) _czWake();
+}, { passive: true });
+
+// ── Preview Mode (card zoom) selection & grading shortcuts ────────────
+// The corner HUD (select chip / grade chip / shortcut hint) is intentionally
+// EMPTY: nothing may overlay the card while presenting — the view has to stay
+// completely unobstructed. The keyboard shortcuts still work (Space select,
+// A/B/C grade, X deselect) and the brief centre flash still confirms them.
+function _previewUpdateHud() {
+  const hud = document.getElementById('cardzoom-hud');
+  if (hud) hud.innerHTML = '';
+}
+
+// Center burst animation confirming an action inside the preview.
+let _czFlashT = null;
+function _previewFlash(html, cls) {
+  const el = document.getElementById('cardzoom-flash');
+  if (!el) return;
+  // Fullscreen (Present) only paints the fullscreen element's own subtree, so the
+  // burst must live INSIDE whatever container is on screen: the fullscreen/zoom
+  // overlay in Present, otherwise the page body (over the detail drawer).
+  const cz = document.getElementById('cardzoom-overlay');
+  const host = document.fullscreenElement
+    || (cz && cz.classList.contains('open') ? cz : document.body);
+  if (el.parentNode !== host) host.appendChild(el);
+  el.innerHTML = '<div class="cz-burst ' + (cls || '') + '">' + html + '</div>';
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  clearTimeout(_czFlashT);
+  _czFlashT = setTimeout(() => { el.classList.remove('show'); el.innerHTML = ''; }, 760);
+}
+
+function _previewToggleSelect() {
+  if (!isAdmin() || !_currentViewUid) return;
+  toggleSelected(_currentViewUid);
+  const on = isSelected(_currentViewUid);
+  _previewUpdateHud();
+  _previewFlash(
+    (on ? '★ ' : '☆ ') + esc(on ? bi('ເລືອກແລ້ວ', 'Selected', 'เลือกแล้ว', '선택됨')
+                                : bi('ຍົກເລີກແລ້ວ', 'Removed', 'ยกเลิกแล้ว', '해제됨')),
+    on ? 'cz-on' : 'cz-off');
+}
+
+// Explicit deselect (X / Delete) — only acts when the worker is currently selected.
+function _previewDeselect() {
+  if (!isAdmin() || !_currentViewUid || !isSelected(_currentViewUid)) return;
+  toggleSelected(_currentViewUid);   // removes from the shortlist
+  _previewUpdateHud();
+  _previewFlash('☆ ' + esc(bi('ຍົກເລີກແລ້ວ', 'Removed', 'ยกเลิกแล้ว', '해제됨')), 'cz-off');
+}
+
+// Keep the detail drawer's topbar grade chip in sync after a keyboard grade change.
+function _updateDetailTopbarGrade() {
+  if (!document.getElementById('view-overlay')?.classList.contains('open')) return;
+  const g = DB.getGroup(activeGroupId);
+  const w = g && g.workers.find(x => x.uid === _currentViewUid);
+  const loEl = document.getElementById('vm-topbar-lo');
+  if (!w || !loEl) return;
+  const gradeChip = w.grade
+    ? '<span class="vm-grade-chip" style="background:' + (GRADE_COLORS[w.grade] || '#6b7280') + '">Grade ' + esc(w.grade) + '</span>'
+    : '';
+  loEl.innerHTML = gradeChip + (w.lo_name ? '<span class="vm-topbar-lo-text">' + esc(w.lo_name) + '</span>' : '');
+}
+
+function _previewSetGrade(key) {
+  if (!isAdmin() || !_currentViewUid) return;
+  const g = DB.getGroup(activeGroupId);
+  const w = g && g.workers.find(x => x.uid === _currentViewUid);
+  const cur = w ? _normGrade(w.grade) : '';   // legacy "B" reads as "B+"
+  // Each key toggles its grade off when pressed again, so a grade can be removed.
+  // B cycles through both B grades then clears: none → B+ → B- → none.
+  let next;
+  if (key === 'B') next = cur === 'B+' ? 'B-' : (cur === 'B-' ? '' : 'B+');
+  else             next = cur === key ? '' : key;   // A / C toggle on ⇄ off
+  DB.updateWorker(activeGroupId, _currentViewUid, { grade: next });   // change is auto-logged server-side
+  renderTable();            // reflect the new grade badge in the list behind
+  _updateDetailTopbarGrade();
+  _previewUpdateHud();
+  _previewFlash(next ? 'GRADE ' + esc(next)
+                     : esc(bi('ລຶບເກຣດ', 'Grade cleared', 'ลบเกรดแล้ว', '등급 삭제')), 'cz-grade-flash');
+}
+
+// Request true fullscreen on an element. Must run inside a user gesture (a click),
+// which zoomCard always is. Silently no-ops where the API is unavailable/blocked.
+function _enterFullscreen(el) {
+  if (!el || document.fullscreenElement) return;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+  if (!req) return;
+  try { const p = req.call(el); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+}
+function _exitFullscreen() {
+  if (!document.fullscreenElement) return;
+  const ex = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+  if (!ex) return;
+  try { const p = ex.call(document); if (p && p.catch) p.catch(() => {}); } catch (e) {}
 }
 
 // ── VIEW CARD ─────────────────────────────────────────────────────
-function openView(uid) {
+function openView(uid, keepTab) {
   _ensureGroupFor(uid);   // resolve owning group (global search / overview)
   const g = DB.getGroup(activeGroupId);
   const w = g && g.workers.find(x => x.uid === uid);
@@ -2500,17 +4088,16 @@ function openView(uid) {
 
   _renderDetailTopbar(w, uid);
 
-  // Reset tabs to Info
-  document.querySelectorAll('.detail-tab').forEach(tb => tb.classList.remove('active'));
-  document.querySelectorAll('.detail-pane').forEach(p  => p.classList.remove('active'));
-  const infoTab  = document.querySelector('.detail-tab[data-tab="info"]');
-  const infoPane = document.getElementById('detail-pane-info');
-  if (infoTab)  infoTab.classList.add('active');
-  if (infoPane) infoPane.classList.add('active');
-
-  // Reset activity pane
+  // Fresh open → start on Details. Arrow-navigation (keepTab) stays on whatever
+  // tab is open, so flipping through people keeps you on Documents / Activity.
+  // Either way drop the previous worker's activity so their log never shows here.
+  const targetTab = keepTab
+    ? (document.querySelector('#vm-tabs .vm-tab.active')?.dataset.tab || 'info')
+    : 'info';
+  _histTabLoaded = false;
   const actContent = document.getElementById('vm-activity-content');
-  if (actContent) actContent.innerHTML = '<div class="act-empty">Loading…</div>';
+  if (actContent) actContent.innerHTML = '';
+  switchDetailTab(targetTab);
 
   // Info pane = two columns (detail table left, locked ID card right)
   document.getElementById('vm-content').innerHTML = _renderDetailBody(w, g);
@@ -2536,8 +4123,18 @@ function _navWorker(dir) {
   if (j < 0 || j >= _navUids.length) return;   // clamp at the ends
   const next = _navUids[j];
   const zoomOpen = document.getElementById('cardzoom-overlay')?.classList.contains('open');
-  openView(next);                 // keep the detail + state in sync
-  if (zoomOpen) zoomCard(next);   // re-render the zoomed card on top
+  if (zoomOpen) {
+    // Presenting: swap only the card. Rebuilding the whole detail drawer behind
+    // the fullscreen card (then re-opening the overlay + re-requesting
+    // fullscreen) was invisible work that made every flip stutter — defer the
+    // drawer refresh until Present closes.
+    if (!_presentRenderCard(next)) return;
+    _currentViewUid = next;
+    _presentDirty = true;
+    _czWake();
+    return;
+  }
+  openView(next, true);           // keep the detail + state in sync (and the active tab)
 }
 
 // Arrow keys flip through workers while the detail drawer or the card-zoom view is
@@ -2557,6 +4154,26 @@ document.addEventListener('keydown', e => {
   if (blocking) return;
   e.preventDefault();
   _navWorker(e.key === 'ArrowRight' ? 1 : -1);
+});
+
+// Preview Mode (card zoom) shortcuts: P/O = select · A/B/C = set grade.
+// Scoped to the zoom overlay so plain letters never hijack typing elsewhere.
+document.addEventListener('keydown', e => {
+  // Works in the zoom Preview AND the detail drawer (both track _currentViewUid).
+  const czOpen = document.getElementById('cardzoom-overlay')?.classList.contains('open');
+  const voOpen = document.getElementById('view-overlay')?.classList.contains('open');
+  if ((!czOpen && !voOpen) || !_currentViewUid || !isAdmin() || detailEditMode) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const tag = (e.target && e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target && e.target.isContentEditable)) return;
+  // Ignore if a different modal (export/photo editor/…) sits on top.
+  const blocking = [...document.querySelectorAll('.overlay.open')]
+    .some(el => el.id !== 'view-overlay' && el.id !== 'cardzoom-overlay');
+  if (blocking) return;
+  const k = e.key.toLowerCase();
+  if (k === ' ')                                 { e.preventDefault(); _previewToggleSelect(); }
+  else if (k === 'x' || k === 'delete')          { e.preventDefault(); _previewDeselect(); }
+  else if (k === 'a' || k === 'b' || k === 'c')  { e.preventDefault(); _previewSetGrade(k.toUpperCase()); }
 });
 
 // ── GLOBAL KEYBOARD SHORTCUTS ─────────────────────────────────────
@@ -2665,7 +4282,8 @@ async function _handlePhotoEdit(input, uid) {
       DB.updateWorker(activeGroupId, uid, { photo: dataUrl });
       const g = DB.getGroup(activeGroupId);
       const w = g && g.workers.find(x => x.uid === uid);
-      if (w) w.photo = dataUrl;
+      if (w) { w.photo = dataUrl; w.photo_thumb = ''; }   // stale thumb → fall back to full photo
+      _queueThumb(uid, dataUrl);
       // Refresh the badge card photo in-place
       const idcPhoto = document.querySelector('.idc-photo');
       if (idcPhoto && w) {
@@ -2673,6 +4291,7 @@ async function _handlePhotoEdit(input, uid) {
           personPhoto(w, 'avatar-xl') +
           '<div class="idc-photo-edit">&#9998;</div>';
       }
+      _refreshPhotoViews();   // repaint list + dashboard now
       toast('Photo updated', 'ok');
     } catch (e) {
       toast('Photo upload failed', 'err');
@@ -2869,8 +4488,12 @@ function openPhotoEditor(uid) {
         DB.updateWorker(activeGroupId, uid, { photo: dataUrl, photo_orig: orig || dataUrl });
         const gg = DB.getGroup(activeGroupId);
         const ww = gg && gg.workers.find(x => x.uid === uid);
-        if (ww) { ww.photo = dataUrl; ww.photo_orig = orig || dataUrl; }
+        // Clear the stale thumbnail BEFORE the repaint so cards fall back to the
+        // fresh full photo now; _queueThumb regenerates the light one + repaints.
+        if (ww) { ww.photo = dataUrl; ww.photo_orig = orig || dataUrl; ww.photo_thumb = ''; }
+        _queueThumb(uid, dataUrl);
         if (_currentViewUid === uid) openView(uid);   // refresh the KD card in place
+        _refreshPhotoViews();                          // repaint list + dashboard now
         toast(t('photo_saved') || 'ອັບເດດຮູບແລ້ວ', 'ok');
       } catch (e) {
         toast(t('photo_save_err') || 'ບັນທຶກຮູບບໍ່ສຳເລັດ', 'err');
@@ -2880,21 +4503,16 @@ function openPhotoEditor(uid) {
 }
 
 // ── DOCUMENTS (inside the detail drawer, versioned) ───────────────
-// Document categories — admin-configurable in Settings → Documents (localStorage).
-// Not locked to a fixed six; admins can add/rename/remove types (e.g. residence cert).
-const _DEFAULT_DOC_CATS = [
-  { key: 'passport',  label: 'Passport' },
-  { key: 'id_card',   label: 'ID Card' },
-  { key: 'residence', label: 'Residence certificate' },
-  { key: 'form_1',    label: 'Form 1' },
-  { key: 'form_2',    label: 'Form 2' },
-  { key: 'land_doc',  label: 'Land document' },
-];
+// Document categories — admin-configurable in Settings → Documents. The live
+// list is server-side and self-healing; the defaults below are only reached
+// when there is no server list at all, and they are the SAME defaults the
+// server seeds from (infra/doc-cats.js) so the two can never name a category
+// differently.
 function getDocCats() {
   try { const c = DB.getSetting('doc_cats', null); if (Array.isArray(c) && c.length) return c; } catch (e) {}
   // legacy fallback (older versions stored this per-browser)
   try { const l = JSON.parse(localStorage.getItem('kd_doc_cats')); if (Array.isArray(l) && l.length) return l; } catch (e) {}
-  return _DEFAULT_DOC_CATS;
+  return KDDocCats.defaults();
 }
 
 // One-time migration: older builds kept document categories ONLY in this
@@ -3086,11 +4704,25 @@ async function _loadAndRenderDocs(uid) {
   _refreshCmpBox(uid);   // docs% is now accurate → update the completeness box
 }
 
+// Find a document version by id across every category of every cached worker,
+// so a click handler only ever has to carry the id.
+function openDocVersion(docId) {
+  for (const uid of Object.keys(_docCache)) {
+    for (const catKey of Object.keys(_docCache[uid] || {})) {
+      const v = (_docCache[uid][catKey] || []).find(x => x.id === docId);
+      if (v) return openDocViewById(v.id, v.path, v.type, v.name, uid, catKey);
+    }
+  }
+}
+
 function _renderDocs(uid) {
   const container = document.getElementById('vm-docs-content') || document.getElementById('vm-docs-' + uid);
   if (!container) return;
   const docs = _docCache[uid] || {};
   const canEdit = isAdmin();
+  // Timelines are painted after the container's innerHTML lands — their host
+  // divs do not exist until then.
+  const _docHistPending = [];
   const html = getDocCats().map(cat => {
     const versions = docs[cat.key] || [];
     const current = versions.find(v => v.isCurrent) || versions[0];
@@ -3101,7 +4733,7 @@ function _renderDocs(uid) {
 
     // Preview thumbnail (monochrome) or a neutral placeholder
     const preview = hasFile
-      ? '<div class="docb-preview" onclick="event.stopPropagation();openDocViewById(' + current.id + ',\'' + esc(current.path) + '\',\'' + current.type + '\',\'' + esc(current.name) + '\',\'' + esc(uid) + '\',\'' + esc(cat.key) + '\')">' +
+      ? '<div class="docb-preview" onclick="event.stopPropagation();openDocVersion(' + current.id + ')">' +
           (current.type === 'pdf'
             ? '<div class="docb-pdf">PDF</div>'
             : '<img src="' + esc(current.path) + '" alt="" loading="lazy" decoding="async">') +
@@ -3118,15 +4750,32 @@ function _renderDocs(uid) {
         (dateStr ? '<div class="docb-row"><span class="docb-k">' + t('doc_date') + '</span><span class="docb-v">' + esc(dateStr) + '</span></div>' : '')
       : '<div class="docb-none">' + t('doc_empty') + '</div>';
 
+    // Older versions, as the same timeline used for worker and group history —
+    // so "who uploaded this, and when" is finally visible instead of a bare "v2".
+    // The handlers carry only the numeric doc id and look the rest up in
+    // _docCache: inlining a file name would break on the first apostrophe.
+    const histId = 'dochist-' + uid + '-' + cat.key;
     const histHtml = history.length
-      ? '<div class="docb-history"><span class="docb-hist-label">' + t('doc_history') + ':</span>' +
-          history.map(v =>
-            '<span class="docb-hist-item" onclick="openDocViewById(' + v.id + ',\'' + esc(v.path) + '\',\'' + v.type + '\',\'' + esc(v.name) + '\',\'' + esc(uid) + '\',\'' + esc(cat.key) + '\')">v' + v.version +
-              (canEdit ? '<button onclick="deleteDocById(event,' + v.id + ',\'' + uid + '\')">&#x2715;</button>' : '') +
-            '</span>'
-          ).join('') +
-        '</div>'
+      ? '<details class="docb-history">' +
+          '<summary class="docb-hist-summary">' + t('doc_history') +
+            ' <span class="docb-hist-count">' + history.length + '</span>' +
+          '</summary>' +
+          '<div id="' + esc(histId) + '"></div>' +
+        '</details>'
       : '';
+    if (history.length) {
+      _docHistPending.push({ id: histId, entries: history.map(v => ({
+        action: 'uploaded',
+        detail: v.name || '',
+        by: v.uploadedBy,
+        at: v.uploadedAt,
+        badge: 'v' + v.version,
+        onClick: 'openDocVersion(' + v.id + ')',
+        extra: canEdit
+          ? '<button class="hist-del" title="' + esc(t('doc_delete')) + '" onclick="event.stopPropagation();deleteDocById(event,' + v.id + ',\'' + esc(uid) + '\')">&#x2715;</button>'
+          : '',
+      })) });
+    }
 
     const actions = canEdit
       ? '<div class="docb-actions">' +
@@ -3166,6 +4815,8 @@ function _renderDocs(uid) {
     ? '<div class="docb-paste-hint">' + bi('ຄລິກຊ່ອງ → Ctrl+V ວາງຮູບ · ຫຼື ລາກໄຟລ໌ມາວາງ', 'Click a box → Ctrl+V to paste · or drag a file in', 'คลิกช่อง → Ctrl+V วางรูป · หรือลากไฟล์มาวาง', '칸 클릭 → Ctrl+V로 붙여넣기 · 또는 파일 끌어다 놓기') + '</div>'
     : '';
   container.innerHTML = '<div class="vm-docs-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> ' + t('vc_documents') + '</div>' + hint + '<div class="docb-grid">' + html + '</div>';
+
+  _docHistPending.forEach(h => renderHistory(h.id, h.entries));
 
   // Re-apply the paste-target highlight after a re-render (e.g. post-upload).
   if (_docPasteTarget && _docPasteTarget.uid === uid) {
@@ -3277,13 +4928,58 @@ function openDocViewById(docId, path, type, name, uid, cat) {
   const body = document.getElementById('docview-body');
   if (!body) return;
   _docZoom = 0;   // reset zoom cycle for the new document
-  body.innerHTML = type === 'pdf'
+
+  // Pull the full version metadata from the cache when we can, so the details
+  // tile beside the image shows file / type / version / date — not just a bare
+  // picture. Falls back gracefully to whatever the caller handed us.
+  let ver = null, catLabel = '';
+  if (uid && cat && _docCache[uid] && _docCache[uid][cat]) {
+    ver = _docCache[uid][cat].find(v => v.id === docId)
+       || _docCache[uid][cat].find(v => v.isCurrent) || null;
+  }
+  if (cat) { const cd = getDocCats().find(c => c.key === cat); catLabel = cd ? cd.label : ''; }
+  const dateRaw = ver && (ver.uploadedAt || ver.date || ver.created || ver.createdAt);
+  const dateStr = dateRaw ? new Date(dateRaw).toLocaleDateString() : '';
+
+  // Stage: the image always sits centred on a neutral background and scales to
+  // fit whole (object-fit:contain), so a portrait ID and a wide passport line up
+  // identically instead of one being cropped or skewed to a side.
+  const stage = type === 'pdf'
     ? '<iframe class="docview-pdf" src="' + esc(path) + '"></iframe>'
     : '<img class="docview-img" src="' + esc(path) + '" alt="' + esc(name || '') + '" onclick="_docZoomCycle(event)" title="' + esc(bi('ຄລິກເພື່ອຊູມ', 'Click to zoom', 'คลิกเพื่อซูม', '클릭하여 확대')) + '">';
-  // The Edit/crop button only makes sense for an admin editing a real image
+
+  const row = (k, v) => '<div class="docview-row"><span class="docview-k">' + esc(k) + '</span><span class="docview-v" title="' + esc(v) + '">' + esc(v) + '</span></div>';
+  const rows =
+    (catLabel ? row(bi('ໝວດ', 'Category', 'หมวด', '분류'), catLabel) : '') +
+    row(t('doc_file'), name || '—') +
+    row(t('doc_type'), (type || '').toUpperCase() || '—') +
+    (ver ? row(t('doc_version'), 'v' + ver.version) : '') +
+    (dateStr ? row(t('doc_date'), dateStr) : '');
+
+  // The Edit/crop action only makes sense for an admin editing a real image
   // attached to a known worker + category (so we can upload the result back).
+  const canEditDoc = (type === 'image' && uid && cat && isAdmin());
+  const editAction = canEditDoc
+    ? '<button class="docview-meta-btn" onclick="editCurrentDoc()">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>' +
+        '<span>' + bi('ແກ້ໄຂ', 'Edit / Crop', 'แก้ไข/ครอป', '편집 / 자르기') + '</span></button>'
+    : '';
+  const zoomHint = type === 'image'
+    ? '<div class="docview-meta-hint">' + bi('ຄລິກຮູບເພື່ອຊູມ', 'Click the image to zoom', 'คลิกรูปเพื่อซูม', '이미지를 클릭하면 확대') + '</div>'
+    : '';
+
+  body.innerHTML =
+    '<div class="docview-stage">' + stage + '</div>' +
+    '<aside class="docview-meta">' +
+      '<div class="docview-meta-head">' + esc(catLabel || name || t('vc_documents')) + '</div>' +
+      '<div class="docview-meta-rows">' + rows + '</div>' +
+      editAction +
+      zoomHint +
+    '</aside>';
+
+  // The details tile owns the edit action now; hide the legacy floating button.
   const editBtn = document.getElementById('docview-edit');
-  if (editBtn) editBtn.style.display = (type === 'image' && uid && cat && isAdmin()) ? '' : 'none';
+  if (editBtn) editBtn.style.display = 'none';
   openOverlay('docview-overlay');
 }
 
@@ -3477,13 +5173,17 @@ function openWorkerForm(editUid) {
   if (!isAdmin()) return;
   if (editUid) _ensureGroupFor(editUid);   // point activeGroupId at the worker's group (cross-group views)
   populateCityDropdowns();
-  // NB: 'blood' is deliberately absent — the form's field is #fm-blood (see below).
-  // 'f-blood' is the toolbar FILTER; clearing it here used to wipe the user's filter.
-  const fids = ['worker-id','employer-code','supervisor','en-name','lo-name',
+  /* NB: 'blood' and 'supervisor' are deliberately absent from this list — their
+   * form fields are #fm-blood and #w-supervisor. `f-blood` and `f-supervisor`
+   * are the toolbar FILTERS, and clearing them here wiped the user's filter
+   * every time the form opened. Same collision, found twice: anything named
+   * `f-…` here reaches the filter bar, not the form. */
+  const fids = ['worker-id','employer-code','en-name','lo-name',
                 'province','district','village','nationality','sex','hand','weight','height','size','couple',
                 'tel','emg-tel','passport-no','kr-city','la-city',
                 'grade','visa-status','education','work-experience','languages'];
   fids.forEach(f => { const el = document.getElementById('f-' + f); if (el) el.value = ''; });
+  { const sup = document.getElementById('w-supervisor'); if (sup) sup.value = ''; }
   _ensureSelectValue('fm-blood', '');
   setDatePicker('dp-dob', '');
   setDatePicker('dp-issue', '');
@@ -3516,7 +5216,8 @@ function openWorkerForm(editUid) {
     document.getElementById('f-la-city').value         = w.la_city || '';
     document.getElementById('f-worker-id').value       = w.worker_id || '';
     document.getElementById('f-employer-code').value   = w.employer_code || '';
-    document.getElementById('f-supervisor').value      = w.group_supervisor || '';
+    document.getElementById('w-supervisor').value      = w.group_supervisor || '';
+    { const ac = document.getElementById('f-assign-code'); if (ac) ac.value = w.assign_code || ''; }
     document.getElementById('f-en-name').value         = w.en_name || '';
     document.getElementById('f-lo-name').value         = w.lo_name || '';
     setDatePicker('dp-dob', w.dob || '');
@@ -3537,7 +5238,7 @@ function openWorkerForm(editUid) {
     document.getElementById('f-passport-no').value     = w.passport_no || '';
     setDatePicker('dp-issue',  w.passport_issue || '');
     setDatePicker('dp-expiry', w.passport_expiry || '');
-    document.getElementById('f-grade').value           = w.grade || '';
+    document.getElementById('f-grade').value           = _normGrade(w.grade);   // legacy "B" → "B+"
     document.getElementById('f-visa-status').value     = w.visa_status || '';
     document.getElementById('f-education').value       = w.education || '';
     document.getElementById('f-work-experience').value = w.work_experience || '';
@@ -3546,6 +5247,9 @@ function openWorkerForm(editUid) {
   renderFormLocation();
   if (!editUid) regenWorkerId();
   updateIdPreview();
+  // The fills above set <select>.value directly (no change event), so the tile
+  // groups that shadow those selects have to be redrawn from the new values.
+  bcSyncAll();
   openOverlay('form-overlay');
 }
 
@@ -3990,7 +5694,8 @@ function saveWorker() {
     kr_city:        krCity,
     la_city:        laCity,
     employer_code:  document.getElementById('f-employer-code').value,
-    group_supervisor: document.getElementById('f-supervisor').value.trim(),
+    group_supervisor: document.getElementById('w-supervisor').value.trim(),
+    assign_code:    (document.getElementById('f-assign-code') || {}).value ? document.getElementById('f-assign-code').value.trim() : '',
     en_name:        enName.toUpperCase(),
     lo_name:        document.getElementById('f-lo-name').value.trim(),
     dob:            _dateInputVal('f-dob'),
@@ -4036,6 +5741,11 @@ function saveWorker() {
   if (editUid) {
     _ensureGroupFor(editUid);                 // make sure we target the worker's real group
     DB.updateWorker(activeGroupId, editUid, data);
+    // Photo may have changed → its old thumbnail is stale. Clear it so the
+    // refreshAll() below paints the new photo instead of the cached thumb.
+    const _ew = DB.getGroup(activeGroupId)?.workers.find(x => x.uid === editUid);
+    if (_ew) _ew.photo_thumb = '';
+    _queueThumb(editUid, data.photo);
   } else {
     // A new worker MUST belong to a group; if none is active, don't lose the data silently.
     if (!activeGroupId || !DB.getGroup(activeGroupId)) {
@@ -4114,6 +5824,7 @@ function openGroupForm(gid, event) {
   document.getElementById('gf-province-code').value = '';
   document.getElementById('gf-date').value          = '';
   document.getElementById('gf-route').value         = '';
+  { const kn = document.getElementById('gf-korean-name'); if (kn) kn.value = ''; }
   document.getElementById('gf-assigned').value      = '';
   document.getElementById('gf-arrivals').value      = '';
   document.getElementById('gm-title').textContent = editGroupId ? t('gm_edit_group') : t('gm_new_group');
@@ -4127,6 +5838,7 @@ function openGroupForm(gid, event) {
       document.getElementById('gf-province-code').value = g.province_code || '';
       document.getElementById('gf-date').value          = g.departure || '';
       document.getElementById('gf-route').value     = g.route || '';
+      { const kn = document.getElementById('gf-korean-name'); if (kn) kn.value = g.korean_name || ''; }
       document.getElementById('gf-assigned').value  = (g.assigned != null ? g.assigned : '');
       document.getElementById('gf-arrivals').value  = (g.arrivals != null ? g.arrivals : '');
     }
@@ -4145,6 +5857,7 @@ function saveGroup() {
     province_code: document.getElementById('gf-province-code').value.trim().toUpperCase(),
     departure: document.getElementById('gf-date').value.trim(),
     route: document.getElementById('gf-route').value.trim(),
+    korean_name: (document.getElementById('gf-korean-name') || {}).value ? document.getElementById('gf-korean-name').value.trim() : '',
     assigned: num('gf-assigned'),
     arrivals: num('gf-arrivals')
   };
@@ -4227,37 +5940,78 @@ function createExport()    { closeOverlay('create-overlay'); openExportDialog('g
 function openImport() { openOverlay('import-overlay'); }
 function doImport()   { toast(bi('ຍັງບໍ່ທັນ implement Import PPTX','PPTX import not implemented yet','ยังไม่ได้ทำฟีเจอร์นำเข้า PPTX','PPTX 가져오기는 아직 구현되지 않았습니다'), 'warn'); }
 
-// ── EXPORT CSV ────────────────────────────────────────────────────
-// Safe download filename: keep Unicode letters (Lao/Thai/…), strip only the
-// characters a filesystem rejects, and fall back when nothing usable remains.
-function _safeFile(name, fallback) {
-  let s = (name == null ? '' : String(name)).trim()
-    .replace(/[\/\\:*?"<>|\x00-\x1f]+/g, '_')   // illegal FS chars → _
-    .replace(/\s+/g, ' ')
-    .replace(/_{2,}/g, '_')
-    .replace(/^[_\s]+|[_\s]+$/g, '');
-  return s || fallback || 'export';
-}
+/* ── One exit for every generated file ─────────────────────────────
+ * Each export builder used to end with its own four lines of
+ * createObjectURL / anchor / click / revoke. They are all routed through here
+ * instead, for one reason beyond tidiness: when the Package format is also
+ * selected, these files belong INSIDE the archive rather than in the downloads
+ * folder next to it. Capture mode diverts them, and because it is a single
+ * choke point no builder can quietly bypass it.
+ */
+let _exportCapture = null;      // an array while capturing, null while downloading
 
-function exportCSV() {
-  const g  = DB.getGroup(activeGroupId);
-  const ws = DB.getWorkers(activeGroupId);
-  const headers = ['Worker ID','EN Name','Lao Name','Employer','Supervisor','DOB','Age',
-                   'Blood','Passport No','Issue','Expiry','Village','Weight(kg)','Height(cm)',
-                   'Size','Hand','Tel','Emergency Tel','Couple','Group'];
-  const rows = ws.map(w => [
-    w.worker_id, w.en_name, w.lo_name, w.employer_code, w.group_supervisor,
-    w.dob, calcAge(w.dob) || '', w.blood, w.passport_no,
-    w.passport_issue, w.passport_expiry, w.village, w.weight, w.height,
-    w.size, w.hand, w.tel, w.emg_tel, w.couple, g ? g.name : ''
-  ].map(v => '"' + (v || '').toString().replace(/"/g, '""') + '"').join(','));
-
-  const csv = '﻿' + [headers.join(','), ...rows].join('\n');
+function _emitExport(data, filename, mime) {
+  const blob = data instanceof Blob ? data : new Blob([data], { type: mime || 'application/octet-stream' });
+  if (_exportCapture) { _exportCapture.push({ name: filename, blob }); return; }
+  const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-  a.download = _safeFile(g && g.name, 'workers') + '.csv';
+  a.href = url;
+  a.download = filename;
   a.click();
+  URL.revokeObjectURL(url);
 }
+
+/* ── One entry for every DOM → image capture ───────────────────────
+ * html2canvas does not implement `backdrop-filter`. It does not fail on it
+ * either — it simply ignores it, so a glass surface rasterises as a flat tint
+ * and the exported PNG or PPTX slide quietly differs from what the operator
+ * approved on screen. That is the worst shape a bug can take here: the file is
+ * wrong, nothing warns anybody, and it has already been sent.
+ *
+ * So every capture goes through this, which puts the document into
+ * `body.exporting` for the duration. The CSS switches the whole material layer
+ * off under that class, which means the rule cannot be forgotten when a future
+ * surface becomes glass — it is off by construction rather than by memory. */
+/* html2canvas is 46 KB gzipped and is used by exactly two features — the KD
+ * card PNG and the rasterised PPTX fallback. It used to load on every page
+ * view, for everyone, including the people who never export anything. Fetched
+ * on first use instead, the same way JSZip already was. */
+function _loadHtml2Canvas() {
+  return new Promise((resolve, reject) => {
+    if (typeof html2canvas !== 'undefined') return resolve();
+    const s = document.createElement('script');
+    s.src = new URL('../../vendor/html2canvas/html2canvas.min.js', location.href).href;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('html2canvas failed to load — vendor/html2canvas/ is missing'));
+    document.head.appendChild(s);
+  });
+}
+
+async function _rasterise(el, opts) {
+  await _loadHtml2Canvas();
+  document.body.classList.add('exporting');
+  try {
+    return await html2canvas(el, Object.assign(
+      { scale: 1, useCORS: true, backgroundColor: '#ffffff' }, opts || {}));
+  } finally {
+    document.body.classList.remove('exporting');
+  }
+}
+
+// ── EXPORT CSV ────────────────────────────────────────────────────
+/* Download filename: keeps Unicode letters (Lao/Thai/…), replaces only what a
+ * filesystem rejects. The rules are shared with the server's archive-path
+ * sanitiser so the same worker is filed under the same spelling whichever
+ * button produced the file — see infra/safe-name.js. */
+function _safeFile(name, fallback) { return KDSafeName.download(name, fallback); }
+
+/* exportCSV() lived here: a second CSV builder with its own hard-coded list of
+ * twenty columns, left over from the toolbar button that the unified Export
+ * dialog replaced. Nothing in the markup or the code called it any more, so the
+ * only thing it could still do was drift away from _doExportCsv() — the one the
+ * user actually reaches — and mislead the next person reading the file. Deleted
+ * rather than kept "just in case": the dialog's CSV is a superset of it, with
+ * the columns chosen rather than fixed. */
 
 // ── EXPORT DIALOG ─────────────────────────────────────────────────────────
 const _EXPORT_FIELDS = [
@@ -4303,49 +6057,123 @@ const _EXPORT_FIELDS = [
 
 let _exportCtx = null;
 
+/* Which records an export covers. One definition, used by both the dialog (to
+ * show the count and decide which formats make sense) and doExport (to produce
+ * the files) — they drifting apart is how an export ends up describing itself
+ * as one thing and containing another. */
+function _exportWorkers(scope, uid) {
+  const g = DB.getGroup(activeGroupId);
+  if (scope === 'worker') {
+    const target = uid || _currentViewUid;
+    return g ? g.workers.filter(x => x.uid === target) : [];
+  }
+  if (scope === 'picked') return pickedWorkers();
+  return tableFiltered.length ? tableFiltered : DB.getWorkers(activeGroupId);
+}
+
+/**
+ * @param scope 'worker' — one record | 'picked' — the checkbox selection |
+ *              anything else — the current group / filtered view
+ */
 function openExportDialog(scope, uid) {
   _exportCtx = { scope, uid: uid || null };
   const g  = DB.getGroup(activeGroupId);
-  const ws = scope === 'worker'
-    ? (g ? g.workers.filter(x => x.uid === (uid || _currentViewUid)) : [])
-    : (tableFiltered.length ? tableFiltered : DB.getWorkers(activeGroupId));
+  const ws = _exportWorkers(scope, uid);
 
+  // Only English inflects; Lao, Thai and Korean use one form for any count.
+  const people = n => bi('ຄົນ', n === 1 ? 'person' : 'people', 'คน', '명');
   const subjEl = document.getElementById('export-subject');
   if (scope === 'worker') {
     const w = ws[0];
     subjEl.textContent = w ? (w.en_name || w.lo_name || 'Worker') : 'Worker';
+  } else if (scope === 'picked') {
+    subjEl.textContent = t('pick_selected') + ' · ' + ws.length + ' ' + people(ws.length);
   } else {
-    subjEl.textContent = (g ? g.name : '') + (ws.length ? ' · ' + ws.length + ' ' + bi('ຄົນ','people','คน','명') : '');
+    subjEl.textContent = (g ? g.name : '') + (ws.length ? ' · ' + ws.length + ' ' + people(ws.length) : '');
   }
 
-  // detail-pdf only makes sense for single worker
+  /* detail-pdf is a one-record layout, so it is offered whenever the export
+   * resolves to exactly one worker — including a selection of one. */
+  const single = ws.length === 1;
   const detBtn = document.querySelector('.export-opt[data-fmt="detail-pdf"]');
-  if (detBtn) detBtn.style.display = scope === 'worker' ? '' : 'none';
-  // the full-database bundle is a whole-group export only
+  if (detBtn) detBtn.style.display = (scope === 'worker' || single) ? '' : 'none';
+  /* The .kdb bundle is defined as the COMPLETE group and ignores any narrowing,
+   * so offering it next to a selection would promise something it does not do. */
   const kdbBtn = document.querySelector('.export-opt[data-fmt="kdb"]');
-  if (kdbBtn) kdbBtn.style.display = scope === 'worker' ? 'none' : '';
+  if (kdbBtn) kdbBtn.style.display = (scope === 'worker' || scope === 'picked') ? 'none' : '';
 
   // reset + default selection (honours Settings → Data & Backup default)
   document.querySelectorAll('.export-opt').forEach(el => el.classList.remove('sel'));
   let defFmt = DB.getSetting('export_default', 'kd-pdf');
-  if (scope !== 'worker' && defFmt === 'detail-pdf') defFmt = 'kd-pdf';
+  if (!(scope === 'worker' || single) && defFmt === 'detail-pdf') defFmt = 'kd-pdf';
   let defEl = document.querySelector('.export-opt[data-fmt="' + defFmt + '"]');
   if (!defEl) defEl = document.querySelector('.export-opt[data-fmt="kd-pdf"]');
   if (defEl) defEl.classList.add('sel');
 
+  /* The package is the one format this account may simply not have — every
+   * other tile is available to anyone who reached this dialog. Hidden rather
+   * than left to be refused on click. */
+  const pkgBtn = document.querySelector('.export-opt[data-fmt="package"]');
+  if (pkgBtn) pkgBtn.style.display = canExport('package') ? '' : 'none';
+
   _updateCsvFieldsVis();
+  _updateExportCount();
   _renderExportFields();
+  _renderExportCats();
   openOverlay('export-overlay');
 }
 
 function toggleExportFmt(el) {
   el.classList.toggle('sel');
   _updateCsvFieldsVis();
+  _updateExportCount();
+}
+
+// Header chip next to "FORMAT". Formats are MULTI-select here (doExport loops
+// over every .sel tile), which a single highlighted tile doesn't communicate —
+// the chip says how many are armed.
+function _updateExportCount() {
+  const el = document.getElementById('export-count');
+  if (!el) return;
+  const n = document.querySelectorAll('.export-opt.sel').length;
+  el.textContent = n
+    ? bi('ເລືອກ ' + n + ' ຮູບແບບ', n + ' selected', 'เลือก ' + n + ' รูปแบบ', n + '개 선택')
+    : bi('ຍັງບໍ່ໄດ້ເລືອກ', 'Nothing selected', 'ยังไม่ได้เลือก', '선택 없음');
+  el.classList.toggle('on', n > 0);
 }
 
 function _updateCsvFieldsVis() {
-  const on = !!document.querySelector('.export-opt[data-fmt="csv"].sel, .export-opt[data-fmt="xlsx"].sel');
+  const pkg = !!document.querySelector('.export-opt[data-fmt="package"].sel');
+  /* The package carries a summary.csv built from the same ticks, so the field
+   * picker belongs to it too — otherwise the columns of the spreadsheet inside
+   * the archive could only be changed by also ticking CSV. */
+  const on = pkg || !!document.querySelector('.export-opt[data-fmt="csv"].sel, .export-opt[data-fmt="xlsx"].sel');
   document.getElementById('export-csv-fields').style.display = on ? '' : 'none';
+  // The package's own options travel with its tile.
+  const box = document.getElementById('export-pkg-opts');
+  if (box) box.style.display = pkg ? '' : 'none';
+}
+
+/* Which document categories go into the package. Rendered from the SAME list
+ * the drawer files documents under (server-persisted, self-healing), so a
+ * category an admin added is exportable without touching this code. */
+function _renderExportCats() {
+  const wrap = document.getElementById('export-cat-list');
+  if (!wrap) return;
+  wrap.innerHTML = getDocCats().map(c =>
+    '<label class="ef-field"><input type="checkbox" name="ec-' + esc(c.key) + '" checked>' +
+    '<span>' + esc(c.label || c.key) + '</span></label>'
+  ).join('');
+}
+function exportCatsAll(on) {
+  document.querySelectorAll('#export-cat-list input[type="checkbox"]').forEach(el => el.checked = on);
+}
+/** null = every category (the server then applies no filter at all). */
+function _selectedExportCats() {
+  const boxes = [...document.querySelectorAll('#export-cat-list input[type="checkbox"]')];
+  if (!boxes.length) return null;
+  const on = boxes.filter(b => b.checked).map(b => b.name.replace(/^ec-/, ''));
+  return on.length === boxes.length ? null : on;
 }
 
 function _renderExportFields() {
@@ -4367,42 +6195,129 @@ function exportFieldsAll(on) {
   document.querySelectorAll('#export-field-list input[type="checkbox"]').forEach(el => el.checked = on);
 }
 
+/* ── Export authorisation (P4.5) ───────────────────────────────────
+ * Which permission each format needs. This file used to hold its own copy of
+ * rbac.EXPORT_FORMAT_PERMISSION, which had to be edited in step with the
+ * server's and silently would not be: a stale copy either offers a format that
+ * comes back as a 403, or hides one the account is entitled to. The table now
+ * arrives with /api/bootstrap and the UI simply reads it.
+ *
+ * This remains presentation only. The server re-decides on every request. */
+function canExport(fmt) { return DB.canExportFormat(fmt); }
+
+/* ── Export watermarking (P4.6) ────────────────────────────────────
+ * The server issues a receipt for every authorised export; these helpers stamp
+ * it into the file so a leaked document can be traced back to the export that
+ * produced it.
+ *
+ * Only the text formats are stamped, and that is a deliberate limit rather than
+ * an oversight: CSV and JSON can carry a line without becoming invalid, whereas
+ * XLSX/PPTX/PDF would each need their own metadata plumbing inside three
+ * different generators. Every format is recorded in the audit trail either way —
+ * the watermark adds traceability to the artefact, not to the record.
+ */
+let _lastExportReceipt = null;
+function _rememberReceipt(r) {
+  _lastExportReceipt = (r && typeof r === 'object' && r.exportId) ? r : null;
+  return _lastExportReceipt;
+}
+
+/** A CSV comment row. Leading `#` keeps spreadsheets from reading it as data. */
+function _csvWatermark() {
+  return _lastExportReceipt ? KDCsv.EOL + KDCsv.cell('# ' + _lastExportReceipt.watermark) : '';
+}
+
 async function doExport() {
   const fmts = [...document.querySelectorAll('.export-opt.sel')].map(el => el.dataset.fmt);
   if (!fmts.length) { toast(bi('ກະລຸນາເລືອກຢ່າງໜ້ອຍ 1 ຮູບແບບ','Please select at least 1 format','โปรดเลือกอย่างน้อย 1 รูปแบบ','형식을 1개 이상 선택하세요'), 'warn'); return; }
+
+  /* Refused formats are dropped before anything is generated. The server decides
+   * — DB.recordExport() returns false on a 403 — so this is not a UI-only
+   * restriction; the check below is what stops a half-written file. */
+  const denied = fmts.filter(f => !canExport(f));
+  if (denied.length === fmts.length) {
+    toast(bi('ບັນຊີນີ້ບໍ່ມີສິດສົ່ງອອກຮູບແບບນີ້',
+             'This account does not have permission to export in that format',
+             'บัญชีนี้ไม่มีสิทธิ์ส่งออกรูปแบบนี้',
+             '이 계정에는 해당 형식으로 내보낼 권한이 없습니다'), 'warn');
+    return;
+  }
+  if (denied.length) {
+    toast(bi('ຂ້າມ ' + denied.length + ' ຮູບແບບທີ່ບໍ່ມີສິດ',
+             'Skipped ' + denied.length + ' format(s) you cannot export',
+             'ข้าม ' + denied.length + ' รูปแบบที่ไม่มีสิทธิ์',
+             '권한이 없는 ' + denied.length + '개 형식을 건너뜀'), 'warn');
+  }
 
   closeOverlay('export-overlay');
   await new Promise(r => setTimeout(r, 150));
 
   const scope = _exportCtx.scope;
   const g = DB.getGroup(activeGroupId);
-  let workers;
-  if (scope === 'worker') {
-    const uid = _exportCtx.uid || _currentViewUid;
-    workers = g ? g.workers.filter(x => x.uid === uid) : [];
-  } else {
-    workers = tableFiltered.length ? tableFiltered : DB.getWorkers(activeGroupId);
-  }
+  const workers = _exportWorkers(scope, _exportCtx.uid);
   // The .kdb bundle always exports the COMPLETE group (never the filtered view),
   // so it can run even when the current search/filter shows nothing.
   if (!workers.length && !fmts.includes('kdb')) { toast(bi('ບໍ່ມີຂໍ້ມູນ','No data','ไม่มีข้อมูล','데이터 없음'), 'warn'); return; }
 
-  for (const fmt of fmts) {
-    if (fmt === 'detail-pdf') {
-      // real PDF file; browser print dialog only if pdf-lib can't load
-      try { await _doWorkerDetailPdf(workers[0], g); }
-      catch (e) { console.warn('pdf-lib failed → print fallback:', e); exportWorkerPDF(); await new Promise(r => setTimeout(r, 200)); }
+  /* ── The package collects, rather than sits alongside ──
+   * With Package ticked, the other formats are generated into the archive
+   * instead of into the downloads folder — one deliverable, which is the whole
+   * point of asking for a package. Two are left out on purpose:
+   *   docs — the package already contains every document, by category and
+   *          version, so a second flat ZIP of the same files inside it would be
+   *          pure duplication;
+   *   kdb  — a restorable bundle of the entire group, which is a different
+   *          artefact with a different audience, and would dwarf the package.
+   */
+  const wantsPackage = fmts.includes('package') && !denied.includes('package');
+  const inPackage = f => wantsPackage && f !== 'docs' && f !== 'kdb';
+  const others = fmts.filter(f => f !== 'package' && !denied.includes(f));
+
+  /* One bucket for the whole run, switched on and off per format. Pointing
+   * _exportCapture at a fresh array (or at null) each time would throw away
+   * everything collected so far the moment an excluded format came up — with
+   * the tiles in DOM order, ticking CSV + Documents + Package did exactly that
+   * and lost the CSV. */
+  const captured = [];
+  try {
+    for (const fmt of others) {
+      _exportCapture = inPackage(fmt) ? captured : null;
+      /* Server-side authorisation + audit, per format, BEFORE the file is
+       * produced. A false here means the server refused: skip that format rather
+       * than writing a file the account is not entitled to. */
+      const receipt = await DB.recordExport(fmt, _exportCtx.scope || 'group', workers.length);
+      if (!receipt) {
+        toast(bi('ຖືກປະຕິເສດ: ', 'Refused: ', 'ถูกปฏิเสธ: ', '거부됨: ') + fmt, 'warn');
+        continue;
+      }
+      _rememberReceipt(receipt);
+      if (fmt === 'detail-pdf') {
+        // real PDF file; browser print dialog only if pdf-lib can't load
+        try { await _doWorkerDetailPdf(workers[0], g); }
+        catch (e) { console.warn('pdf-lib failed → print fallback:', e); exportWorkerPDF(); await new Promise(r => setTimeout(r, 200)); }
+      }
+      else if (fmt === 'kd-pdf') {
+        try { await _doKdCardPdfFile(workers, g); }
+        catch (e) { console.warn('pdf-lib failed → print fallback:', e); _doKdCardPdf(workers, g); }
+      }
+      else if (fmt === 'kd-png')     await _doKdCardPng(workers, g);
+      else if (fmt === 'pptx')       await _doKdCardPptx(workers, g);
+      else if (fmt === 'csv')        _doExportCsv(workers, g);
+      else if (fmt === 'xlsx')       await _doExportXlsx(workers, g);
+      else if (fmt === 'docs')       await _doExportDocs(workers);
+      else if (fmt === 'kdb')        await _doDatabaseBundle(g);
     }
-    else if (fmt === 'kd-pdf') {
-      try { await _doKdCardPdfFile(workers, g); }
-      catch (e) { console.warn('pdf-lib failed → print fallback:', e); _doKdCardPdf(workers, g); }
-    }
-    else if (fmt === 'kd-png')     await _doKdCardPng(workers, g);
-    else if (fmt === 'pptx')       await _doKdCardPptx(workers, g);
-    else if (fmt === 'csv')        _doExportCsv(workers, g);
-    else if (fmt === 'xlsx')       await _doExportXlsx(workers, g);
-    else if (fmt === 'docs')       await _doExportDocs(workers);
-    else if (fmt === 'kdb')        await _doDatabaseBundle(g);
+  } finally {
+    /* Capture mode MUST NOT survive this function. Left on, every later export
+     * in the session would silently produce no file at all. */
+    _exportCapture = null;
+  }
+
+  if (wantsPackage) {
+    /* The package is built BY the server, which authorises and records it as
+     * part of starting the job. Asking for a receipt here as well would put two
+     * DATA_EXPORT rows in the trail for one export. */
+    await _doExportPackage(workers, captured);
   }
 }
 
@@ -4423,27 +6338,31 @@ function _doKdCardPdf(workers, g) {
 }
 
 async function _doKdCardPng(workers, g) {
-  if (!window.html2canvas) { toast(bi('html2canvas ບໍ່ໄດ້ໂຫລດ','html2canvas not loaded','html2canvas ยังไม่โหลด','html2canvas가 로드되지 않음'), 'warn'); return; }
+  /* The library is fetched on first use now, so this waits for it rather than
+     testing whether it happened to be there. Without the await, lazy loading
+     would make every card export bail out on the old presence check. */
+  try { await _loadHtml2Canvas(); }
+  catch (e) { toast(bi('html2canvas ບໍ່ໄດ້ໂຫລດ','html2canvas not loaded','html2canvas ยังไม่โหลด','html2canvas가 로드되지 않음'), 'warn'); return; }
   const showProg = workers.length > 3;
   if (showProg) _progressShow(bi('ກຳລັງສ້າງຮູບ KD Card', 'Creating KD Card image', 'กำลังสร้างรูป KD Card', 'KD 카드 이미지 생성 중'));
   try {
   for (let i = 0; i < workers.length; i++) {
     const w = workers[i];
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-999;background:#fff;padding:8px;width:340px;';
+    // 1920 + 2×8px padding: the fit box lands on exactly the surface width, so
+    // the slide is captured at its native 1:1 scale (scale 1 here now beats the
+    // old 340px box at scale 2 — 1920 real pixels instead of 680).
+    wrap.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-999;background:#fff;padding:8px;width:1936px;';
     wrap.innerHTML = _renderKdCard(w, g);
     document.body.appendChild(wrap);
+    _kdFitAll(wrap);
     try {
-      const canvas = await html2canvas(wrap, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      const canvas = await _rasterise(wrap);
       const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = _safeFile(w.en_name || w.lo_name, 'worker') + '_kd_card.png';
-      a.click();
-      URL.revokeObjectURL(url);
+      _emitExport(blob, _safeFile(w.en_name || w.lo_name, 'worker') + '_kd_card.png');
       if (showProg) _progressSet((i + 1) / workers.length * 100, (i + 1) + '/' + workers.length);
-      if (workers.length > 1) await new Promise(r => setTimeout(r, 400));
+      // The pause spaces out repeated download prompts; capturing needs none.
+      if (workers.length > 1 && !_exportCapture) await new Promise(r => setTimeout(r, 400));
     } finally {
       document.body.removeChild(wrap);
     }
@@ -4472,14 +6391,11 @@ function _doExportCsv(workers, g) {
   const selFields = _exportSelectedFields();
   if (!selFields.length) { toast(bi('ກະລຸນາເລືອກ field ຢ່າງໜ້ອຍ 1 ອັນ','Please select at least 1 field','โปรดเลือกฟิลด์อย่างน้อย 1 ช่อง','항목을 1개 이상 선택하세요'), 'warn'); return; }
   const gName = g ? g.name : '';
-  const rows = workers.map(w => selFields.map(f =>
-    '"' + _exportFieldValue(w, f, gName).toString().replace(/"/g, '""') + '"'
-  ).join(','));
-  const csv = '﻿' + [selFields.map(f => f.label).join(','), ...rows].join('\n');
-  const a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-  a.download = _safeFile(gName, 'workers') + '.csv';
-  a.click();
+  // Quoting, BOM and line endings come from the shared writer — see infra/csv.js.
+  const csv = KDCsv.build(selFields.map(f => f.label),
+                          workers.map(w => selFields.map(f => _exportFieldValue(w, f, gName))),
+                          _csvWatermark());
+  _emitExport(csv, _safeFile(gName, 'workers') + '.csv', 'text/csv;charset=utf-8');
 }
 
 // ── Excel (.xlsx) export ──────────────────────────────────────────
@@ -4586,12 +6502,7 @@ async function _doExportXlsx(workers, g) {
 
   const blob = await zip.generateAsync({ type: 'blob',
     mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = _safeFile(gName, 'workers') + '.xlsx';
-  a.click();
-  URL.revokeObjectURL(url);
+  _emitExport(blob, _safeFile(gName, 'workers') + '.xlsx');
   toast('Excel ✓', 'ok');
 }
 
@@ -4643,17 +6554,128 @@ async function _doExportDocs(workers) {
   }
   const content = await zip.generateAsync({ type: 'blob' },
     m => _progressSet(90 + (m.percent || 0) * 0.1, bi('ບີບອັດໄຟລ໌...', 'Compressing files…', 'บีบอัดไฟล์...', '파일 압축 중…')));
-  const url = URL.createObjectURL(content);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = _safeFile((DB.getGroup(activeGroupId) || {}).name, 'workers') + '_docs.zip';
-  a.click();
-  URL.revokeObjectURL(url);
+  _emitExport(content, _safeFile((DB.getGroup(activeGroupId) || {}).name, 'workers') + '_docs.zip');
   } catch (e) {
     toast('Export failed: ' + (e && e.message || e), 'warn');
   } finally {
     _progressDone();
   }
+}
+
+/* ── EXPORT PACKAGE (server-built: photos + documents in named folders) ──
+ *
+ * Unlike every other format here, the browser does not build this one. It asks
+ * the server to start a job, follows the progress, and then downloads the
+ * finished archive. The reason is size: fifty workers is several hundred
+ * megabytes of scans, which the browser would have to fetch through the page
+ * and hold in memory to zip — and would lose entirely if the tab closed.
+ *
+ * The poll interval is deliberately unhurried. Progress on a job measured in
+ * minutes does not become more useful by being asked for ten times a second,
+ * and each poll is a round trip through the tunnel.
+ */
+const _PKG_POLL_MS = 1200;
+/* A build that has stopped reporting progress. Long enough to cover a slow
+ * fetch of one large document from R2, short enough that a wedged job does not
+ * leave the user staring at a frozen bar forever. */
+const _PKG_STALL_MS = 180000;
+
+async function _doExportPackage(workers, reports) {
+  const uids = workers.map(w => w.uid).filter(Boolean);
+  if (!uids.length) { toast(bi('ບໍ່ມີຂໍ້ມູນ','No data','ไม่มีข้อมูล','데이터 없음'), 'warn'); return; }
+
+  const options = {
+    categories:  _selectedExportCats(),
+    allVersions: (document.getElementById('export-pkg-allver') || {}).checked !== false,
+    photos:      (document.getElementById('export-pkg-photos') || {}).checked !== false,
+    fields:      _selectedExportFields(),
+  };
+
+  _progressShow(t('exp_pkg_building'));
+  try {
+    /* Upload the files the browser just made, before starting the build. One
+     * that fails to upload is reported and the export continues without it —
+     * losing a spreadsheet must not cost the operator the passport scans, which
+     * are the part they cannot reproduce by hand. */
+    const attachments = [];
+    const files = Array.isArray(reports) ? reports : [];
+    for (let i = 0; i < files.length; i++) {
+      _progressSet(i / Math.max(1, files.length) * 5,
+        t('exp_pkg_uploading', { name: files[i].name }));
+      try { attachments.push(await DB.attachExportFile(files[i].name, files[i].blob)); }
+      catch (e) {
+        console.warn('[export] attachment failed:', files[i].name, e && e.message || e);
+        toast(t('exp_pkg_attach_failed', { name: files[i].name }), 'warn');
+      }
+    }
+
+    const started = await DB.startExportPackage(uids, options, _exportCtx.scope || 'group', attachments);
+    if (!started || !started.ok) {
+      const why = (started && started.error) || 'failed';
+      toast(t('exp_pkg_err_' + why) !== 'exp_pkg_err_' + why ? t('exp_pkg_err_' + why)
+                                                             : t('exp_pkg_failed') + ' ' + why, 'warn');
+      return;
+    }
+
+    const jobId = started.job.id;
+    let job = started.job, lastDone = -1, lastChange = Date.now();
+    while (job.state === 'running') {
+      await new Promise(r => setTimeout(r, _PKG_POLL_MS));
+      let r;
+      try { r = await DB.exportPackageStatus(jobId); }
+      catch (e) {
+        /* One failed poll is a hiccup, not a failed export — the build is on
+         * the server and carries on regardless. Keep waiting; the stall timer
+         * below is what ends a job that really has stopped. */
+        if (Date.now() - lastChange > _PKG_STALL_MS) throw e;
+        continue;
+      }
+      job = (r && r.job) || job;
+      if (job.done !== lastDone) { lastDone = job.done; lastChange = Date.now(); }
+      else if (Date.now() - lastChange > _PKG_STALL_MS) {
+        throw new Error(t('exp_pkg_stalled'));
+      }
+      // Cap the bar at 95% until the file actually exists: the summary and the
+      // manifest are still to be written after the last worker.
+      _progressSet(Math.min(95, job.percent || 0),
+        t('exp_pkg_progress', { done: job.done, total: job.total }));
+    }
+
+    if (job.state !== 'done') throw new Error(job.error || t('exp_pkg_failed'));
+
+    /* A plain navigation, not fetch(): the session cookie goes with it, the
+     * browser streams straight to disk, and a 300 MB archive never has to exist
+     * as a Blob in the page. */
+    const a = document.createElement('a');
+    a.href = DB.exportPackageUrl(jobId);
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    const mb = (job.bytes / 1048576).toFixed(1);
+    toast(t('exp_pkg_done', { n: job.total, docs: job.documents, mb }) +
+          (job.reports ? ' + ' + t('exp_pkg_reports', { n: job.reports }) : ''), 'ok');
+    /* Missing files are named, not swallowed. The operator asked for them to be
+     * skipped silently DURING the build — not for the export to end up quietly
+     * incomplete with nobody told. */
+    if (job.skipped) {
+      toast(t('exp_pkg_skipped', { n: job.skipped }) +
+            (job.skippedSample && job.skippedSample.length ? ' — ' + job.skippedSample[0] : ''), 'warn');
+    }
+  } catch (e) {
+    toast(t('exp_pkg_failed') + ' ' + ((e && e.message) || e), 'warn');
+  } finally {
+    _progressDone();
+  }
+}
+
+/** The ticked summary columns, or null when they are all ticked. */
+function _selectedExportFields() {
+  const boxes = [...document.querySelectorAll('#export-field-list input[type="checkbox"]')];
+  if (!boxes.length) return null;
+  const on = boxes.filter(b => b.checked).map(b => b.name.replace(/^ef-/, ''));
+  return on.length === boxes.length ? null : on;
 }
 
 // ── PROGRESS overlay ──────────────────────────────────────────────
@@ -4768,7 +6790,7 @@ async function _doDatabaseBundle(g) {
   for (let wi = 0; wi < workers.length; wi++) {
     const w = workers[wi];
     const rec = { ...w };
-    delete rec.photo; delete rec.photo_orig; delete rec.documents;
+    delete rec.photo; delete rec.photo_orig; delete rec.photo_thumb; delete rec.documents;
 
     if (w.photo) {
       const got = await _grab(w.photo);
@@ -4827,12 +6849,7 @@ async function _doDatabaseBundle(g) {
   // Zipping/compression is the final 90–100%.
   const content = await zip.generateAsync({ type: 'blob' },
     m => _progressSet(90 + (m.percent || 0) * 0.1, bi('ບີບອັດໄຟລ໌...', 'Compressing files…', 'บีบอัดไฟล์...', '파일 압축 중…')));
-  const url = URL.createObjectURL(content);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = _safeFile(g.name, 'database') + '.kdb';
-  a.click();
-  URL.revokeObjectURL(url);
+  _emitExport(content, _safeFile(g.name, 'database') + '.kdb');
   toast(bi('ສ້າງໄຟລ໌ຖານຂໍ້ມູນສຳເລັດ · ' + out.length + ' ຄົນ, ' + (nPhotos + nDocs) + ' ຮູບ',
            'Database file created · ' + out.length + ' people, ' + (nPhotos + nDocs) + ' images',
            'สร้างไฟล์ฐานข้อมูลสำเร็จ · ' + out.length + ' คน, ' + (nPhotos + nDocs) + ' รูป',
@@ -5227,12 +7244,7 @@ async function _doKdCardPptx(workers, g) {
     if (!slides.length) { toast(bi('ບໍ່ມີຂໍ້ມູນ','No data','ไม่มีข้อมูล','데이터 없음'), 'warn'); return; }
     _progressSet(95, bi('ປະກອບໄຟລ໌...', 'Assembling file…', 'ประกอบไฟล์...', '파일 조합 중…'));
     const blob = await _buildPptx(slides);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = _safeFile(g && g.name, 'workers') + '.pptx';
-    a.click();
-    URL.revokeObjectURL(url);
+    _emitExport(blob, _safeFile(g && g.name, 'workers') + '.pptx');
     toast('PowerPoint ✓', 'ok');
   } catch (e) {
     // native building failed → fall back to the old rasterised (image) slides
@@ -5319,16 +7331,22 @@ async function _buildPptxRaster(slides) {
 }
 
 async function _doKdCardPptxRaster(workers, g) {
-  if (!window.html2canvas) { toast(bi('html2canvas ບໍ່ໄດ້ໂຫລດ','html2canvas not loaded','html2canvas ยังไม่โหลด','html2canvas가 로드되지 않음'), 'warn'); return; }
+  /* The library is fetched on first use now, so this waits for it rather than
+     testing whether it happened to be there. Without the await, lazy loading
+     would make every card export bail out on the old presence check. */
+  try { await _loadHtml2Canvas(); }
+  catch (e) { toast(bi('html2canvas ບໍ່ໄດ້ໂຫລດ','html2canvas not loaded','html2canvas ยังไม่โหลด','html2canvas가 로드되지 않음'), 'warn'); return; }
   if (!window.JSZip)       { toast(bi('JSZip ບໍ່ໄດ້ໂຫລດ','JSZip not loaded','JSZip ยังไม่โหลด','JSZip가 로드되지 않음'), 'warn'); return; }
   const slides = [];
   for (let i = 0; i < workers.length; i++) {
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-999;background:#fff;padding:8px;width:340px;';
+    // Native 1:1 capture of the 1920-wide slide surface (see _doKdCardPng).
+    wrap.style.cssText = 'position:fixed;left:-9999px;top:0;z-index:-999;background:#fff;padding:8px;width:1936px;';
     wrap.innerHTML = _renderKdCard(workers[i], g);
     document.body.appendChild(wrap);
+    _kdFitAll(wrap);
     try {
-      const canvas = await html2canvas(wrap, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      const canvas = await _rasterise(wrap);
       slides.push({ b64: canvas.toDataURL('image/png').split(',')[1], w: canvas.width, h: canvas.height });
     } finally {
       document.body.removeChild(wrap);
@@ -5339,12 +7357,7 @@ async function _doKdCardPptxRaster(workers, g) {
   if (!slides.length) { toast(bi('ບໍ່ມີຂໍ້ມູນ','No data','ไม่มีข้อมูล','데이터 없음'), 'warn'); return; }
   _progressSet(95, bi('ປະກອບໄຟລ໌...', 'Assembling file…', 'ประกอบไฟล์...', '파일 조합 중…'));
   const blob = await _buildPptxRaster(slides);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = _safeFile(g && g.name, 'workers') + '.pptx';
-  a.click();
-  URL.revokeObjectURL(url);
+  _emitExport(blob, _safeFile(g && g.name, 'workers') + '.pptx');
   toast('PowerPoint ✓', 'ok');
 }
 
@@ -5514,11 +7527,7 @@ async function _photoToJpgBytes(src, boxW, boxH) {
   } catch (e) { return null; }
 }
 function _pdfDownload(bytes, filename) {
-  const blob = new Blob([bytes], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
+  _emitExport(new Blob([bytes], { type: 'application/pdf' }), filename);
 }
 
 // KD cards → one card per A4-landscape page, same _KD_GEO as the pptx export
@@ -5754,8 +7763,35 @@ function closeOverlay(id) {
   document.getElementById(id).classList.remove('open');
   _overlayStack = _overlayStack.filter(x => x !== id);
   if (id === 'view-overlay') _currentViewUid = null;
+  /* Drop the administration panes' cached payloads on close. Reopening Settings
+   * then shows current numbers rather than a snapshot from an hour ago — and
+   * the caches include account lists and session counts, which should not sit
+   * in memory longer than the screen that displays them. */
+  if (id === 'settings-overlay' && typeof acResetCaches === 'function') acResetCaches();
+  if (id === 'cardzoom-overlay') {
+    _exitFullscreen();
+    clearTimeout(_czIdleT);
+    document.getElementById('cardzoom-overlay')?.classList.remove('cz-idle');
+    // Catch the detail drawer up with whoever Present ended on (the refresh was
+    // skipped per-flip to keep presenting smooth).
+    if (_presentDirty) {
+      _presentDirty = false;
+      const voOpen = document.getElementById('view-overlay')?.classList.contains('open');
+      if (voOpen && _currentViewUid) openView(_currentViewUid, true);
+    }
+  }
   if (!document.querySelector('.overlay.open')) document.body.classList.remove('no-scroll');
 }
+
+// Esc / F11 out of fullscreen while the card preview is open → close the overlay
+// too, so the app state and the browser's fullscreen state never drift apart.
+function _onFullscreenChange() {
+  if (document.fullscreenElement) return;
+  const cz = document.getElementById('cardzoom-overlay');
+  if (cz && cz.classList.contains('open')) closeOverlay('cardzoom-overlay');
+}
+document.addEventListener('fullscreenchange', _onFullscreenChange);
+document.addEventListener('webkitfullscreenchange', _onFullscreenChange);
 
 // Close transient popups when clicking outside them
 document.addEventListener('click', e => {
@@ -5902,98 +7938,482 @@ document.querySelectorAll('.lang-btn').forEach(btn => {
   });
 });
 
-// ── SETTINGS (all users — admin sees Cities+Users tabs, viewer sees Appearance only) ──
-const _SET_TABS = ['appearance','company','cities','documents','notifications','data','users','about'];
+/* ══════════════════════════════════════════════════════════════════
+ * SETTINGS — the administration centre shell (P4)
+ * ══════════════════════════════════════════════════════════════════
+ * The tab list is derived from the DOM rather than hard-coded: adding a pane in
+ * index.html is all it takes for it to work here, which is what stopped the old
+ * eight-entry array from silently going stale.
+ *
+ * Visibility is decided by PERMISSION, not by role. A nav item carries
+ * data-perm="x.y" (or "a|b" for either), and applySettingsPermissions() hides
+ * what the account cannot use. This replaced `.admin-only`, which tested for
+ * "not a viewer" and therefore showed every administrative control to Manager
+ * and Employee accounts that the server would then refuse.
+ */
+function _setTabs() {
+  return Array.from(document.querySelectorAll('#set-tabs .set-nav-item')).map(b => b.dataset.tab);
+}
 let _currentSetTab = 'appearance';
 
 function openSettings() {
+  applySettingsPermissions();
   renderSettings();
   const search = document.getElementById('settings-search-input');
   if (search) search.value = '';
-  switchSettingsTab('appearance');
+  filterSettings('');
+  // Land on the first section this account can actually open — for an Auditor
+  // that is not the same tab as for an Admin. Locked tabs are skipped, otherwise
+  // opening Settings would greet the user with a refusal toast.
+  const first = document.querySelector('#set-tabs .set-nav-item:not([hidden]):not(.set-nav-locked)');
+  _setSuppressMobileNav = true;
+  try { switchSettingsTab(first ? first.dataset.tab : 'appearance'); }
+  finally { _setSuppressMobileNav = false; }
+  _setMobileRefresh();
+  /* A phone opens on the LIST. switchSettingsTab above chose a section so the
+   * desktop pane is never blank, but presenting that section first on a phone
+   * would hide the fact that there are twenty-three others. */
+  if (_setIsMobile()) _setMobileShowList();
   openOverlay('settings-overlay');
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * Settings on a phone: two screens instead of two panes
+ * ══════════════════════════════════════════════════════════════════
+ * The markup is the same at every width. What changes is that the nav becomes a
+ * full-screen LIST and the open pane becomes a full-screen SECTION, with only
+ * one of them mounted at a time.
+ *
+ * Nothing here names a section. The list is the nav that already exists, and
+ * the section is whichever pane switchSettingsTab already chose — so a section
+ * added later appears by itself. (The comment in main.css explains why that
+ * property is load-bearing: the previous phone layout hard-coded eight section
+ * names and silently lost the other sixteen.)
+ */
+const SET_MOBILE_MQ = '(max-width: 768px)';
+function _setIsMobile() {
+  try { return window.matchMedia(SET_MOBILE_MQ).matches; } catch (e) { return false; }
+}
+function _setModal() { return document.querySelector('#settings-overlay .settings-modal'); }
+
+function _setMobileShowList() {
+  const m = _setModal();
+  if (!m) return;
+  m.classList.add('set-m-list');
+  m.classList.remove('set-m-detail');
+  const t = document.getElementById('set-mtitle');
+  if (t) t.textContent = bi('ຕັ້ງຄ່າ', 'Settings', 'ตั้งค่า', '설정');
+  const nav = document.getElementById('set-tabs');
+  if (nav) nav.scrollTop = _setListScroll;
+}
+
+let _setListScroll = 0;
+
+function _setMobileShowDetail(tab) {
+  const m = _setModal();
+  if (!m) return;
+  const nav = document.getElementById('set-tabs');
+  if (nav && m.classList.contains('set-m-list')) _setListScroll = nav.scrollTop;
+  m.classList.remove('set-m-list');
+  m.classList.add('set-m-detail');
+  // The title comes from the pane's own heading, so it is already translated and
+  // already correct for any section, including ones that do not exist yet.
+  const pane = document.getElementById('set-pane-' + tab);
+  const t = document.getElementById('set-mtitle');
+  if (t) t.textContent = (pane && pane.querySelector('.ssh-title')?.textContent) || '';
+  const body = document.querySelector('#settings-overlay .settings-content');
+  if (body) body.scrollTop = 0;
+}
+
+/** The back button, the swipe, and the hardware back key all land here. */
+function setMobileBack() {
+  const m = _setModal();
+  if (!m || !m.classList.contains('set-m-detail')) return false;
+  _setMobileShowList();
+  return true;
+}
+
+/** Re-apply the layout after a resize, an orientation change, or a re-open. */
+function _setMobileRefresh() {
+  const m = _setModal();
+  if (!m) return;
+  if (!_setIsMobile()) {
+    // Back to two panes: neither state class means anything here, and leaving
+    // one behind would hide a pane on the desktop.
+    m.classList.remove('set-m-list', 'set-m-detail');
+    return;
+  }
+  if (!m.classList.contains('set-m-detail')) _setMobileShowList();
+  _setRenderAccountCard();
+  _setRenderSummaries();
+}
+
+window.addEventListener('resize', () => {
+  if (document.getElementById('settings-overlay')?.classList.contains('open')) _setMobileRefresh();
+});
+
+/* ── The account card ── */
+function _setRenderAccountCard() {
+  const u = currentUser || {};
+  const name = u.name || u.username || '';
+  const av = document.getElementById('set-acct-av');
+  if (av) av.textContent = avatarInitials(name || '?');
+  const nm = document.getElementById('set-acct-name');
+  if (nm) nm.textContent = name;
+  const sub = document.getElementById('set-acct-sub');
+  if (sub) sub.textContent = u.username && u.username !== name ? u.username : '';
+  const role = document.getElementById('set-acct-role');
+  if (role) role.textContent = roleLabel(u.role);
+}
+
+/* ── The value under each row ──
+ * "Theme — System", "Language — ไทย". Only values already in memory: opening
+ * Settings must not fire a request per row, and a row whose value needs the
+ * server simply shows nothing rather than a spinner or a stale number.
+ *
+ * An unknown tab returns '' — so this can never be the reason a section fails
+ * to appear in the list.
+ */
+function _setSummary(tab) {
+  try {
+    switch (tab) {
+      case 'appearance': {
+        const p = localStorage.getItem('kd_theme') || 'system';
+        return bi(
+          p === 'dark' ? 'ມືດ' : p === 'light' ? 'ແຈ້ງ' : 'ຕາມລະບົບ',
+          p === 'dark' ? 'Dark' : p === 'light' ? 'Light' : 'System',
+          p === 'dark' ? 'มืด' : p === 'light' ? 'สว่าง' : 'ตามระบบ',
+          p === 'dark' ? '다크' : p === 'light' ? '라이트' : '시스템');
+      }
+      case 'language': {
+        const L = { en: 'English', th: 'ไทย', lo: 'ລາວ', ko: '한국어' };
+        return L[currentLang] || currentLang || '';
+      }
+      case 'timezone':
+        return DB.getSetting('timezone', '') ||
+               (Intl.DateTimeFormat().resolvedOptions().timeZone || '');
+      case 'company':
+        return DB.getSetting('company_name', '') || '';
+      case 'documents': {
+        const n = getDocCats().length;
+        return n ? n + ' ' + bi('ໝວດ', n === 1 ? 'category' : 'categories', 'หมวด', '개 분류') : '';
+      }
+      case 'about':
+        // Already fetched at sign-in and cached; never fetched from here.
+        return _appVersion ? 'v' + _appVersion : '';
+      default:
+        return '';
+    }
+  } catch (e) { return ''; }
+}
+
+/** Write every row's value line. Driven by the nav, not by a list of tabs. */
+function _setRenderSummaries() {
+  document.querySelectorAll('#set-tabs .set-nav-item').forEach(nav => {
+    let sub = nav.querySelector('.set-nav-sub');
+    const text = _setSummary(nav.dataset.tab);
+    if (!text) { if (sub) sub.remove(); return; }
+    if (!sub) {
+      sub = document.createElement('span');
+      sub.className = 'set-nav-sub';
+      nav.appendChild(sub);
+    }
+    sub.textContent = text;
+  });
+}
+
+/* ── Swipe back ──
+ * A drag that starts near the left edge and travels right. Deliberately narrow:
+ * the section screens contain horizontally scrollable things (tables, the audit
+ * log), and a swipe starting on one of those must scroll it, not leave it. */
+(function _setSwipeBack() {
+  const modal = () => document.querySelector('#settings-overlay .settings-modal.set-m-detail');
+  let x0 = null, y0 = null, live = false;
+  document.addEventListener('touchstart', (e) => {
+    const m = modal();
+    if (!m || e.touches.length !== 1) { live = false; return; }
+    const t = e.touches[0];
+    live = t.clientX - m.getBoundingClientRect().left < 28;
+    x0 = t.clientX; y0 = t.clientY;
+  }, { passive: true });
+  document.addEventListener('touchend', (e) => {
+    if (!live) return;
+    live = false;
+    const t = e.changedTouches && e.changedTouches[0];
+    if (!t || x0 == null) return;
+    const dx = t.clientX - x0, dy = Math.abs(t.clientY - y0);
+    if (dx > 70 && dy < 60) setMobileBack();
+  }, { passive: true });
+})();
+
+/* ── The hardware back key ──
+ * Scoped as narrowly as it can be: one history entry, pushed only when a phone
+ * opens a section, and consumed only while that section is on screen. Nothing
+ * else in the app uses history, and this must not become the reason a browser
+ * Back somewhere else behaves oddly. */
+let _setPushedState = false;
+function _setPushBackTrap() {
+  if (_setPushedState) return;
+  try { history.pushState({ kdSettings: 1 }, ''); _setPushedState = true; } catch (e) {}
+}
+window.addEventListener('popstate', () => {
+  if (!_setPushedState) return;
+  _setPushedState = false;
+  const open = document.getElementById('settings-overlay')?.classList.contains('open');
+  if (open && _setIsMobile()) { if (!setMobileBack()) closeOverlay('settings-overlay'); }
+});
+
+/**
+ * Mark the nav items whose permission the account does not hold.
+ *
+ * LOCKED, NOT HIDDEN (P4.8.1). This used to set `el.hidden`, which failed twice
+ * over: `.set-nav-item { display: flex }` outranks the UA `[hidden]` rule, so the
+ * item stayed on screen, and switchSettingsTab() then refused it with a bare
+ * `return`. A non-admin account saw 17 normal-looking tabs that did nothing at
+ * all when clicked, with no explanation.
+ *
+ * Now the section stays visible — knowing a capability exists is useful, and the
+ * server refuses the data regardless — but it is visibly locked and says why when
+ * clicked. `hidden` is deliberately never set here: it means "not in the document
+ * for anyone", which is not what a permission check means.
+ */
+function applySettingsPermissions() {
+  const can = (spec) => !spec || spec.split('|').some(p => DB.can(p.trim()));
+  document.querySelectorAll('#set-tabs .set-nav-item').forEach(nav => {
+    const allowed = can(nav.dataset.perm);
+    nav.hidden = false;
+    nav.classList.toggle('set-nav-locked', !allowed);
+    nav.setAttribute('aria-disabled', allowed ? 'false' : 'true');
+    const pane = document.getElementById('set-pane-' + nav.dataset.tab);
+    if (pane && !allowed) pane.style.display = 'none';
+  });
+  // Group headings follow their items; with nothing hidden they all stay.
+  document.querySelectorAll('#set-tabs .set-nav-group').forEach(g => { g.hidden = false; });
+}
+
+/** True when this account may not open `tab`. */
+function _setTabLocked(tab) {
+  const nav = document.querySelector('#set-tabs .set-nav-item[data-tab="' + tab + '"]');
+  return !!(nav && nav.classList.contains('set-nav-locked'));
+}
+
+/** The permission(s) a locked tab is waiting on, for the refusal message. */
+function _setTabPerm(tab) {
+  const nav = document.querySelector('#set-tabs .set-nav-item[data-tab="' + tab + '"]');
+  return (nav && nav.dataset.perm) ? nav.dataset.perm.split('|').join(' / ') : '';
+}
+
 function switchSettingsTab(tab) {
+  if (!tab) return;
+  const nav = document.querySelector('#set-tabs .set-nav-item[data-tab="' + tab + '"]');
+  /* Refuse out loud. The old silent `return` is what made these read as broken
+   * buttons rather than restricted ones. */
+  if (nav && nav.classList.contains('set-nav-locked')) {
+    const perm = _setTabPerm(tab);
+    toast(bi('ບັນຊີນີ້ບໍ່ມີສິດເຂົ້າເບິ່ງສ່ວນນີ້' + (perm ? ' (ຕ້ອງການ: ' + perm + ')' : ''),
+             'This account does not have permission to open this section' + (perm ? ' (needs: ' + perm + ')' : ''),
+             'บัญชีนี้ไม่มีสิทธิ์เข้าดูส่วนนี้' + (perm ? ' (ต้องการ: ' + perm + ')' : ''),
+             '이 계정에는 이 섹션을 열 권한이 없습니다' + (perm ? ' (필요: ' + perm + ')' : '')), 'warn');
+    return;
+  }
   _currentSetTab = tab;
-  document.querySelectorAll('.set-nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  _SET_TABS.forEach(t2 => {
+
+  document.querySelectorAll('#set-tabs .set-nav-item').forEach(b => {
+    const on = b.dataset.tab === tab;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+    // Roving tabindex: one stop for the whole tablist, arrows move within it.
+    b.tabIndex = on ? 0 : -1;
+  });
+  _setTabs().forEach(t2 => {
     const p = document.getElementById('set-pane-' + t2);
     if (p) p.style.display = (t2 === tab) ? 'block' : 'none';
   });
+
+  // Panes owned by admin-center.js fetch on first open.
+  if (typeof acOwnsTab === 'function' && acOwnsTab(tab)) acRenderTab(tab);
+
+  /* On a phone, choosing a section IS navigating into it. Suppressed for the
+   * two internal calls — opening Settings, and clearing the search box — which
+   * pick a section without the user having tapped one. */
+  if (_setIsMobile() && !_setSuppressMobileNav) {
+    _setMobileShowDetail(tab);
+    _setPushBackTrap();
+  }
 }
 
-// Search box in the header — filter sections + rows by keyword (data-kw).
+/* Set while switchSettingsTab is called by the app rather than by a tap. */
+let _setSuppressMobileNav = false;
+
+/* ── Settings search (Task 10) ─────────────────────────────────────
+ * Matches a section on its keywords, its heading, or any row inside it, and
+ * narrows the nav to the hits. Typing "mfa" reaches MFA Policy, "backup"
+ * reaches the backup centre, "session" reaches both session screens.
+ *
+ * Nothing is fetched to search: keywords live on the nav items (data-kw, in all
+ * four languages), so a section is findable before its pane has ever loaded.
+ */
 function filterSettings(q) {
   q = (q || '').trim().toLowerCase();
-  const navs = document.querySelectorAll('#set-tabs .set-nav-item');
-  const rows = document.querySelectorAll('#settings-overlay .set-row');
+  const navs = Array.from(document.querySelectorAll('#set-tabs .set-nav-item'))
+    .filter(n => !n.hidden);
+  const status = document.getElementById('set-search-status');
+
   if (!q) {
-    navs.forEach(n => { n.style.display = ''; });
-    rows.forEach(r => { r.style.display = ''; });
-    switchSettingsTab(_currentSetTab || 'appearance');
+    navs.forEach(n => n.classList.remove('set-nav-hit', 'set-nav-miss'));
+    document.querySelectorAll('#settings-overlay .set-row').forEach(r => { r.style.display = ''; });
+    document.querySelectorAll('#set-tabs .set-nav-group').forEach(g => { g.hidden = false; });
+    if (status) status.textContent = '';
+    /* Only re-open the current tab if it is still openable — clearing the search
+     * box must never fire a refusal toast the user did not ask for, and on a
+     * phone it must not throw the user into a section they were not opening. */
+    if (!_setTabLocked(_currentSetTab || 'appearance')) {
+      _setSuppressMobileNav = true;
+      try { switchSettingsTab(_currentSetTab || 'appearance'); }
+      finally { _setSuppressMobileNav = false; }
+    }
     return;
   }
-  let firstShown = null;
-  _SET_TABS.forEach(tab => {
+
+  let firstHit = null, hits = 0;
+  navs.forEach(nav => {
+    const tab = nav.dataset.tab;
     const pane = document.getElementById('set-pane-' + tab);
-    const nav  = document.querySelector('.set-nav-item[data-tab="' + tab + '"]');
-    if (!pane || !nav) return;
-    const adminOnly = nav.classList.contains('admin-only');
-    if (adminOnly && !isAdmin()) { nav.style.display = 'none'; pane.style.display = 'none'; return; }
-    const navKw = (nav.dataset.kw || '').toLowerCase();
-    const headTxt = (pane.querySelector('.ssh-title')?.textContent || '').toLowerCase();
+    const navKw = ((nav.dataset.kw || '') + ' ' + (nav.textContent || '')).toLowerCase();
+    const headTxt = pane ? (pane.querySelector('.ssh-title')?.textContent || '').toLowerCase() : '';
     const sectionMatch = navKw.includes(q) || headTxt.includes(q);
+
     let anyRow = false;
-    pane.querySelectorAll('.set-row').forEach(r => {
-      const kw = ((r.dataset.kw || '') + ' ' + (r.textContent || '')).toLowerCase();
-      const m = sectionMatch || kw.includes(q);
-      r.style.display = m ? '' : 'none';
-      if (m) anyRow = true;
-    });
-    // panes without .set-row (cities/data lists/users/about) match on section only
-    const hasRows = pane.querySelector('.set-row');
-    const show = sectionMatch || (hasRows ? anyRow : false);
-    pane.style.display = show ? 'block' : 'none';
-    nav.style.display = show ? '' : 'none';
-    nav.classList.toggle('active', false);
-    if (show && !firstShown) { firstShown = nav; nav.classList.add('active'); }
+    if (pane) {
+      pane.querySelectorAll('.set-row').forEach(r => {
+        const kw = ((r.dataset.kw || '') + ' ' + (r.textContent || '')).toLowerCase();
+        const m = sectionMatch || kw.includes(q);
+        r.style.display = m ? '' : 'none';
+        if (m) anyRow = true;
+      });
+    }
+    const show = sectionMatch || anyRow;
+    nav.classList.toggle('set-nav-miss', !show);
+    nav.classList.toggle('set-nav-hit', show);
+    if (show) { hits++; if (!firstHit) firstHit = nav; }
   });
+
+  document.querySelectorAll('#set-tabs .set-nav-group').forEach(g => {
+    const items = Array.from(g.querySelectorAll('.set-nav-item')).filter(i => !i.hidden);
+    g.hidden = !items.length || items.every(i => i.classList.contains('set-nav-miss'));
+  });
+
+  if (status) {
+    status.textContent = hits
+      ? hits + ' ' + bi('ໝວດທີ່ກົງກັນ', 'matching sections', 'หมวดที่ตรงกัน', '개 일치 섹션')
+      : bi('ບໍ່ພົບ', 'No matches', 'ไม่พบ', '일치 항목 없음');
+  }
+  /* Preview the first hit without stealing focus from the search box. A locked
+   * section still counts as a match (the user should find it), but previewing it
+   * would toast on every keystroke — so preview the first OPENABLE hit instead. */
+  const firstOpenable = navs.find(n => n.classList.contains('set-nav-hit') && !n.classList.contains('set-nav-locked'));
+  if (firstOpenable) {
+    /* Suppressed on a phone: previewing is a two-pane idea. Here the list IS
+     * the result, and jumping into a section on every keystroke would take the
+     * search box off screen mid-word. */
+    _setSuppressMobileNav = true;
+    try { switchSettingsTab(firstOpenable.dataset.tab); }
+    finally { _setSuppressMobileNav = false; }
+  }
 }
+
+/**
+ * Keyboard navigation for the settings search and nav (Task 11).
+ *
+ * ↓/↑ from the search box walk the visible sections, Enter opens the focused
+ * one, Escape clears the query. Within the nav the same arrows move between
+ * tabs, which is what a screen-reader user expects from role="tablist".
+ */
+function _setNavVisible() {
+  return Array.from(document.querySelectorAll('#set-tabs .set-nav-item'))
+    .filter(n => !n.hidden && !n.classList.contains('set-nav-miss') && n.offsetParent !== null);
+}
+
+function _setNavKeydown(e) {
+  const search = document.getElementById('settings-search-input');
+  const fromSearch = e.target === search;
+
+  /* Escape is handled BEFORE the empty-list check below.
+   *
+   * A query that matches nothing leaves zero visible sections — and that is
+   * precisely the moment a user reaches for Escape. Returning early on an empty
+   * list let the key fall through to the overlay handler, so "clear what I
+   * typed" closed the whole dialog instead. */
+  if (e.key === 'Escape' && fromSearch && search.value) {
+    /* stopImmediatePropagation, not stopPropagation: the overlay's own Escape
+     * handler is bound to `document` as well, and stopPropagation does not stop
+     * other listeners on the SAME node. */
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    search.value = '';
+    filterSettings('');
+    return;
+  }
+
+  const items = _setNavVisible();
+  if (!items.length) return;
+  const idx = fromSearch ? -1 : items.indexOf(e.target);
+
+  if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    const next = items[Math.min(idx + 1, items.length - 1)] || items[0];
+    next.focus(); switchSettingsTab(next.dataset.tab);
+  } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+    e.preventDefault();
+    if (idx <= 0) { if (search) search.focus(); return; }
+    const prev = items[idx - 1];
+    prev.focus(); switchSettingsTab(prev.dataset.tab);
+  } else if (e.key === 'Home' && !fromSearch) {
+    e.preventDefault(); items[0].focus(); switchSettingsTab(items[0].dataset.tab);
+  } else if (e.key === 'End' && !fromSearch) {
+    e.preventDefault();
+    const last = items[items.length - 1];
+    last.focus(); switchSettingsTab(last.dataset.tab);
+  } else if (e.key === 'Enter' && fromSearch && items.length) {
+    e.preventDefault();
+    items[0].focus(); switchSettingsTab(items[0].dataset.tab);
+  }
+}
+
+/* Capture phase, so this runs before the overlay-level Escape handler and can
+ * decide whether the key belongs to the search box. */
+document.addEventListener('keydown', (e) => {
+  const nav = document.getElementById('set-tabs');
+  if (!nav || !nav.contains(e.target)) return;
+  _setNavKeydown(e);
+}, true);
 
 function renderAppearance() {
   const pref = localStorage.getItem('kd_theme') || 'system';
+  // Theme is a bento tile group now — `selected` is the shared state class.
   document.querySelectorAll('.theme-opt').forEach(b => {
-    b.classList.toggle('active', b.dataset.themeVal === pref);
+    const on = b.dataset.themeVal === pref;
+    b.classList.toggle('selected', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
   });
   _syncSetLangDD();
   updateLogoDisplay();
 }
 
-// ── Custom language dropdown (Settings → Appearance) ──────────────
+// ── Language tiles (Settings → Appearance) ────────────────────────
+// This used to be a custom dropdown. It is the same tile group as the profile
+// flyout and the sign-in page, all three fed from BC_LANGS.
 const _LANG_NAMES = { en: 'English', th: 'ไทย', lo: 'ລາວ', ko: '한국어' };
 function _syncSetLangDD() {
-  const cur = (typeof currentLang !== 'undefined' ? currentLang : 'en');
-  const lbl = document.getElementById('set-lang-cur');
-  if (lbl) lbl.textContent = _LANG_NAMES[cur] || 'English';
-  document.querySelectorAll('#set-lang-menu button').forEach(b => b.classList.toggle('on', b.dataset.lang === cur));
+  const cur  = (typeof currentLang !== 'undefined' ? currentLang : 'en');
+  const grid = document.getElementById('set-lang-grid');
+  if (!grid) return;
+  if (!grid.children.length) bcGroup(grid, BC_LANGS, cur, changeLangFromSettings);
+  else bcMark(grid, cur);
 }
-function toggleSetLangDD(e) {
-  if (e) e.stopPropagation();
-  const dd = document.getElementById('set-lang-dd');
-  if (!dd) return;
-  const open = dd.classList.toggle('open');
-  document.getElementById('set-lang-btn')?.setAttribute('aria-expanded', open ? 'true' : 'false');
-  if (open) _syncSetLangDD();
-}
-function closeSetLangDD() {
-  document.getElementById('set-lang-dd')?.classList.remove('open');
-  document.getElementById('set-lang-btn')?.setAttribute('aria-expanded', 'false');
-}
-function setLangFromDD(lang) {
-  closeSetLangDD();
-  changeLangFromSettings(lang);   // switch + live re-render (renderSettings → _syncSetLangDD)
-}
+// Kept: the document-level outside-click handler still calls this, and older
+// bookmarks/keyboard paths may too. There is no dropdown left to close.
+function closeSetLangDD() {}
 
 // Language dropdown in Settings → Appearance
 function changeLangFromSettings(lang) {
@@ -6002,6 +8422,13 @@ function changeLangFromSettings(lang) {
   rebuildFilters(); renderTable(); renderSidebar(); renderSidebarUser(); renderStats();
   if (document.getElementById('dashboard-welcome')?.style.display !== 'none') renderDashboard();
   renderSettings();
+  /* The administration panes hold rendered HTML, not data — their strings were
+   * baked in the previous language. Drop the caches and re-render the open one
+   * so a language switch does not leave half the screen in the old language. */
+  if (typeof acResetCaches === 'function') {
+    acResetCaches();
+    if (typeof acOwnsTab === 'function' && acOwnsTab(_currentSetTab)) acRenderTab(_currentSetTab);
+  }
 }
 
 // ── Company ───────────────────────────────────────────────────────
@@ -6050,44 +8477,80 @@ async function doBackupNow() {
   try { const f = await DB.backup(); toast((t('vd_saved') || 'Backup') + ' · ' + f, 'ok'); }
   catch (e) { toast('Backup failed: ' + (e.message || e), 'warn'); }
 }
-async function toggleRestoreList() {
-  const box = document.getElementById('set-backup-list');
-  if (!box) return;
-  if (box.style.display !== 'none') { box.style.display = 'none'; return; }
-  box.style.display = 'block';
-  box.innerHTML = '<div class="set-card-label">' + bi('ກຳລັງໂຫລດ...','Loading…','กำลังโหลด...','불러오는 중…') + '</div>';
-  let files = [];
-  try { files = await DB.listBackups(); } catch (e) {}
-  if (!files.length) { box.innerHTML = '<div class="set-card-label">' + bi('ບໍ່ມີໄຟລ໌ສຳຮອງ','No backups','ไม่มีไฟล์สำรอง','백업 없음') + '</div>'; return; }
-  box.innerHTML = '<div class="set-card-label">' + bi('ເລືອກໄຟລ໌ເພື່ອກູ້ຄືນ','Choose a backup','เลือกไฟล์เพื่อกู้คืน','복원할 백업 선택') + '</div>' +
-    '<div class="set-card"><div class="set-list" style="padding:5px 10px">' +
-    files.map(f => {
-      const name = typeof f === 'string' ? f : (f.file || f.name || JSON.stringify(f));
-      return '<div class="set-item"><span class="set-name" style="flex:1">' + esc(name) + '</span>' +
-        '<button class="btn btn-sm" onclick="doRestore(\'' + esc(name) + '\')">' + bi('ກູ້ຄືນ','Restore','กู้คืน','복원') + '</button></div>';
-    }).join('') + '</div></div>';
-}
+/* toggleRestoreList() was removed in P4. It rendered a bare list of filenames
+ * with a Restore button and nothing else — no size, no date, no author, no way
+ * to take a copy before overwriting the live database. renderBackupPane() in
+ * admin-center.js shows the same files as a history table with all of that,
+ * and doRestore() below is still the action it calls. */
 function doRestore(file) {
   showConfirm(bi('ກູ້ຄືນຂໍ້ມູນ','Restore data','กู้คืนข้อมูล','데이터 복원'), bi('ກູ້ຄືນຈາກ ','Restore from ','กู้คืนจาก ','복원: ') + file + bi('? ຂໍ້ມູນປັດຈຸບັນຈະຖືກແທນທີ່.','? Current data will be replaced.','? ข้อมูลปัจจุบันจะถูกแทนที่','? 현재 데이터가 대체됩니다.'), async () => {
     try { await DB.restore(file); toast(bi('ກູ້ຄືນສຳເລັດ','Restored','กู้คืนสำเร็จ','복원됨'), 'ok'); closeOverlay('settings-overlay'); refreshAll(); }
     catch (e) { toast('Restore failed: ' + (e.message || e), 'warn'); }
   });
 }
-function exportAllData() {
-  const data = { exported_at: new Date().toISOString(), groups: DB.getGroups(), cities: DB.getCities(), users: DB.getUsers() };
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'kd-database-' + new Date().toISOString().slice(0, 10) + '.json';
-  a.click();
-  URL.revokeObjectURL(url);
+async function exportAllData() {
+  /* The whole dataset in one file, so it needs the narrowest export grant
+   * (export.bundle) and is recorded as such. Before P4.5 this button produced a
+   * complete database dump with no permission check and no audit entry. */
+  const groups = DB.getGroups();
+  const workers = groups.reduce((n, g) => n + ((g.workers || []).length), 0);
+  const jrcpt = canExport('json') ? await DB.recordExport('json', 'all-data', workers) : false;
+  if (!jrcpt) {
+    toast(bi('ບັນຊີນີ້ບໍ່ມີສິດສົ່ງອອກຂໍ້ມູນທັງໝົດ',
+             'This account cannot export the full dataset',
+             'บัญชีนี้ไม่มีสิทธิ์ส่งออกข้อมูลทั้งหมด',
+             '이 계정은 전체 데이터를 내보낼 수 없습니다'), 'warn');
+    return;
+  }
+  /* users comes from the bootstrap cache, which the server already filters to
+   * what this account may see (user.view) — so an account without it exports
+   * only its own row, not the directory. */
+  _rememberReceipt(jrcpt);
+  /* The receipt is a first-class field here, not a comment: JSON has nowhere to
+   * put one, and a machine-readable provenance block is more useful anyway. */
+  const data = {
+    exported_at: new Date().toISOString(),
+    export_receipt: (jrcpt && jrcpt.exportId) ? {
+      id: jrcpt.exportId, issued_to: jrcpt.issuedTo, issued_at: jrcpt.issuedAt,
+      tag: jrcpt.tag, notice: jrcpt.watermark,
+    } : null,
+    groups, cities: DB.getCities(), users: DB.getUsers(),
+  };
+  _emitExport(JSON.stringify(data, null, 2),
+              'kd-database-' + new Date().toISOString().slice(0, 10) + '.json',
+              'application/json');
 }
 function confirmHardReset() {
   showConfirm(t('confirm_delete') || 'Reset', bi('ລ້າງຂໍ້ມູນທັງໝົດຖາວອນ? ບໍ່ສາມາດກູ້ຄືນໄດ້ (ນອກຈາກມີສຳຮອງ).','Permanently erase ALL data? Cannot be undone (unless you have a backup).','ล้างข้อมูลทั้งหมดถาวร? ไม่สามารถกู้คืนได้ (นอกจากมีสำรอง)','모든 데이터를 영구 삭제할까요? 되돌릴 수 없습니다 (백업이 없으면).'), () => {
     DB.hardReset();
     setTimeout(() => location.reload(), 400);
   });
+}
+
+/* ── Version, from the server (P4.5) ───────────────────────────────
+ * Fetched once from /api/health (unauthenticated, so it also works on the
+ * sign-in page) and cached. Replaced three hard-coded "v2.1" strings that had
+ * gone stale against a 2.2.0 build — including one sitting in the same dialog as
+ * System Health, which read the real version and therefore contradicted it.
+ */
+let _appVersion = '';
+async function loadAppVersion() {
+  if (_appVersion) return _appVersion;
+  try {
+    const r = await fetch('/api/health', { credentials: 'same-origin' });
+    const j = await r.json();
+    _appVersion = (j && j.version) || '';
+  } catch (e) { _appVersion = ''; }
+  applyVersionLabels();
+  return _appVersion;
+}
+
+function applyVersionLabels() {
+  const v = _appVersion ? 'v' + _appVersion : '';
+  const sb = document.getElementById('sb-version');
+  if (sb) sb.textContent = 'Management' + (v ? ' ' + v : '');
+  const ab = document.getElementById('set-about-ver');
+  if (ab) ab.textContent = 'KD Employment Co., Ltd · Management' + (v ? ' ' + v : '');
 }
 
 // ── About ─────────────────────────────────────────────────────────
@@ -6102,17 +8565,30 @@ function renderAbout() {
     [bi('ກຸ່ມ', 'Groups', 'กลุ่ม', '그룹'), groups.length],
     [bi('ແຮງງານ', 'Workers', 'แรงงาน', '근로자'), workers],
     [bi('ເມືອງ', 'Cities', 'เมือง', '도시'), cityCount],
-    [bi('ຜູ້ໃຊ້', 'Users', 'ผู้ใช้', '사용자'), DB.getUsers().length],
   ];
+  // The account directory is filtered server-side to what the caller may see,
+  // so this count is only meaningful — and only shown — with user.view.
+  if (DB.can('user.view')) rows.push([bi('ຜູ້ໃຊ້', 'Users', 'ผู้ใช้', '사용자'), DB.getUsers().length]);
   el.innerHTML = rows.map(([k, v]) =>
     '<div class="set-item"><span class="set-name" style="flex:1">' + k + '</span>' +
     '<span class="set-code">' + v + '</span></div>').join('');
 }
 
+/**
+ * Populate the panes that are cheap and local.
+ *
+ * Everything expensive — anything that needs a server round trip — is rendered
+ * by admin-center.js when its tab is opened, not here. Rendering all of it up
+ * front would fire a dozen requests every time Settings opens, most of them for
+ * screens the operator never looks at.
+ */
 function renderSettings() {
   renderAppearance();
   renderAbout();
-  if (isAdmin()) {
+  loadAppVersion();          // fills the About + sidebar version labels
+  // Workspace panes are gated on settings.update, the same permission their
+  // controls need to save anything.
+  if (DB.can('settings.update')) {
     renderCompany();
     renderCityList('kr');
     renderCityList('la');
@@ -6120,9 +8596,8 @@ function renderSettings() {
     renderDocCatsSettings();
     renderReqFields();
     renderNotifPrefs();
-    renderExportDefault();
-    renderUserList();
   }
+  if (DB.can('export.excel') || DB.can('import.execute')) renderExportDefault();
 }
 
 // ── Document categories (Settings → Documents) — admin-configurable ──
@@ -6158,7 +8633,7 @@ function renderDocCatsSettings(editIdx) {
 // The array order IS the display order everywhere (detail drawer, export), and
 // it is persisted server-side via doc_cats.
 function _reorderDocCats(keys) {
-  if (!isAdmin()) return;
+  if (!DB.can('settings.update')) return;   // server enforces the same permission
   const cats = getDocCats();
   const by = new Map(cats.map(c => [c.key, c]));
   const next = keys.map(k => by.get(k)).filter(Boolean);
@@ -6172,41 +8647,71 @@ function renderReqFields() {
   const sel = new Set(getReqFields());
   el.innerHTML = _reqFieldCatalog().map(([key, label]) =>
     '<label class="reqf-item">' +
-      '<input type="checkbox"' + (sel.has(key) ? ' checked' : '') + (isAdmin() ? '' : ' disabled') +
+      '<input type="checkbox"' + (sel.has(key) ? ' checked' : '') + (DB.can('settings.update') ? '' : ' disabled') +
         ' onchange="toggleReqField(\'' + key + '\',this.checked)">' +
       '<span>' + esc(label) + '</span>' +
     '</label>'
   ).join('');
 }
 function toggleReqField(key, on) {
-  if (!isAdmin()) return;
+  if (!DB.can('settings.update')) return;   // server enforces the same permission
   let cur = getReqFields().slice();
   if (on) { if (!cur.includes(key)) cur.push(key); }
   else    { cur = cur.filter(k => k !== key); }
   if (!cur.length) { cur = ['en_name']; renderReqFields(); }   // never empty
   DB.setSetting('req_fields', cur);
 }
+/* ── Settings: why a control did nothing (P4.8) ────────────────────
+ * Every "Add"/"Save" in Settings used to `return` silently when its field was
+ * empty or the account lacked settings.update, so the click was indistinguishable
+ * from a broken button. These two say what happened and put the caret where the
+ * fix is. Both return false so a guard can be written as `if (!x) return _setNeedInput(...)`.
+ */
+function _setNeedInput(inputId, msg) {
+  toast(msg || bi('ກະລຸນາໃສ່ຊື່ກ່ອນ', 'Enter a name first', 'กรุณากรอกชื่อก่อน', '먼저 이름을 입력하세요'), 'warn');
+  const el = inputId && document.getElementById(inputId);
+  if (el) {
+    el.focus();
+    el.classList.add('set-input-error');
+    setTimeout(() => el.classList.remove('set-input-error'), 1200);
+  }
+  return false;
+}
+function _setNoPermission() {
+  toast(bi('ບັນຊີນີ້ບໍ່ມີສິດແກ້ໄຂການຕັ້ງຄ່າ',
+           'This account cannot change settings',
+           'บัญชีนี้ไม่มีสิทธิ์แก้ไขการตั้งค่า',
+           '이 계정은 설정을 변경할 수 없습니다'), 'warn');
+  return false;
+}
+
 function _saveDocCats(cats) { DB.setSetting('doc_cats', cats); }
 function addDocCat() {
-  if (!isAdmin()) return;
+  if (!DB.can('settings.update')) return _setNoPermission();   // server enforces the same permission
   const inp = document.getElementById('set-doccat-name');
-  const label = (inp.value || '').trim(); if (!label) return;
+  const label = (inp.value || '').trim();
+  if (!label) return _setNeedInput('set-doccat-name',
+    bi('ໃສ່ຊື່ປະເພດເອກະສານກ່ອນ', 'Enter a document type name first',
+       'กรุณากรอกชื่อประเภทเอกสารก่อน', '문서 유형 이름을 먼저 입력하세요'));
   const cats = getDocCats().slice();
   cats.push({ key: 'doc_' + Date.now().toString(36), label });
   _saveDocCats(cats); inp.value = ''; renderDocCatsSettings();
+  toast(t('vd_saved') || 'Saved', 'ok');
 }
 function saveDocCat(i) {
-  if (!isAdmin()) return;
+  if (!DB.can('settings.update')) return _setNoPermission();   // server enforces the same permission
   const inp = document.getElementById('set-doccat-edit-' + i);
   const label = inp ? inp.value.trim() : '';
-  if (!label) return;
+  if (!label) return _setNeedInput('set-doccat-edit-' + i,
+    bi('ຊື່ຫວ່າງບໍ່ໄດ້', 'The name cannot be empty', 'ชื่อว่างไม่ได้', '이름은 비워 둘 수 없습니다'));
   const cats = getDocCats().slice();
   if (!cats[i]) return;
   cats[i] = { ...cats[i], label };
   _saveDocCats(cats); renderDocCatsSettings();
+  toast(t('vd_saved') || 'Saved', 'ok');
 }
 function delDocCat(i) {
-  if (!isAdmin()) return;
+  if (!DB.can('settings.update')) return _setNoPermission();   // server enforces the same permission
   const cats = getDocCats().slice();
   const c = cats[i]; if (!c) return;
   showConfirm(t('confirm_delete') || 'Delete',
@@ -6214,8 +8719,26 @@ function delDocCat(i) {
     () => { cats.splice(i, 1); _saveDocCats(cats); renderDocCatsSettings(); });
 }
 
+/* ── Company logo (P4.5: moved server-side) ────────────────────────
+ * The logo used to live only in this browser's localStorage, which made the
+ * setting's own description ("used in sidebar and exports") untrue: nobody but
+ * the person who uploaded it, on that one machine, ever saw it — and it vanished
+ * whenever the app was opened from a different origin.
+ *
+ * It is an app_settings value now, like the company name beside it. The
+ * localStorage key is still READ as a fallback so an existing upload keeps
+ * showing until the next save migrates it.
+ */
+function companyLogo() {
+  try {
+    const s = DB.getSetting('company_logo', '');
+    if (s) return s;
+  } catch (e) {}
+  try { return localStorage.getItem('kd_company_logo') || ''; } catch (e) { return ''; }
+}
+
 function updateLogoDisplay() {
-  const logo = localStorage.getItem('kd_company_logo');
+  const logo = companyLogo();
   const logoImg = logo ? '<img src="' + logo + '" alt="KD">' : 'KD';
   const thLogo = document.getElementById('th-logo-icon');
   if (thLogo) thLogo.innerHTML = logoImg;
@@ -6229,22 +8752,42 @@ function updateLogoDisplay() {
   if (removeBtn) removeBtn.style.display = logo ? 'inline-flex' : 'none';
 }
 
+// A logo is inlined as a data URL into every settings payload and export, so it
+// is capped. 512 KB is generous for a logo and small enough that it cannot bloat
+// the settings row into a performance problem.
+const LOGO_MAX_BYTES = 512 * 1024;
+
 function handleLogoUpload(input) {
   const file = input.files[0];
   if (!file) return;
+  if (!DB.can('settings.update')) {
+    toast(bi('ບໍ່ມີສິດແກ້ໄຂການຕັ້ງຄ່າ', 'You cannot change settings', 'ไม่มีสิทธิ์แก้ไขการตั้งค่า', '설정을 변경할 수 없습니다'), 'warn');
+    return;
+  }
+  if (file.size > LOGO_MAX_BYTES) {
+    toast(bi('ໄຟລ໌ໃຫຍ່ເກີນ (ສູງສຸດ 512 KB)', 'File too large (max 512 KB)', 'ไฟล์ใหญ่เกิน (สูงสุด 512 KB)', '파일이 너무 큽니다 (최대 512 KB)'), 'warn');
+    input.value = '';
+    return;
+  }
   const reader = new FileReader();
   reader.onload = function(e) {
-    localStorage.setItem('kd_company_logo', e.target.result);
+    // Server-persisted, so every account on every device sees the same logo.
+    DB.setSetting('company_logo', e.target.result);
+    try { localStorage.removeItem('kd_company_logo'); } catch (err) {}
     updateLogoDisplay();
+    toast(t('vd_saved') || 'Saved', 'ok');
   };
   reader.readAsDataURL(file);
 }
 
 function removeCompanyLogo() {
-  localStorage.removeItem('kd_company_logo');
+  if (!DB.can('settings.update')) return;
+  DB.setSetting('company_logo', '');
+  try { localStorage.removeItem('kd_company_logo'); } catch (e) {}
   const inp = document.getElementById('logo-file-input');
   if (inp) inp.value = '';
   updateLogoDisplay();
+  toast(t('vd_saved') || 'Saved', 'ok');
 }
 
 function renderCityList(country) {
@@ -6262,20 +8805,25 @@ function renderCityList(country) {
 }
 
 function addCity(country) {
-  if (!isAdmin()) return;
+  if (!DB.can('settings.update')) return _setNoPermission();   // server enforces the same permission
   const name = document.getElementById('set-' + country + '-name').value.trim();
   const code = document.getElementById('set-' + country + '-code').value.trim().toUpperCase();
-  if (!name || !code) { alert(t('set_need_both')); return; }
+  /* Native alert() was the odd one out here: every other refusal in Settings is
+   * a toast, and alert() cannot be styled, localised or dismissed by keyboard
+   * the way the rest of the app is. Same messages, same i18n keys — delivered
+   * the way the product delivers everything else. */
+  if (!name || !code) return _setNeedInput('set-' + country + (name ? '-code' : '-name'), t('set_need_both'));
   const res = DB.addCity(country, { name, code });
-  if (res === 'dup')     { alert(t('set_dup_code'));  return; }
-  if (res === 'invalid') { alert(t('set_need_both')); return; }
+  if (res === 'dup')     return _setNeedInput('set-' + country + '-code', t('set_dup_code'));
+  if (res === 'invalid') return _setNeedInput('set-' + country + '-name', t('set_need_both'));
   document.getElementById('set-' + country + '-name').value = '';
   document.getElementById('set-' + country + '-code').value = '';
   renderCityList(country);
+  toast(t('vd_saved') || 'Saved', 'ok');
 }
 
 function delCity(country, code) {
-  if (!isAdmin()) return;
+  if (!DB.can('settings.update')) return _setNoPermission();   // server enforces the same permission
   const c = (DB.getCities()[country] || []).find(x => x.code === code);
   showConfirm(
     t('confirm_delete'),
@@ -6410,8 +8958,11 @@ function _dragHandle() {
     esc(bi('ລາກເພື່ອຈັດລຳດັບ', 'Drag to reorder', 'ลากเพื่อจัดลำดับ', '끌어서 순서 변경')) + '">' + _DRAG_SVG + '</span>';
 }
 
-function _initDragReorder(listEl, onReorder) {
-  if (!listEl || !isAdmin()) return;
+// opts.anyRole: the list orders a personal preference (e.g. the user's own
+// dashboard tiles) rather than shared data, so a viewer may reorder it too.
+function _initDragReorder(listEl, onReorder, opts) {
+  if (!listEl) return;
+  if (!(opts && opts.anyRole) && !isAdmin()) return;
   let row = null, moved = false;
   const rows = () => [...listEl.querySelectorAll('[data-drag]')];
 
@@ -6464,9 +9015,18 @@ function _locMutate(fn) {
 function locAddLevel() {
   const inp = document.getElementById('locdict-newlevel');
   const name = inp ? inp.value.trim() : '';
-  if (!name) return;
+  if (!name) return _setNeedInput('locdict-newlevel',
+    bi('ໃສ່ຊື່ໝວດກ່ອນ ເຊັ່ນ “ແຂວງ”', 'Enter a category name first, e.g. "Province"',
+       'กรุณากรอกชื่อหมวดก่อน เช่น “จังหวัด”', '범주 이름을 먼저 입력하세요 (예: "도")'));
+  /* The 3-level ceiling is a real limit (there are only three address columns),
+   * so it gets a real message rather than a silent no-op inside _locMutate. */
+  const cur = DB.getLocDict();
+  if (cur.levels.length >= 3) {
+    toast(bi('ມີໄດ້ສູງສຸດ 3 ໝວດ', 'A maximum of 3 categories is supported',
+             'มีได้สูงสุด 3 หมวด', '범주는 최대 3개까지 지원됩니다'), 'warn');
+    return false;
+  }
   _locMutate(ld => {
-    if (ld.levels.length >= 3) return;
     ld.enabled = true;
     // Claim the first address column nobody holds yet — a level must own its
     // column outright, never inherit one from where it happens to sit.
@@ -6475,6 +9035,8 @@ function locAddLevel() {
     if (!col) return;
     ld.levels.push({ id: DB._newLocId(), name, order: ld.levels.length, col });
   });
+  if (inp) inp.value = '';
+  toast(t('vd_saved') || 'Saved', 'ok');
 }
 function locRenameLevel(id, val) {
   _locMutate(ld => { const l = ld.levels.find(x => x.id === id); if (l) l.name = String(val || '').trim() || l.name; });
@@ -6498,13 +9060,25 @@ function locAddItem() {
   const en   = enEl ? enEl.value.trim() : '';
   const lo   = loEl ? loEl.value.trim() : '';
   const code = codeEl ? codeEl.value.trim().toUpperCase() : '';
-  if (!en && !lo) return;
+  if (!en && !lo) return _setNeedInput('locdict-item-en',
+    bi('ໃສ່ຊື່ (ອັງກິດ ຫຼື ລາວ) ກ່ອນ', 'Enter a name (English or Lao) first',
+       'กรุณากรอกชื่อ (อังกฤษหรือลาว) ก่อน', '이름을 먼저 입력하세요 (영어 또는 라오어)'));
+  /* A child item needs a level to hang off. Without one the old code fell into
+   * _locMutate and returned from inside the callback — a save that wrote nothing
+   * and said nothing. */
+  const cur = DB.getLocDict();
+  if (!cur.levels[_locEditLevel]) {
+    toast(bi('ສ້າງໝວດກ່ອນ', 'Create a category first', 'สร้างหมวดก่อน', '먼저 범주를 만드세요'), 'warn');
+    return false;
+  }
   _locMutate(ld => {
     const lv = ld.levels[_locEditLevel]; if (!lv) return;
     const parentId = _locEditLevel > 0 ? (_locEditParent || null) : null;
     const sibs = ld.items.filter(it => it.levelId === lv.id && it.parentId === parentId).length;
     ld.items.push({ id: DB._newLocId(), levelId: lv.id, parentId, names: { en: en || lo, lo }, code, order: sibs });
   });
+  [enEl, loEl, codeEl].forEach(el => { if (el) el.value = ''; });
+  toast(t('vd_saved') || 'Saved', 'ok');
 }
 function locDelItem(id) {
   _locMutate(ld => {
@@ -6535,90 +9109,20 @@ function locClearAll() {
     () => { DB.clearLocDict(); _locEditLevel = 0; _locEditParent = ''; renderLocDictSettings(); });
 }
 
-const _SVG_SWAP  ='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3l4 4-4 4M20 7H4M8 21l-4-4 4-4M4 17h16"/></svg>';
-const _SVG_KEY   = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.5 12.5L20 3M16 7l3 3"/></svg>';
-const _SVG_EDIT  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
-const _SVG_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+/* ── Users & roles ─────────────────────────────────────────────────
+ * Moved to shell/scripts/admin-center.js in P4.
+ *
+ * The versions that lived here could only toggle admin ⇄ viewer, coerced every
+ * other role to viewer on the way to the server, and used window.prompt() for
+ * password resets. They also wrote through the optimistic queue, so a refusal
+ * (weak password, rank violation, last administrator) never reached the
+ * operator — the row simply reverted on the next reload.
+ *
+ * renderUsersPane() / acAddUser() / acResetPassword() / acChangeRole() /
+ * acDeleteUser() replace them: server-authoritative, permission-aware, and they
+ * surface the reason when the server says no.
+ */
 
-function renderUserList() {
-  const users = DB.getUsers();
-  const el = document.getElementById('set-users-list');
-  if (!el) return;
-  el.innerHTML = users.map(u => {
-    const self = currentUser && u.username === currentUser.username;
-    const roleCls = u.role === 'admin' ? 'role-admin' : 'role-viewer';
-    const roleLbl = t(u.role === 'admin' ? 'role_admin' : 'role_viewer');
-    const initial = esc((u.name || u.username || '?').trim().charAt(0).toUpperCase());
-    const uesc = esc(u.username);
-    return '<div class="set-user-row">' +
-      '<div class="set-user-av">' + initial + '</div>' +
-      '<div class="set-user-info">' +
-        '<div class="set-user-name">' + esc(u.name || u.username) + (self ? ' <span class="set-user-sub">(' + bi('ທ່ານ','you','คุณ','나') + ')</span>' : '') + '</div>' +
-        '<div class="set-user-sub">@' + uesc + ' · <span class="role-badge ' + roleCls + '">' + roleLbl + '</span></div>' +
-      '</div>' +
-      '<div class="set-user-actions">' +
-        '<button class="set-icon-btn" title="' + esc(bi('ປ່ຽນບົດບາດ','Change role','เปลี่ยนบทบาท','역할 변경')) + '" onclick="toggleUserRole(\'' + uesc + '\')">' + _SVG_SWAP + '</button>' +
-        '<button class="set-icon-btn" title="' + esc(bi('ຣີເຊັດລະຫັດ','Reset password','รีเซ็ตรหัสผ่าน','비밀번호 재설정')) + '" onclick="resetUserPw(\'' + uesc + '\')">' + _SVG_KEY + '</button>' +
-        '<button class="set-icon-btn" title="' + esc(bi('ແກ້ໄຂຊື່','Rename','เปลี่ยนชื่อ','이름 변경')) + '" onclick="renameUser(\'' + uesc + '\')">' + _SVG_EDIT + '</button>' +
-        (self ? '' : '<button class="set-icon-btn danger" title="' + esc(bi('ລຶບ','Delete','ลบ','삭제')) + '" onclick="delUser(\'' + uesc + '\')">' + _SVG_TRASH + '</button>') +
-      '</div>' +
-    '</div>';
-  }).join('');
-}
-
-function toggleUserRole(username) {
-  if (!isAdmin()) return;
-  const u = DB.getUsers().find(x => x.username === username);
-  if (!u) return;
-  const newRole = u.role === 'admin' ? 'viewer' : 'admin';
-  const res = DB.updateUser(username, { role: newRole });
-  if (res === 'last-admin') { alert(t('set_last_admin') || bi('ຕ້ອງມີ admin ຢ່າງໜ້ອຍ 1 ຄົນ','At least 1 admin is required','ต้องมีแอดมินอย่างน้อย 1 คน','관리자가 최소 1명 필요합니다')); return; }
-  renderUserList();
-}
-function resetUserPw(username) {
-  if (!isAdmin()) return;
-  const pw = prompt(bi('ລະຫັດຜ່ານໃໝ່ສຳລັບ @','New password for @','รหัสผ่านใหม่สำหรับ @','새 비밀번호 (@') + username + bi(' · New password:','',' · รหัสผ่านใหม่:','):'));
-  if (pw == null || pw === '') return;
-  DB.updateUser(username, { password: pw });
-  toast(bi('ປ່ຽນລະຫັດຜ່ານແລ້ວ','Password reset','เปลี่ยนรหัสผ่านแล้ว','비밀번호가 재설정됨'), 'ok');
-}
-function renameUser(username) {
-  if (!isAdmin()) return;
-  const u = DB.getUsers().find(x => x.username === username);
-  const name = prompt(bi('ຊື່ສະແດງ · Display name:','Display name:','ชื่อที่แสดง:','표시 이름:'), u ? (u.name || '') : '');
-  if (name == null) return;
-  DB.updateUser(username, { name });
-  renderUserList();
-  if (typeof renderSidebarUser === 'function') renderSidebarUser();
-}
-
-function addUser() {
-  if (!isAdmin()) return;
-  const name = document.getElementById('set-u-name').value.trim();
-  const username = document.getElementById('set-u-user').value.trim();
-  const password = document.getElementById('set-u-pass').value;
-  const role = document.getElementById('set-u-role').value;
-  if (!username || !password) { alert(t('set_need_user')); return; }
-  const res = DB.addUser({ username, password, role, name });
-  if (res === 'dup')     { alert(t('set_dup_user')); return; }
-  if (res === 'invalid') { alert(t('set_need_user')); return; }
-  ['set-u-name','set-u-user','set-u-pass'].forEach(id => document.getElementById(id).value = '');
-  renderUserList();
-}
-
-function delUser(username) {
-  if (!isAdmin()) return;
-  const u = DB.getUsers().find(x => x.username === username);
-  showConfirm(
-    t('confirm_delete'),
-    t('confirm_del_user', { name: u ? (u.name || u.username) : username }),
-    () => {
-      const res = DB.deleteUser(username);
-      if (res === 'last-admin') { alert(t('set_last_admin')); return; }
-      renderUserList();
-    }
-  );
-}
 
 // ── FULL REFRESH ──────────────────────────────────────────────────
 function refreshAll() {

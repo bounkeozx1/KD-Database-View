@@ -1,0 +1,358 @@
+/* ════════════════════════════════════════════════════
+   login.css — KD Database sign-in.
+   Extracted from login.html so the sign-in page can run under a strict
+   Content-Security-Policy (style-src 'self'), which forbids inline <style>.
+   Rules are byte-identical to the previous inline block: the visual design
+   is unchanged, only its delivery moved.
+   ════════════════════════════════════════════════════ */
+@import url('../../vendor/fonts/fonts.css');   /* self-hosted, offline (was Google Fonts) */
+
+:root {
+  --green:        #2d6a4f;
+  --green-dark:   #245a42;
+  --green-soft:   #e8f3ec;
+  --ink:          #14181a;
+  --ink-soft:     #1f2937;
+  --muted:        #6b7280;
+  --muted-2:      #9aa3a0;
+  --line:         #e7eae7;
+  --field-bg:     #f1f3f1;
+  --field-bg-fc:  #eef2ef;
+  --black-btn:    #15181a;
+  --card:         #ffffff;
+  --radius:       14px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* `hidden` must actually hide (P4.8.1). The sign-in cards are swapped with
+   el.hidden, and none of their classes set `display` today — but the moment one
+   does, every card would render at once. Same safety net as main.css. */
+[hidden] { display: none !important; }
+
+body {
+  font-family: 'Inter', 'Noto Sans Lao', 'Noto Sans KR', system-ui, -apple-system, sans-serif;
+  min-height: 100dvh;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+  overflow-x: hidden;
+  background:
+    radial-gradient(60rem 40rem at 90% -10%, rgba(45,106,79,0.10), transparent 60%),
+    radial-gradient(50rem 40rem at 0% 110%, rgba(120,170,200,0.12), transparent 55%),
+    linear-gradient(180deg, #f3f7f4 0%, #f6f8f6 100%);
+}
+
+/* Language switcher — bento tiles, top right. Mirrors .bento-choice/.bc-tile in
+   the app: white card on a hairline border, accent ring + tick when chosen. */
+.langs {
+  position: fixed; top: 20px; right: 22px;
+  display: grid; grid-auto-flow: column; gap: 8px;
+  z-index: 5;
+}
+.lang-btn {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  min-width: 58px; padding: 8px 9px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(16,24,40,0.06), 0 1px 2px rgba(16,24,40,0.04);
+  color: var(--ink-soft); font-family: inherit; cursor: pointer;
+  transition: background 0.16s, border-color 0.16s, box-shadow 0.16s, transform 0.16s;
+}
+.lang-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 12px -2px rgba(16,24,40,0.10); }
+.lang-btn:active { transform: scale(0.985); }
+.lang-glyph { font-size: 1.15rem; font-weight: 600; line-height: 1.1; }
+.lang-name { font-size: 0.66rem; font-weight: 600; color: var(--muted); }
+.lang-btn.active {
+  border-color: var(--green);
+  box-shadow: inset 0 0 0 1px var(--green), 0 1px 3px rgba(16,24,40,0.06);
+  background: var(--green-soft);
+}
+.lang-btn.active .lang-glyph, .lang-btn.active .lang-name { color: var(--green); }
+
+/* Phones: stays pinned (the card scrolls under it), just tighter. */
+@media (max-width: 560px) {
+  .langs { top: 12px; right: 12px; gap: 6px; }
+  .lang-btn { min-width: 46px; padding: 6px 5px; border-radius: 12px; }
+  .lang-glyph { font-size: 1rem; }
+  .lang-name { font-size: 0.6rem; }
+}
+
+/* Layout */
+.wrap {
+  min-height: 100dvh;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 40px 18px;
+}
+
+/* Brand + heading */
+.brand-logo {
+  width: 60px; height: 60px; border-radius: 16px;
+  background: var(--green);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 800; font-size: 1.35rem; letter-spacing: 0.5px;
+  box-shadow: 0 10px 24px rgba(45,106,79,0.28);
+  margin-bottom: 26px;
+}
+.title {
+  font-size: 2.6rem; font-weight: 800; letter-spacing: -1px;
+  line-height: 1.05; text-align: center; color: var(--ink);
+}
+.subtitle {
+  margin-top: 14px;
+  font-size: 1rem; color: var(--muted); text-align: center;
+}
+
+/* Card */
+/* ── Liquid Glass ──
+ * The sign-in card is the one place in the product where glass is
+ * unambiguously right: it floats over a soft gradient with nothing to read
+ * behind it, so the material adds depth without costing any legibility. The
+ * page already painted that gradient on <body>; the card now bends it.
+ *
+ * Tokens are local rather than shared with main.css because this page loads
+ * its own stylesheet and nothing else — see the header note. */
+.card {
+  width: 100%; max-width: 440px;
+  margin-top: 34px;
+  background: rgba(255,255,255,0.66);
+  -webkit-backdrop-filter: blur(28px) saturate(1.7);
+          backdrop-filter: blur(28px) saturate(1.7);
+  border: 1px solid rgba(255,255,255,0.65);
+  border-radius: 22px;
+  padding: 30px 30px 26px;
+  box-shadow: 0 24px 60px -24px rgba(20,40,30,0.22), 0 2px 6px rgba(20,40,30,0.05);
+  position: relative;
+}
+/* The lit top edge that gives the sheet its thickness. */
+.card::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px;
+  border-radius: 22px 22px 0 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.92) 22%, rgba(255,255,255,0.92) 78%, transparent);
+  pointer-events: none;
+}
+/* The same three refusals as the app: no support, reader asked for less
+   transparency, or it is going on paper. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .card { background: var(--card); }
+  .card::before { display: none; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .card {
+    background: var(--card);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+    border-color: var(--line);
+  }
+  .card::before { display: none; }
+}
+@media print {
+  .card {
+    background: #fff !important; box-shadow: none !important;
+    -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+  }
+  .card::before { display: none !important; }
+}
+
+.field { margin-bottom: 18px; }
+.field-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px;
+}
+.label {
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--ink-soft);
+}
+/* Also promoted from <a onclick=…> to a real <button> — see .signup .linkish. */
+.forgot {
+  font-size: 0.82rem; font-weight: 600; color: var(--green);
+  text-decoration: none; cursor: pointer;
+  background: none; border: none; padding: 0; font-family: inherit;
+}
+.forgot:hover { text-decoration: underline; }
+
+/* Keyboard users must be able to see where they are. The default UA ring is
+   suppressed on these restyled buttons, so give every control an explicit one. */
+.lang-btn:focus-visible,
+.signin-btn:focus-visible,
+.icon-btn:focus-visible,
+.forgot:focus-visible,
+.signup .linkish:focus-visible,
+.remember input:focus-visible + .checkbox {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.input-wrap {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--field-bg);
+  border: 1.5px solid transparent;
+  border-radius: 12px;
+  padding: 0 14px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.input-wrap:focus-within {
+  background: #fff;
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(45,106,79,0.12);
+}
+.input-wrap svg { flex-shrink: 0; color: #9aa3a0; }
+.input-wrap input {
+  flex: 1; border: none; outline: none; background: transparent;
+  font-family: inherit; font-size: 0.95rem; color: var(--ink);
+  height: 50px;
+}
+.input-wrap input::placeholder { color: #9aa3a0; }
+.icon-btn {
+  border: none; background: transparent; cursor: pointer;
+  color: #9aa3a0; padding: 4px; display: flex; align-items: center;
+}
+.icon-btn:hover { color: var(--ink); }
+
+/* Checkbox */
+.remember {
+  display: flex; align-items: center; gap: 9px;
+  margin: 4px 0 20px; cursor: pointer;
+  font-size: 0.88rem; color: var(--ink-soft); user-select: none;
+}
+.remember input { position: absolute; opacity: 0; pointer-events: none; }
+.checkbox {
+  width: 18px; height: 18px; border-radius: 5px;
+  border: 1.5px solid #cdd3cd; background: #fff;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: all 0.15s;
+}
+.remember input:checked + .checkbox {
+  background: var(--green); border-color: var(--green);
+}
+.checkbox svg { opacity: 0; color: #fff; transition: opacity 0.15s; }
+.remember input:checked + .checkbox svg { opacity: 1; }
+
+/* Sign-in button (black, per design) */
+.signin-btn {
+  width: 100%; height: 54px;
+  border: none; border-radius: 13px;
+  background: var(--black-btn); color: #fff;
+  font-family: inherit; font-size: 1rem; font-weight: 700;
+  cursor: pointer; transition: transform 0.08s, background 0.15s;
+}
+.signin-btn:hover { background: #000; }
+.signin-btn:active { transform: scale(0.99); }
+
+.error {
+  color: #dc2626; font-size: 0.84rem; font-weight: 600;
+  min-height: 1.1rem; margin-bottom: 6px; text-align: center;
+}
+
+.signup {
+  margin-top: 22px; text-align: center;
+  font-size: 0.9rem; color: var(--muted);
+}
+/* Was <a onclick=…>. Now a real <button>: reachable by Tab, announced as a
+   control, and CSP-clean. Styled back to look exactly like the link it replaced. */
+.signup .linkish {
+  color: var(--green); font-weight: 700; text-decoration: none; cursor: pointer;
+  background: none; border: none; padding: 0;
+  font-family: inherit; font-size: inherit;
+}
+.signup .linkish:hover { text-decoration: underline; }
+
+.footer-version {
+  margin-top: 34px;
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--muted-2); text-align: center;
+}
+
+.diag {
+  margin-top: 16px; text-align: center;
+  font-size: 0.68rem; font-family: ui-monospace, monospace; color: var(--muted-2);
+}
+.diag .bad { color: #dc2626; font-weight: 700; }
+
+/* Forced password change */
+.pw-intro {
+  font-size: 0.9rem; line-height: 1.5; color: var(--ink-soft);
+  margin-bottom: 20px;
+  padding: 12px 14px; border-radius: 10px;
+  background: var(--green-soft); border: 1px solid rgba(45,106,79,0.18);
+}
+.pw-rules {
+  list-style: none; margin: 10px 0 0; padding: 0;
+  display: grid; gap: 4px;
+}
+.pw-rules li {
+  font-size: 0.78rem; color: var(--muted);
+  padding-left: 20px; position: relative;
+  transition: color 0.15s;
+}
+.pw-rules li::before {
+  content: '○'; position: absolute; left: 4px; top: 0;
+  font-size: 0.7rem; line-height: 1.5;
+}
+.pw-rules li.met { color: var(--green); font-weight: 600; }
+.pw-rules li.met::before { content: '✓'; font-weight: 700; }
+
+@media (max-width: 480px) {
+  .title { font-size: 2.1rem; }
+  .card { padding: 24px 20px; }
+}
+
+/* ── MFA (P3) ──────────────────────────────────────────────────────
+   Reuses the existing card/field/button vocabulary so the second step looks
+   like a continuation of sign-in rather than a different product. */
+.code-input {
+  letter-spacing: 0.5em;
+  font-size: 1.35rem !important;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.qr-holder {
+  display: flex; justify-content: center;
+  margin: 4px 0 16px;
+}
+.qr-holder svg {
+  width: 200px; height: 200px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px;
+  background: #fff;
+}
+.secret-line {
+  text-align: center; font-size: 0.78rem; color: var(--muted);
+  margin-bottom: 18px; line-height: 1.7;
+}
+.secret-line code {
+  display: inline-block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem; letter-spacing: 1px;
+  background: var(--field-bg); color: var(--ink);
+  padding: 4px 8px; border-radius: 6px;
+  word-break: break-all;
+}
+.code-list {
+  list-style: none; margin: 0 0 18px; padding: 14px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  background: var(--field-bg); border-radius: 12px;
+}
+.code-list li {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem; font-weight: 600; letter-spacing: 1px;
+  text-align: center; color: var(--ink);
+}
+.signin-btn.secondary {
+  background: transparent; color: var(--ink-soft);
+  border: 1.5px solid var(--line);
+  margin-bottom: 10px;
+}
+.signin-btn.secondary:hover { background: var(--field-bg); }
+.signin-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* Phones: two columns of codes get tight below ~360px. */
+@media (max-width: 380px) {
+  .code-list { grid-template-columns: 1fr; }
+  .qr-holder svg { width: 168px; height: 168px; }
+}

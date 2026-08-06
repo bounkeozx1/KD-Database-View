@@ -3,9 +3,19 @@
 ระบบจัดการข้อมูลพนักงาน (Korea–Laos worker management) — front-end app.
 
 ## รัน
-- **Server:** `python -m http.server 3000` → เปิด `http://localhost:3000`
-- **Double-click:** เปิด `frontend/pages/login.html`
-- เข้าระบบ: `admin / admin1234` (Admin) · `viewer / viewer1234` (Viewer)
+- **Server:** `npm start` → เปิด `http://localhost:3000`
+
+### เข้าระบบครั้งแรก
+ตอนติดตั้งครั้งแรก ระบบจะสร้างบัญชี `admin` พร้อม**รหัสผ่านสุ่ม** แล้วพิมพ์ออก
+console ครั้งเดียว (และบันทึกไว้ที่ `data/db/INITIAL-ADMIN-PASSWORD.txt`)
+
+รหัสผ่านนี้เป็นรหัสชั่วคราว — ระบบจะ**บังคับให้เปลี่ยน**ตอน sign-in ครั้งแรก
+และไฟล์ข้างต้นจะถูกลบอัตโนมัติเมื่อเปลี่ยนเสร็จ
+
+ลืมรหัส admin? รีเซ็ตด้วย:
+```bash
+npm run reset-admin
+```
 
 ## โครงสร้าง
 ดูแผนผังเต็มที่ [ARCHITECTURE.md](ARCHITECTURE.md)

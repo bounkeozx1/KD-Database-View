@@ -1,0 +1,548 @@
+/* ══════════════════════════════════════════════════════════════════
+   admin.css — P4 Enterprise Administration Centre
+   ══════════════════════════════════════════════════════════════════
+   Extends the existing Settings look; it does not replace it. Every colour,
+   radius, shadow and spacing value comes from the tokens already declared in
+   main.css, so light/dark and any future theme change reach these screens
+   without a second edit.
+
+   Layout rules honoured throughout:
+     • wide content (tables, the permission matrix) scrolls inside .ac-scroll —
+       the dialog itself never scrolls sideways;
+     • touch targets are ≥ 32px high, ≥ 44px for primary actions on mobile;
+     • nothing relies on colour alone: every status pill carries a word, every
+       matrix grant carries a tick, and scoped grants are labelled.
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ── Screen-reader-only text ───────────────────────────────────────
+   Used for table captions and for the word behind an icon-only state. Clipped
+   rather than display:none so assistive technology still reads it. */
+.sr-only {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%);
+  white-space: nowrap; border: 0;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Cards and summary statistics
+   ══════════════════════════════════════════════════════════════════ */
+
+.ac-card { padding: 4px 0; }
+
+.ac-cards {
+  display: grid;
+  /* auto-fit + minmax is the whole responsive story for these: six across on a
+     desktop, three on a laptop, one on a phone, with no breakpoints to keep in
+     sync with the pane widths. */
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: 10px;
+  margin: 14px 0 6px;
+}
+.ac-cards-tight { grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); }
+
+.ac-stat {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 13px 14px;
+  box-shadow: var(--shadow-xs);
+  min-width: 0;
+}
+.ac-stat-label {
+  font-size: 0.68rem; font-weight: 700; letter-spacing: .3px;
+  color: var(--text-muted); text-transform: uppercase;
+  margin-bottom: 6px; line-height: 1.3;
+}
+.ac-stat-value {
+  font-size: 1.5rem; font-weight: 800; color: var(--text);
+  line-height: 1.15; word-break: break-word;
+}
+.ac-stat-hint {
+  font-size: 0.72rem; color: var(--text-faint); margin-top: 4px; line-height: 1.35;
+}
+/* Tone is a left edge rather than a fill: it survives dark mode, keeps the
+   number readable, and does not shout on a screen that has six of these. */
+.ac-stat-good { border-left: 3px solid var(--green); }
+.ac-stat-warn { border-left: 3px solid var(--orange); }
+.ac-stat-bad  { border-left: 3px solid var(--red); }
+
+/* ══════════════════════════════════════════════════════════════════
+   Risk banner
+   ══════════════════════════════════════════════════════════════════ */
+
+.ac-risk {
+  display: flex; align-items: center; gap: 18px;
+  padding: 18px 20px;
+  border-radius: var(--r-xl);
+  border: 1px solid var(--line);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 4px;
+}
+.ac-risk-slim { padding: 14px 18px; }
+
+.ac-risk-dial {
+  flex: 0 0 auto;
+  width: 86px; height: 86px; border-radius: 50%;
+  display: flex; align-items: baseline; justify-content: center; gap: 1px;
+  padding-top: 26px;
+  border: 4px solid var(--green);
+  color: var(--green);
+}
+.ac-risk-score { font-size: 1.7rem; font-weight: 800; line-height: 1; }
+.ac-risk-max   { font-size: 0.72rem; font-weight: 700; opacity: .7; }
+
+.ac-risk-text { min-width: 0; }
+.ac-risk-level { font-size: 1.05rem; font-weight: 800; color: var(--text); }
+.ac-risk-sub   { font-size: 0.8rem; color: var(--text-muted); margin-top: 3px; line-height: 1.4; }
+.ac-risk-time  { font-size: 0.72rem; color: var(--text-faint); margin-top: 5px; }
+
+.ac-risk.ac-excellent .ac-risk-dial { border-color: var(--green);  color: var(--green); }
+.ac-risk.ac-good      .ac-risk-dial { border-color: var(--green);  color: var(--green); }
+.ac-risk.ac-warning   .ac-risk-dial { border-color: var(--orange); color: var(--orange); }
+.ac-risk.ac-critical  .ac-risk-dial { border-color: var(--red);    color: var(--red); }
+.ac-risk.ac-warning  { border-color: color-mix(in srgb, var(--orange) 34%, var(--line)); }
+.ac-risk.ac-critical { border-color: color-mix(in srgb, var(--red) 34%, var(--line)); }
+
+/* ── Findings ── */
+.ac-findings { display: flex; flex-direction: column; gap: 7px; margin: 14px 0 4px; }
+.ac-finding {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 13px;
+  border-radius: var(--r-md);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+}
+.ac-finding.ac-critical { border-left-color: var(--red); }
+.ac-finding.ac-warning  { border-left-color: var(--orange); }
+.ac-finding.ac-info     { border-left-color: var(--text-faint); }
+.ac-finding.ac-excellent{ border-left-color: var(--green); }
+.ac-finding-text { font-size: 0.84rem; color: var(--text); line-height: 1.45; padding-top: 1px; }
+
+/* ══════════════════════════════════════════════════════════════════
+   Pills, chips and small type
+   ══════════════════════════════════════════════════════════════════ */
+
+.ac-pill {
+  display: inline-block; white-space: nowrap;
+  padding: 2px 8px; border-radius: var(--r-pill);
+  font-size: 0.68rem; font-weight: 700; letter-spacing: .2px;
+  border: 1px solid transparent;
+}
+.ac-pill.ac-good, .ac-pill.ac-excellent {
+  background: var(--green-soft); color: var(--green);
+  border-color: color-mix(in srgb, var(--green) 22%, transparent);
+}
+.ac-pill.ac-warning {
+  background: color-mix(in srgb, var(--orange) 14%, transparent); color: var(--orange);
+  border-color: color-mix(in srgb, var(--orange) 26%, transparent);
+}
+.ac-pill.ac-critical {
+  background: color-mix(in srgb, var(--red) 12%, transparent); color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 26%, transparent);
+}
+.ac-pill.ac-info { background: var(--chip-bg); color: var(--text-muted); }
+
+.ac-chiplist { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 2px; }
+.ac-chip {
+  padding: 4px 10px; border-radius: var(--r-pill);
+  background: var(--chip-bg); color: var(--text);
+  font-size: 0.76rem; font-weight: 600;
+}
+.ac-chip-warn {
+  background: color-mix(in srgb, var(--orange) 14%, transparent);
+  color: var(--orange);
+}
+
+.ac-mono {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+}
+.ac-muted  { color: var(--text-faint); }
+.ac-nowrap { white-space: nowrap; }
+.ac-num    { text-align: right; font-variant-numeric: tabular-nums; }
+
+.ac-note {
+  font-size: 0.76rem; color: var(--text-muted); line-height: 1.5;
+  margin: 12px 2px 0; padding: 10px 12px;
+  background: var(--field-bg); border-radius: var(--r-md);
+}
+.ac-note-inline { font-size: 0.74rem; color: var(--text-faint); line-height: 1.45; }
+
+.ac-empty {
+  padding: 26px 16px; text-align: center;
+  color: var(--text-faint); font-size: 0.84rem;
+}
+.ac-empty-warn { color: var(--orange); }
+
+.ac-list { margin: 0; padding: 6px 0 6px 20px; }
+.ac-list li { font-size: 0.84rem; color: var(--text); line-height: 1.6; }
+
+.ac-prose h3 {
+  font-size: 0.86rem; font-weight: 800; color: var(--text);
+  margin: 16px 2px 6px;
+}
+.ac-prose h3:first-child { margin-top: 4px; }
+.ac-prose p {
+  font-size: 0.82rem; color: var(--text-muted); line-height: 1.65; margin: 0 2px 10px;
+}
+
+/* ── Key/value rows ── */
+.ac-kv {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+  padding: 9px 2px; border-bottom: 1px solid var(--line);
+}
+.ac-kv:last-child { border-bottom: none; }
+.ac-kv-k { font-size: 0.8rem; color: var(--text-muted); flex: 0 1 auto; }
+.ac-kv-v {
+  font-size: 0.82rem; color: var(--text); font-weight: 600;
+  text-align: right; word-break: break-all; min-width: 0;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Tables
+   ══════════════════════════════════════════════════════════════════ */
+
+/* The horizontal-scroll boundary. Wide content lives inside this, never
+   outside it, so the settings dialog itself never gets a sideways scrollbar. */
+.ac-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -2px;
+  padding: 0 2px;
+}
+
+.ac-table {
+  width: 100%; border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.ac-table th, .ac-table td {
+  padding: 9px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+.ac-table thead th {
+  font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: .6px;
+  color: var(--text-faint);
+  background: var(--th-bg);
+  position: sticky; top: 0; z-index: 2;
+  white-space: nowrap;
+}
+.ac-table tbody tr:hover { background: var(--hover); }
+.ac-table tbody tr:last-child td { border-bottom: none; }
+.ac-row-current { background: var(--green-soft); }
+.ac-row-current:hover { background: var(--green-soft); }
+
+.ac-user { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ac-user-name { font-weight: 700; color: var(--text); }
+.ac-user-at   { font-size: 0.72rem; color: var(--text-faint); }
+.ac-device    { font-weight: 600; }
+
+.ac-actions { white-space: nowrap; text-align: right; }
+.ac-actions .btn { margin-left: 4px; }
+
+.ac-reason {
+  max-width: 320px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text-muted); font-size: 0.76rem;
+}
+
+/* ── Pagination ── */
+.ac-pager {
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  padding: 10px 4px 4px;
+}
+.ac-pager-info { font-size: 0.76rem; color: var(--text-muted); margin-right: auto; }
+
+/* ── Filter bar ── */
+.ac-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  padding: 14px;
+  background: var(--field-bg);
+  border-radius: var(--r-lg);
+  margin-bottom: 14px;
+}
+.ac-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ac-field label {
+  font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  color: var(--text-faint);
+}
+.ac-field input, .ac-field select {
+  width: 100%; min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--bg-card); color: var(--text);
+  font-size: 0.82rem;
+  /* 1.2 not `normal`: the Lao webfont has taller metrics, and `normal` made
+     every form control jump when the language changed. */
+  line-height: 1.2;
+}
+.ac-field-actions {
+  flex-direction: row; align-items: flex-end; flex-wrap: wrap; gap: 6px;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Switches
+   ══════════════════════════════════════════════════════════════════ */
+
+.ac-switch {
+  display: inline-flex; align-items: center; gap: 9px;
+  cursor: pointer; user-select: none;
+}
+.ac-switch input {
+  /* Kept in the layout (not display:none) so it stays focusable and reachable
+     by a screen reader; the visible track is the label's sibling. */
+  position: absolute; opacity: 0; width: 40px; height: 24px; margin: 0; cursor: pointer;
+}
+.ac-switch-track {
+  width: 40px; height: 24px; flex: 0 0 auto;
+  border-radius: var(--r-pill);
+  background: var(--chip-bg);
+  border: 1px solid var(--line);
+  position: relative;
+  transition: background .18s ease, border-color .18s ease;
+}
+.ac-switch-thumb {
+  position: absolute; top: 2px; left: 2px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  transition: transform .18s ease;
+}
+.ac-switch input:checked + .ac-switch-track {
+  background: var(--green);
+  border-color: var(--green);
+}
+.ac-switch input:checked + .ac-switch-track .ac-switch-thumb { transform: translateX(16px); }
+.ac-switch input:focus-visible + .ac-switch-track {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.ac-switch input:disabled + .ac-switch-track { opacity: .5; }
+.ac-switch-locked { cursor: not-allowed; }
+.ac-switch-text { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); }
+
+/* ── Numeric fields with their allowed range ── */
+.ac-num-control { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.ac-range {
+  font-size: 0.66rem; color: var(--text-faint);
+  padding: 2px 7px; border-radius: var(--r-pill); background: var(--chip-bg);
+  font-variant-numeric: tabular-nums;
+}
+.ac-unit { font-size: 0.72rem; color: var(--text-faint); margin-left: 5px; }
+
+/* ── Action bars ── */
+.ac-actions-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 14px 2px 4px;
+}
+.ac-sticky {
+  position: sticky; top: 0; z-index: 5;
+  background: var(--bg); padding: 12px 8px;
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 10px;
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Permission matrix
+   ══════════════════════════════════════════════════════════════════ */
+
+.ac-matrix-scroll { max-height: 62vh; overflow: auto; }
+
+.ac-matrix { font-size: 0.78rem; }
+.ac-matrix th[scope="row"] {
+  position: sticky; left: 0; z-index: 1;
+  background: var(--bg-card);
+  text-align: left; font-weight: 500;
+  min-width: 220px;
+}
+.ac-matrix thead th { z-index: 3; }
+.ac-matrix thead th:first-child { left: 0; z-index: 4; background: var(--th-bg); }
+.ac-th-role { text-align: center; min-width: 92px; }
+.ac-th-editing { background: var(--green-soft); color: var(--green); }
+
+.ac-perm { display: table-cell; }
+.ac-perm-desc { display: block; color: var(--text); font-weight: 600; }
+.ac-perm-key  { display: block; color: var(--text-faint); font-size: 0.68rem; margin-top: 1px; }
+
+.ac-group-row th {
+  background: var(--field-bg);
+  font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: .6px;
+  color: var(--text-muted);
+  position: sticky; left: 0;
+}
+.ac-cell { text-align: center; }
+
+/* A grant is a tick AND, when scoped, a word. Never colour alone — "team" and
+   "own" are the whole point of the matrix and must survive a greyscale print. */
+.ac-grant {
+  display: inline-flex; flex-direction: column; align-items: center; gap: 1px;
+  color: var(--green); font-weight: 800;
+}
+.ac-grant em {
+  font-style: normal; font-size: 0.6rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .3px;
+  color: var(--orange);
+}
+.ac-grant-team em, .ac-grant-own em { color: var(--orange); }
+.ac-nogrant { color: var(--text-faint); }
+
+.ac-scope-select, .ac-role-select, .ac-tz-select {
+  padding: 5px 7px;
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--bg-card); color: var(--text);
+  font-size: 0.78rem; line-height: 1.2;
+  max-width: 100%;
+}
+.ac-tz-select { min-width: 220px; }
+.ac-role-static { font-size: 0.8rem; color: var(--text); }
+
+.ac-role-card { display: flex; flex-direction: column; }
+.ac-role-legacy { opacity: .78; }
+.ac-role-actions { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
+
+/* ══════════════════════════════════════════════════════════════════
+   Storage bar
+   ══════════════════════════════════════════════════════════════════ */
+
+.ac-bar {
+  display: flex; height: 22px; width: 100%;
+  border-radius: var(--r-pill); overflow: hidden;
+  background: var(--chip-bg);
+  margin: 10px 0;
+}
+.ac-bar-seg { height: 100%; min-width: 2px; }
+.ac-bar-db { background: var(--green); }
+.ac-bar-up { background: var(--gold); }
+.ac-bar-bk { background: var(--text-faint); }
+
+.ac-legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 4px 0 10px; }
+.ac-legend span {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 0.76rem; color: var(--text-muted);
+}
+.ac-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+/* ══════════════════════════════════════════════════════════════════
+   Prompt dialog
+   ══════════════════════════════════════════════════════════════════ */
+
+.ac-prompt-overlay { z-index: 4000; }
+.ac-prompt { max-width: 460px; width: min(460px, calc(100vw - 32px)); }
+.ac-prompt-body { padding: 16px 20px 4px; }
+.ac-prompt-msg {
+  font-size: 0.82rem; color: var(--text-muted); line-height: 1.55; margin: 0 0 12px;
+}
+.ac-prompt-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--field-bg); color: var(--text);
+  font-size: 0.9rem; line-height: 1.2;
+}
+.ac-prompt-input:focus {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Integrity: backup verification results
+   ══════════════════════════════════════════════════════════════════ */
+
+.ac-verify-row td { background: var(--field-bg); padding: 0 !important; }
+
+/* P5.1 — the backup history now carries a kind badge, a filename and a summary
+   line per row, so the cell needs to breathe. */
+.ac-file { font-size: 0.72rem; color: var(--text-muted); margin-top: 3px; word-break: break-all; }
+.ac-small { font-size: 0.68rem; }
+.ac-verify { padding: 12px 14px; }
+.ac-verify-head {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 700; margin-bottom: 8px;
+}
+.ac-verify .ac-kv { padding: 6px 0; }
+.ac-verify .ac-note { margin-top: 8px; }
+
+/* The restore preview is a multi-line message in the shared confirm dialog,
+   which writes with textContent — so newlines need to survive. `pre-line`
+   preserves them while still collapsing runs of spaces; every existing
+   single-line message is unaffected. */
+#cm-msg { white-space: pre-line; }
+
+/* ══════════════════════════════════════════════════════════════════
+   Settings navigation — search state and focus
+   ══════════════════════════════════════════════════════════════════ */
+
+.set-nav-item.set-nav-miss { display: none; }
+.set-nav-item.set-nav-hit  { }
+
+.set-search-status {
+  font-size: 0.7rem; color: var(--text-faint);
+  padding: 8px 12px 2px; min-height: 1em;
+}
+
+/* Visible focus everywhere in the administration screens. WCAG 2.2 asks for a
+   focus indicator that is not obscured and has adequate contrast; the app's own
+   controls rely on the browser default, which several themes had faded out. */
+#settings-overlay .set-nav-item:focus-visible,
+#settings-overlay button:focus-visible,
+#settings-overlay a:focus-visible,
+#settings-overlay input:focus-visible,
+#settings-overlay select:focus-visible,
+#settings-overlay [tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   Responsive — desktop, laptop, tablet
+   ══════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 1100px) {
+  .ac-cards { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .ac-reason { max-width: 200px; }
+}
+
+@media (max-width: 820px) {
+  .ac-risk { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .ac-risk-dial { width: 72px; height: 72px; padding-top: 21px; }
+  .ac-cards { grid-template-columns: repeat(auto-fit, minmax(136px, 1fr)); gap: 8px; }
+  .ac-filters { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); padding: 11px; }
+  .ac-table { font-size: 0.78rem; }
+  .ac-table th, .ac-table td { padding: 8px 8px; }
+  .ac-matrix th[scope="row"] { min-width: 168px; }
+  /* Actions wrap onto their own line rather than forcing a wide table. */
+  .ac-actions { white-space: normal; }
+  .ac-actions .btn { margin: 2px 0 2px 4px; }
+  /* Comfortable touch targets on a tablet. */
+  .ac-field input, .ac-field select, .ac-scope-select, .ac-role-select { min-height: 38px; }
+  .ac-actions-bar .btn { min-height: 40px; }
+}
+
+@media (max-width: 560px) {
+  .ac-cards { grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); }
+  .ac-stat-value { font-size: 1.25rem; }
+  .ac-kv { flex-direction: column; gap: 2px; align-items: flex-start; }
+  .ac-kv-v { text-align: left; }
+  .ac-pager { justify-content: space-between; }
+}
+
+/* Respect a reduced-motion preference: the only transitions here are on the
+   switch, and they are decoration. */
+@media (prefers-reduced-motion: reduce) {
+  .ac-switch-track, .ac-switch-thumb { transition: none; }
+}
+
+/* High-contrast / forced-colours mode: keep the structural borders, drop the
+   colour-mixed backgrounds the OS will override anyway. */
+@media (forced-colors: active) {
+  .ac-stat, .ac-risk, .ac-finding, .ac-pill { border: 1px solid CanvasText; }
+  .ac-switch input:checked + .ac-switch-track { background: Highlight; }
+}

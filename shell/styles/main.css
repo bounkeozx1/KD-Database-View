@@ -24,8 +24,17 @@ button, input, select, textarea, optgroup { line-height: 1.2; }
   --navy2:     #111827;
   --blue:      #2d6a4f;
   --blue-lt:   #357a5b;
+  /* Accent — the original brand green (kept over the brighter Apple green after
+     review; it reads better and its filled buttons stay legible with white text). */
   --green:     #2d6a4f;
   --green-soft:#e8f3ec;
+  --accent:    var(--green);
+  /* Bento surfaces — mapped onto the theme so components can opt into the
+     rounded card look without hardcoding colours. */
+  --card:       var(--bg-card);
+  --card-hover: var(--hover);
+  --hairline:   var(--line);
+  --r-bento:    28px;
   --gold:      #8B7536;
   --gold-lt:   #b09440;
   --red:       #dc2626;
@@ -42,7 +51,12 @@ button, input, select, textarea, optgroup { line-height: 1.2; }
   --text:      #14181a;
   --text-muted:#6b7280;
   --text-faint:#9aa3a0;
+  /* Page subtitle. One step darker than --text-muted, which measures 4.45:1 on
+     the page background (--bg #f4f6f4) — under AA for text this size. This is
+     the lightest value that clears it: 4.52:1 on the page, 4.90:1 on a card. */
+  --sub-text:  #6a717f;
   --chip-bg:   #eef0ee;
+  --star-off:  #6b7471;   /* unselected star — 4.81:1 on the card */
   --sidebar-w: 260px;
   --header-h:  0px;
   --bottom-nav-h: 0px;
@@ -63,28 +77,50 @@ button, input, select, textarea, optgroup { line-height: 1.2; }
   /* Motion */
   --ease: cubic-bezier(.4,0,.2,1);
   --ease-spring: cubic-bezier(.34,1.56,.64,1);
+  /* Decelerating curve for things entering the screen — fast out of the gate,
+     settles softly, which is what makes a panel feel placed rather than flown. */
+  --ease-out: cubic-bezier(.22,1,.36,1);
+  --t-fast: 0.16s;   /* hover / press feedback */
+  --t-med:  0.28s;   /* view + panel entrances */
+  --t-slow: 0.45s;   /* tile reveals */
+  /* One step of the stagger. Tiles multiply this by their index. */
+  --t-stagger: 0.035s;
 }
 
-/* ── ChatGPT-style DARK mode ── */
+/* Motion is decoration; content is not. Anyone who asks the OS for less motion
+   gets the same UI with the movement taken out — nothing is hidden or disabled,
+   it just arrives instantly. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Apple-style DARK mode — pure-black bento canvas ── */
 [data-theme="dark"] {
   --blue:      #3a9e6f;
   --blue-lt:   #45b07e;
-  --green:     #3a9e6f;
-  --green-soft:rgba(58,158,111,0.20);
+  --green:     #3a9e6f;   /* original brand green (dark) */
+  --green-soft:rgba(58,158,111,0.13);   /* was 0.20 — muted text on a picked row measured 4.47 */
   --red:       #f87171;
-  --bg:        #1a1a1a;
-  --bg-card:   #242424;
-  --bg-elev:   #2b2b2b;
-  --sidebar-bg:#171717;
-  --field-bg:  #2c2c2c;
-  --hover:     #2f2f2f;
-  --th-bg:     #202020;
-  --border:    #353535;
-  --line:      #353535;
-  --text:      #ececec;
-  --text-muted:#a0a0a0;
-  --text-faint:#7a7a7a;
-  --chip-bg:   #313131;
+  --bg:        #000000;   /* true black canvas */
+  --bg-card:   #1C1C1E;   /* standard Apple elevated gray */
+  --bg-elev:   #2C2C2E;
+  --sidebar-bg:#000000;
+  --field-bg:  #2C2C2E;
+  --hover:     #2C2C2E;
+  --th-bg:     #1C1C1E;
+  --border:    rgba(255,255,255,0.10);
+  --line:      rgba(255,255,255,0.10);
+  --text:      #ffffff;
+  --text-muted:#98989D;   /* Apple secondary label */
+  --text-faint:#636366;
+  --sub-text:  #98989D;   /* already 7.31:1 on the dark page — no adjustment */
+  --chip-bg:   rgba(255,255,255,0.10);
+  --star-off:  #8e8e93;
   /* Deeper shadows on dark surfaces */
   --shadow-xs: 0 1px 2px rgba(0,0,0,0.3);
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
@@ -94,6 +130,264 @@ button, input, select, textarea, optgroup { line-height: 1.2; }
   --shadow-green: 0 8px 22px -6px rgba(58,158,111,0.45);
 }
 [data-theme="dark"] body { background: var(--bg); }
+
+/* ══════════════════════════════════════════════════════════════════
+ * LIQUID GLASS — the material layer
+ * ══════════════════════════════════════════════════════════════════
+ * Apple's Liquid Glass, applied on ONE rule: glass is for CHROME, never for
+ * content. Sidebars, toolbars, sheets and floating controls are glass; the
+ * table, the worker cards, the forms and the KD card stay opaque.
+ *
+ * That is not timidity, it is what this particular app requires:
+ *
+ *   • the KD card IS the exported document, and it is locked to be
+ *     pixel-identical everywhere — glass on it would change the artefact;
+ *   • html2canvas, which rasterises the card for PNG and PPTX, does not
+ *     implement backdrop-filter at all, so glass that reaches an exported
+ *     surface silently produces a wrong file while the screen looks right;
+ *   • backdrop-filter re-samples everything behind it on every frame, and the
+ *     live data is 369 workers — a grid of glass cards is a scroll-jank
+ *     generator on exactly the phones this is used on;
+ *   • Lao and Thai text at 0.78rem over a translucent panel loses the contrast
+ *     a passport-management system has no business losing.
+ *
+ * ── Glass needs something behind it ──
+ * A blur over a flat colour is just a tint. `body::before` lays down a wide,
+ * very soft aurora so every glass surface has colour to bend. It is fixed and
+ * pointer-transparent: it costs one composited layer and never intercepts a
+ * click.
+ */
+:root {
+  /* Three thicknesses, following the platform's own vocabulary. */
+  --glass-blur-thin:  14px;
+  --glass-blur:       26px;
+  --glass-blur-thick: 40px;
+  --glass-sat:        1.7;
+
+  --glass-tint-thin:  rgba(255,255,255,0.50);
+  --glass-tint:       rgba(255,255,255,0.62);
+  --glass-tint-thick: rgba(255,255,255,0.74);
+
+  /* ── Controls ──
+   * Controls are NOT glass. They sit on content and on the chrome, and a
+   * translucent control on a translucent bar is two layers of haze over the
+   * one thing the user is trying to hit. What they take from the material is
+   * its LIGHT: a hairline of brightness along the top edge, which is what makes
+   * a filled control read as a lit physical object rather than a coloured
+   * rectangle. Inset, so it costs no layout and no compositor layer. */
+  --ctl-lit:        inset 0 1px 0 rgba(255,255,255,0.30);
+  --ctl-lit-strong: inset 0 1px 0 rgba(255,255,255,0.45);
+
+  /* For surfaces that stay dark in BOTH themes — the toast, the sidebar's own
+     popups. They are deliberately inverted chips, so they cannot take the
+     theme-following tints above. */
+  --glass-tint-invert: rgba(17,24,39,0.78);
+  --glass-border-invert: rgba(255,255,255,0.14);
+
+  --glass-border:     rgba(255,255,255,0.60);
+  /* Raised controls carry the material's shadow so a button on the page and a
+     pane of glass belong to the same physics. */
+  --ctl-raise: 0 2px 8px -3px rgba(16,24,40,0.22);
+  /* The lit top edge that makes a pane read as a physical sheet. */
+  --glass-edge:       rgba(255,255,255,0.85);
+  --glass-shadow:     0 8px 32px -10px rgba(16,24,40,0.20), 0 2px 8px -4px rgba(16,24,40,0.10);
+
+  /* The aurora behind everything. Kept far below the brand green's saturation:
+     it should be felt, not seen. */
+  --amb-1: rgba(45,106,79,0.10);
+  --amb-2: rgba(139,117,54,0.07);
+  --amb-3: rgba(45,106,79,0.05);
+}
+[data-theme="dark"] {
+  --glass-tint-thin:  rgba(28,28,30,0.46);
+  --glass-tint:       rgba(28,28,30,0.60);
+  --glass-tint-thick: rgba(28,28,30,0.74);
+  --glass-border:     rgba(255,255,255,0.12);
+  --glass-edge:       rgba(255,255,255,0.22);
+  --glass-shadow:     0 8px 32px -10px rgba(0,0,0,0.55), 0 2px 8px -4px rgba(0,0,0,0.40);
+  /* Dimmer on dark: a bright top edge that reads as "lit" on a light theme
+     reads as "outlined" on a dark one. */
+  --ctl-lit:        inset 0 1px 0 rgba(255,255,255,0.12);
+  --ctl-lit-strong: inset 0 1px 0 rgba(255,255,255,0.18);
+  --ctl-raise: 0 2px 8px -3px rgba(0,0,0,0.55);
+  --amb-1: rgba(58,158,111,0.16);
+  --amb-2: rgba(139,117,54,0.10);
+  --amb-3: rgba(58,158,111,0.07);
+}
+
+body::before {
+  content: "";
+  position: fixed; inset: -20%;
+  z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(46rem 34rem at 8% -6%,  var(--amb-1), transparent 62%),
+    radial-gradient(38rem 30rem at 96% 12%, var(--amb-2), transparent 60%),
+    radial-gradient(52rem 38rem at 40% 108%, var(--amb-3), transparent 64%);
+}
+
+/* ── The material itself ──
+ * One definition, three thicknesses. Every glass surface in the app uses these
+ * classes rather than repeating a blur value, so the material can be retuned in
+ * one place instead of thirty. */
+.glass, .glass-thin, .glass-thick {
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+          backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  position: relative;
+}
+.glass-thin {
+  background: var(--glass-tint-thin);
+  -webkit-backdrop-filter: blur(var(--glass-blur-thin)) saturate(var(--glass-sat));
+          backdrop-filter: blur(var(--glass-blur-thin)) saturate(var(--glass-sat));
+}
+.glass-thick {
+  background: var(--glass-tint-thick);
+  -webkit-backdrop-filter: blur(var(--glass-blur-thick)) saturate(var(--glass-sat));
+          backdrop-filter: blur(var(--glass-blur-thick)) saturate(var(--glass-sat));
+}
+/* Specular top edge. A hairline, not a highlight — it reads as thickness. */
+.glass-edge::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--glass-edge) 22%, var(--glass-edge) 78%, transparent);
+  pointer-events: none;
+}
+
+/* ── The light, on every pane that is glass ───────────────────────
+ * Applied here rather than by adding a class to each element in the markup:
+ * the surfaces are already enumerated by their own rules, and a hairline that
+ * has to be remembered in HTML is a hairline that will be forgotten.
+ *
+ * `.sidebar` is excluded on purpose — it is a full-height vertical pane, and a
+ * lit edge along its top would read as a seam under the browser chrome rather
+ * than as the top face of a sheet. */
+.toolbar, .bottom-nav, .vm-menubar, .row-menu, .pm-lang-list, .sb-submenu {
+  position: relative;
+}
+.toolbar::after, .bottom-nav::after, .vm-menubar::after,
+.row-menu::after, .pm-lang-list::after, .sb-submenu::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--glass-edge) 22%, var(--glass-edge) 78%, transparent);
+  pointer-events: none;
+}
+/* The bottom bar is lit from the edge that faces the content — its top is the
+   side the list scrolls past. */
+.bottom-nav::after { top: 0; }
+
+/* ── Motion ──
+ * The material settles rather than snapping when its tint changes (theme
+ * switch, hover on a floating control). Only `background` is animated:
+ * transitioning `backdrop-filter` forces the blur to be recomputed every frame
+ * of the transition, which is the one thing on this surface that is genuinely
+ * expensive. The project-wide prefers-reduced-motion rule already zeroes these
+ * durations, and the switch list above also strips them. */
+/* `.sidebar` is deliberately absent: it owns a `transition` for its collapse
+   width and slide, and `transition` is one property — redeclaring it here would
+   silently drop those. Its background transition is added to that declaration
+   in sidebar.css instead. */
+.toolbar, .bottom-nav, .vm-menubar, .row-menu, .pm-lang-list,
+.sb-submenu, .toast, .mobile-fab-menu {
+  transition: background var(--t-med) var(--ease);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .toolbar::after, .bottom-nav::after, .vm-menubar::after,
+  .row-menu::after, .pm-lang-list::after, .sb-submenu::after { display: none; }
+}
+@media print {
+  .toolbar::after, .bottom-nav::after, .vm-menubar::after,
+  .row-menu::after, .pm-lang-list::after, .sb-submenu::after { display: none !important; }
+}
+body.exporting .toolbar::after, body.exporting .bottom-nav::after,
+body.exporting .vm-menubar::after, body.exporting .row-menu::after,
+body.exporting .pm-lang-list::after, body.exporting .sb-submenu::after { display: none !important; }
+
+/* ── Sheets: material without transparency ────────────────────────
+ * The dialogs are opaque and stay that way — they carry forms, worker records
+ * and documents, and a sheet floating on the already-blurred scrim measured a
+ * plate shift of 4/255 in light and 12/255 in dark. Invisible, for the cost of
+ * a compositor layer every time a dialog opens.
+ *
+ * What they DO take from the material is its edge: the same lit hairline the
+ * glass surfaces carry, which is what makes a panel read as a physical sheet
+ * rather than a rectangle of background colour. Depth without translucency. */
+.form-modal, .settings-modal, .export-modal, .pickmove-modal, .progress-modal {
+  position: relative;
+}
+.form-modal::after, .settings-modal::after, .export-modal::after,
+.pickmove-modal::after, .progress-modal::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px;
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  background: linear-gradient(90deg, transparent, var(--glass-edge) 22%, var(--glass-edge) 78%, transparent);
+  pointer-events: none; z-index: 30;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .form-modal::after, .settings-modal::after, .export-modal::after,
+  .pickmove-modal::after, .progress-modal::after { display: none; }
+}
+@media print {
+  .form-modal::after, .settings-modal::after, .export-modal::after,
+  .pickmove-modal::after, .progress-modal::after { display: none !important; }
+}
+body.exporting .form-modal::after, body.exporting .settings-modal::after,
+body.exporting .export-modal::after, body.exporting .pickmove-modal::after,
+body.exporting .progress-modal::after { display: none !important; }
+
+/* ══ The five switches that turn glass off ══════════════════════════
+ * Each one is a case where translucency is wrong, unavailable, or actively
+ * harmful. They are declared together so the whole safety surface can be read
+ * at once rather than discovered later in a bug report. */
+
+/* 1. The browser cannot do it — a tint with no blur is worse than a solid panel. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass, .glass-thin, .glass-thick { background: var(--bg-card); }
+  .glass-edge::after { display: none; }
+  body::before { display: none; }
+}
+
+/* 2. The reader asked the OS for less transparency. Apple honours this and so
+ *    does this app: it is an accessibility setting, not a preference. */
+@media (prefers-reduced-transparency: reduce) {
+  .glass, .glass-thin, .glass-thick {
+    background: var(--bg-card);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  .glass-edge::after { display: none; }
+  body::before { display: none; }
+}
+
+/* 3. Paper has no backdrop. */
+@media print {
+  .glass, .glass-thin, .glass-thick {
+    background: #fff !important; box-shadow: none !important;
+    -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+  }
+  .glass-edge::after { display: none !important; }
+  body::before { display: none !important; }
+}
+
+/* 4. THE IMPORTANT ONE. html2canvas does not implement backdrop-filter, so any
+ *    glass inside a surface being rasterised for a PNG or a PPTX comes out
+ *    wrong — and wrong in the worst way, because the screen still looks right.
+ *    app.js sets this class for the duration of a capture. */
+body.exporting .glass,
+body.exporting .glass-thin,
+body.exporting .glass-thick,
+body.exporting .overlay {
+  background: var(--bg-card) !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+  box-shadow: none !important;
+}
+body.exporting .glass-edge::after { display: none !important; }
+body.exporting::before { display: none !important; }
+
+/* 5. Motion is decoration. (The project-wide reduced-motion rule near the top
+ *    already strips animation; this keeps the material static too.) */
+@media (prefers-reduced-motion: reduce) {
+  .glass, .glass-thin, .glass-thick { transition: none !important; }
+}
 
 /* Prevent background scroll when any overlay is open */
 body.no-scroll { overflow: hidden !important; }
@@ -148,6 +442,19 @@ body {
 body:not(.authed) .app-body,
 body:not(.authed) .overlay { display: none !important; }
 
+/* ── `hidden` must actually hide (P4.8.1) ─────────────────────────────
+ * The browser's own rule is `[hidden] { display: none }` at specificity (0,1,0),
+ * and an author rule of the SAME specificity beats it because author styles
+ * outrank the UA stylesheet. `.set-nav-item { display: flex }` therefore left
+ * every permission-gated Settings tab on screen while `el.hidden` was true — the
+ * item looked normal, and switchSettingsTab() refused it silently. Seventeen
+ * dead buttons for any non-admin account.
+ *
+ * This is the safety net for the whole app: any element the JS marks `hidden`
+ * disappears, whatever its class sets. Keep it above the component rules — it
+ * carries !important, so its position is documentation, not cascade order. */
+[hidden] { display: none !important; }
+
 /* ── (unused) ── */
 ._app-header-unused {
   position: fixed;
@@ -166,30 +473,11 @@ body:not(.authed) .overlay { display: none !important; }
 .header-logo, .header-sep, .header-sub { display: none; }
 .header-spacer { flex: 1; }
 
-/* Language switcher — light pills */
-.lang-switcher {
-  display: flex;
-  gap: 2px;
-  background: #f1f3f1;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 3px;
-}
-.lang-btn {
-  padding: 5px 11px;
-  border: none;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.15s;
-  white-space: nowrap;
-  font-family: inherit;
-}
-.lang-btn:hover { color: var(--text); }
-.lang-btn.active { background: var(--green); color: #fff; }
+/* The language switcher that used to live here is gone.
+   .lang-switcher / .lang-btn / .lang-dd / .lang-globe / .lang-menu were all
+   dead: index.html references none of them, and login.html — the only page
+   with .lang-btn markup — loads login.css, not this file. The live picker in
+   the app is .pm-lang-list in the profile menu (sidebar.css). */
 
 /* Theme toggle (light/dark) */
 .theme-toggle {
@@ -213,6 +501,10 @@ body:not(.authed) .overlay { display: none !important; }
 .lang-globe svg:first-child { color: var(--green); }
 .lang-globe svg:last-child  { color: #9aa3a0; transition: transform 0.18s; }
 .lang-dd.open .lang-globe svg:last-child { transform: rotate(180deg); }
+/* DEAD RULE — kept as found, like `.vm-topbar`.
+ * `.lang-menu` (and the `.lang-dd` / `.lang-globe` around it) is not rendered
+ * anywhere in the markup or the scripts: the live language picker is
+ * `.pm-lang-list` inside the profile menu, which is where the material goes. */
 .lang-menu {
   display: none; position: absolute; top: calc(100% + 6px); right: 0;
   min-width: 150px; background: var(--bg-elev);
@@ -248,8 +540,26 @@ body:not(.authed) .overlay { display: none !important; }
 .main-content {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
+  /* `overflow-x: clip`, not `overflow: hidden`.
+   *
+   * The job here is horizontal containment: the worker table is 1417px wide
+   * inside a 946px panel, and without a clip the whole page would scroll
+   * sideways. `hidden` does that — but it also makes this element a SCROLL
+   * CONTAINER, and a scroll container that never scrolls silently disables
+   * `position: sticky` for everything inside it. That is the entire reason the
+   * toolbar could not be made sticky.
+   *
+   * `clip` contains exactly the same overflow and creates no scroll container,
+   * so sticky descendants resolve against the viewport as intended. Pairing it
+   * with `overflow-y: visible` is legal precisely for this case (unlike
+   * `hidden`, which forces the other axis to `auto`).
+   */
+  overflow-x: clip;
+  overflow-y: visible;
   transition: margin-left 0.25s;
+}
+@supports not (overflow: clip) {
+  .main-content { overflow: hidden; }    /* old engines: containment wins over sticky */
 }
 
 /* ── Page head (title + actions) ── */
@@ -259,20 +569,25 @@ body:not(.authed) .overlay { display: none !important; }
   padding: 24px 28px 4px;
 }
 .page-title { font-size: 1.9rem; font-weight: 800; letter-spacing: -0.5px; color: var(--text); line-height: 1.1; }
-.page-sub   { font-size: 0.9rem; color: var(--text-muted); margin-top: 4px; }
+.page-sub   { font-size: 0.9rem; color: var(--sub-text); margin-top: 4px; }
 .page-actions { display: flex; gap: 9px; flex-wrap: wrap; }
 
-/* ── Stats row ── */
-.stats-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  padding: 18px 28px 6px;
-}
+/* ── Route header — "VTE → ICN · date", from the group's route ──
+   Content, not chrome: no glass, nothing translucent. The city codes carry
+   --text (not --text-muted) because they are the thing being read; the dot and
+   the date stay at the subtitle's own weight so the codes lead. */
+.ph-route { display: inline-flex; align-items: center; gap: 7px; vertical-align: middle; }
+.ph-city  { font-weight: 700; color: var(--text); letter-spacing: 0.02em; }
+.ph-arrow { width: 15px; height: 15px; flex: 0 0 auto; color: var(--accent); }
+.ph-dot   { margin: 0 9px; }
+.ph-date  { font-variant-numeric: tabular-nums; }
+
+/* ── Stats row — a Bento grid; .bento supplies the columns and spans ── */
+.stats-row { padding: 18px 28px 6px; }
 .stat-card {
   background: var(--bg-card);
   border: none;
-  border-radius: var(--r-lg);
+  border-radius: var(--r-xl);
   padding: var(--sp-5) var(--sp-5);
   box-shadow: var(--shadow-sm);
   transition: box-shadow 0.22s var(--ease), transform 0.22s var(--ease);
@@ -298,13 +613,42 @@ body:not(.authed) .overlay { display: none !important; }
 .stat-card .lbl { font-size: 0.78rem; color: var(--text-muted); margin-top: 6px; font-weight: 500; }
 
 /* ── Toolbar (inside data panel) ── */
+/* ── Toolbar: the first sticky glass surface ──
+ * Rows travel UNDER the search and filters, which is what makes the material
+ * legible — a blur needs something moving behind it to read as glass rather
+ * than as a tint. It is also the better behaviour on its own merits: with 369
+ * workers the filters used to scroll away the moment you started looking for
+ * someone.
+ *
+ * Three ancestors had to stop blocking sticky before this could work — see the
+ * notes on `.main-content` (overflow) and `.view-enter` (animation fill mode).
+ * If sticky ever silently stops working again, those are the two places to
+ * look, and infra/scripts/test-glass.js fails when either regresses. */
 .toolbar {
   display: flex;
   gap: 10px;
   padding: 16px 20px;
   flex-wrap: wrap;
   align-items: center;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--glass-border);
+  position: sticky; top: 0; z-index: 40;
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+          backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border-radius: var(--r-xl) var(--r-xl) 0 0;   /* follows the panel's corners */
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .toolbar { background: var(--bg-card); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .toolbar {
+    background: var(--bg-card);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+}
+body.exporting .toolbar {
+  background: var(--bg-card) !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
 }
 .search-wrap {
   flex: 1;
@@ -342,8 +686,11 @@ select:focus { border-color: var(--green); }
   white-space: nowrap;
 }
 .btn:active { transform: scale(0.97); }
-.btn-primary { background: var(--green); color: white; box-shadow: var(--shadow-green); }
-.btn-primary:hover { background: var(--blue-lt); box-shadow: var(--shadow-lg); }
+/* The lit top edge goes on FILLED controls only. On a ghost or outline button
+   there is no surface for the light to catch, and the highlight would read as a
+   stray hairline. */
+.btn-primary { background: var(--green); color: white; box-shadow: var(--ctl-lit), var(--shadow-green); }
+.btn-primary:hover { background: var(--blue-lt); box-shadow: var(--ctl-lit-strong), var(--shadow-lg); }
 .btn-add     { background: var(--green); color: white; box-shadow: var(--shadow-green); }
 .btn-add:hover { background: var(--blue-lt); box-shadow: var(--shadow-lg); }
 .btn-export  { background: var(--bg-card); color: var(--text); box-shadow: var(--shadow-sm); }
@@ -355,15 +702,90 @@ select:focus { border-color: var(--green); }
 .btn-ghost   { background: var(--field-bg); color: var(--text); }
 .btn-ghost:hover { background: var(--hover); }
 
-/* ── Data panel (wraps toolbar + count + table) ── */
+/* ── Data panel (wraps toolbar + count + table) — one more Bento tile ── */
 .data-panel {
   background: var(--bg-card);
   border: none;
-  border-radius: var(--r-lg);
+  border-radius: var(--r-xl);
   margin: var(--sp-4) var(--sp-8) var(--sp-8);
-  overflow: hidden;
+  /* `clip`, not `hidden`. Both clip children to the rounded corners, but
+     `hidden` makes this a scroll container — which silently disables
+     `position: sticky` on the toolbar inside it, because sticky then resolves
+     against a box that never scrolls. `clip` does not create one, so the
+     toolbar sticks to the viewport as intended. */
+  overflow: clip;
   box-shadow: var(--shadow-sm);
 }
+@supports not (overflow: clip) { .data-panel { overflow: hidden; } }
+
+/* ══ MOTION ═══════════════════════════════════════════════════════
+   Every main view enters the same way, so moving around the app reads as one
+   place rather than a set of pages that each do their own thing. Motion is
+   short and downward-settling; nothing slides sideways or bounces.        */
+
+/* Whole-view entrance — applied by showMainView() on each switch. */
+/* ── View entrance ──
+ * `backwards`, not `both`.
+ *
+ * `both` = `backwards` + `forwards`, and it is the `forwards` half that causes
+ * trouble: it holds the final keyframe on the element for as long as the class
+ * stays, and that keyframe names `transform`. A held transform — even the
+ * identity — makes the element a containing block for fixed and sticky
+ * descendants, so `top: 0` inside it stops meaning "the top of the viewport".
+ * That is what pinned the toolbar to `.data-panel` instead of the screen.
+ *
+ * `backwards` still applies the from-state before the animation starts, which
+ * is the half that actually matters here — it is what stops the one-frame flash
+ * of the un-animated view. Nothing about the entrance looks different; the
+ * animation simply stops leaving a transform behind after it ends.
+ *
+ * The from-state IS a transform, so for the ~280ms the entrance is running the
+ * containing block still exists and sticky is briefly inert. That is harmless:
+ * the view has just opened, the page is at the top, and there is nothing to
+ * stick to yet. */
+.view-enter { animation: viewEnter var(--t-med) var(--ease-out) backwards; }
+@keyframes viewEnter {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Page header leads the view in slightly ahead of the tiles below it. */
+.view-enter .page-head,
+.view-enter .dz-head-row { animation: viewEnter var(--t-med) var(--ease-out) backwards; animation-delay: 0.04s; }
+.view-enter .dz-views    { animation: viewEnter var(--t-med) var(--ease-out) backwards; animation-delay: 0.07s; }
+.view-enter .data-panel  { animation: viewEnter var(--t-med) var(--ease-out) backwards; animation-delay: 0.12s; }
+
+/* Table rows / cards cascade in after a re-render (filter, sort, group switch).
+   Capped rather than per-row: 200 rows must not take four seconds to appear. */
+.rows-in > * { animation: rowIn 0.34s var(--ease-out) both; }
+.rows-in > :nth-child(1) { animation-delay: 0.00s; }
+.rows-in > :nth-child(2) { animation-delay: 0.02s; }
+.rows-in > :nth-child(3) { animation-delay: 0.04s; }
+.rows-in > :nth-child(4) { animation-delay: 0.06s; }
+.rows-in > :nth-child(5) { animation-delay: 0.08s; }
+.rows-in > :nth-child(6) { animation-delay: 0.10s; }
+.rows-in > :nth-child(7) { animation-delay: 0.12s; }
+.rows-in > :nth-child(8) { animation-delay: 0.14s; }
+.rows-in > :nth-child(n+9) { animation-delay: 0.16s; }
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Lists inside tiles (reminders, projects, team, history) share the cascade. */
+.dz-project-item, .dz-team-item, .hist-item, .dz-rank-row {
+  animation: rowIn 0.3s var(--ease-out) both;
+}
+.dz-project-item:nth-child(n+2), .dz-team-item:nth-child(n+2),
+.hist-item:nth-child(n+2), .dz-rank-row:nth-child(n+2) { animation-delay: 0.03s; }
+.dz-project-item:nth-child(n+4), .dz-team-item:nth-child(n+4),
+.hist-item:nth-child(n+4), .dz-rank-row:nth-child(n+4) { animation-delay: 0.06s; }
+
+/* Pressing a tile should feel physical — a small give, then release. */
+.go-card:active, .dz-stat-card:active, .stat-card.stat-clickable:active { transform: scale(0.985); }
+
+/* Sidebar nav + dashboard tabs: colour changes settle instead of snapping. */
+.dz-view-btn, .sb-nav-item { transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease); }
 
 /* ── Count bar ── */
 .count-bar {
@@ -397,6 +819,20 @@ td {
   white-space: nowrap;
 }
 tr:hover td { background: var(--hover); }
+
+/* ── Muted cells must stay readable once the row lights up ──
+ * The Lao-name column used to carry `style="color:var(--text-muted)"` inline,
+ * which beats any class rule — so it could not be adjusted for the hover and
+ * selected states, where it measured 4.30 and 4.25 against those backgrounds.
+ * It is a class now, and on an active row it steps up to full text colour.
+ * The hover tint itself is unchanged: lightening it to fix the text would have
+ * cost the hover cue everywhere else in the app. */
+.col-lo { color: var(--text-muted); font-size: 0.8rem; }
+tr:hover .col-lo, tr.picked .col-lo, tr.row-highlight .col-lo { color: var(--text); }
+/* Same story for an expired passport: red on the hover tint measured 4.29. */
+tr:hover .expiry-expired, tr.picked .expiry-expired { color: #b91c1c; }
+[data-theme="dark"] tr:hover .expiry-expired,
+[data-theme="dark"] tr.picked .expiry-expired { color: #ff8a8a; }
 tr:last-child td { border-bottom: none; }
 
 /* Worker ID chip */
@@ -439,7 +875,11 @@ tr:last-child td { border-bottom: none; }
 /* "Selected to go" star — inline in the list, overlay on KD cards */
 .sel-star {
   width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
-  border: 1px solid var(--border); background: var(--bg-card); color: var(--text-faint);
+  border: 1px solid var(--border); background: var(--bg-card);
+  /* Not --text-faint: the star measured 2.59:1, below even the 3:1 that WCAG
+     asks of a UI control's glyph, and it stayed that way in every row state.
+     This is the lightest grey that clears 4.5:1 on the card. */
+  color: var(--star-off);
   font-size: 0.95rem; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
   margin-right: 4px; transition: color 0.12s, border-color 0.12s, background 0.12s;
 }
@@ -447,6 +887,115 @@ tr:last-child td { border-bottom: none; }
 .sel-star.on { background: #f59e0b; border-color: #f59e0b; color: #fff; }
 .idc-cell > .sel-star { position: absolute; top: 8px; left: 8px; z-index: 4; box-shadow: var(--shadow-sm); }
 .vm-action-btn.vm-select.on { background: #f59e0b; border-color: #f59e0b; color: #fff; }
+
+/* ── PICK — the multi-select checkbox and its bar ──
+   Green (the accent), so it never reads as the amber "selected to go" star it
+   sits beside. Unticked it shows the row's position, which is what the
+   "1,2,7-10" box in the bar counts. */
+.pick-cell { width: 46px; text-align: center; padding-left: 10px !important; padding-right: 4px !important; }
+.pick-box {
+  width: 28px; height: 28px; flex: none; cursor: pointer; position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid var(--border); border-radius: 8px;
+  /* --text-muted, not --text-faint: the row number is meant to be READ (it is
+     what the "1,2,7-10" box counts), and faint is too low-contrast for that on
+     the dark card. */
+  background: var(--bg-card); color: var(--text-muted);
+  font-size: 0.72rem; font-weight: 700; line-height: 1;
+  transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+.pick-box:hover { border-color: var(--accent); color: var(--accent); }
+.pick-box.on { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: var(--ctl-lit); }
+.pick-box .pick-tick { width: 15px; height: 15px; display: none; }
+.pick-box.on .pick-n { display: none; }
+.pick-box.on .pick-tick { display: block; }
+
+tr.picked > td { background: var(--green-soft); }
+/* Card views: the checkbox takes the top-left corner and pushes the star along,
+   so the two controls never overlap when both are shown. */
+.idc-cell > .pick-box, .pcard > .pick-box { position: absolute; top: 8px; left: 8px; z-index: 5; box-shadow: var(--shadow-sm); }
+.idc-cell > .pick-box ~ .sel-star, .pcard > .pick-box ~ .sel-star { left: 44px; }
+.idc-cell.picked .kd-fit, .idc-cell.picked .id-badge-card { box-shadow: 0 0 0 2.5px var(--accent), var(--shadow-md); }
+.pcard.picked { border-color: var(--accent); box-shadow: 0 0 0 2.5px var(--accent), var(--shadow-md); }
+
+.pick-bar {
+  display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+  margin: 0 20px 12px; padding: 10px 14px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+  animation: pickBarIn 0.22s var(--ease-out);
+}
+@keyframes pickBarIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.pick-bar[hidden] { display: none; }
+.pick-bar-head { display: flex; align-items: center; gap: 8px; }
+.pick-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; height: 26px; padding: 0 8px; border-radius: var(--r-pill);
+  background: var(--accent); color: #fff; font-size: 0.8rem; font-weight: 800;
+}
+.pick-label { font-size: 0.82rem; font-weight: 600; color: var(--text); }
+.pick-bar-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pick-range {
+  width: 104px; padding: 5px 9px; border-radius: var(--r-sm);
+  border: 1px solid var(--border); background: var(--field-bg); color: var(--text);
+  font-family: inherit; font-size: 0.78rem; line-height: 1.2;
+}
+.pick-chip {
+  padding: 5px 11px; border-radius: var(--r-pill); cursor: pointer;
+  border: 1px solid var(--border); background: var(--bg-card); color: var(--text-muted);
+  font-family: inherit; font-size: 0.76rem; font-weight: 700; line-height: 1.2;
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+}
+.pick-chip:hover { background: var(--hover); color: var(--text); border-color: var(--accent); }
+.pick-bar-acts { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.pick-act {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 13px; border-radius: var(--r-sm); cursor: pointer;
+  border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
+  font-family: inherit; font-size: 0.79rem; font-weight: 700; line-height: 1.2;
+  transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+.pick-act svg { width: 15px; height: 15px; flex: none; }
+.pick-act:hover { background: var(--hover); }
+.pick-act[hidden] { display: none; }
+.pick-act-go { background: var(--accent); border-color: var(--accent); color: #fff; box-shadow: var(--ctl-lit); }
+.pick-act-go:hover { background: var(--accent); filter: brightness(1.08); }
+.pick-act-danger { color: var(--red); }
+.pick-act-danger:hover { background: rgba(220,38,38,0.08); border-color: var(--red); }
+.pick-x {
+  width: 30px; height: 30px; flex: none; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: 50%; background: transparent; color: var(--text-faint);
+}
+.pick-x svg { width: 15px; height: 15px; }
+.pick-x:hover { background: var(--hover); color: var(--text); }
+
+/* A quiet footnote under the package options — where the file is built and how
+   long it survives, which the user should know before they walk away from it. */
+.exp-note {
+  margin: 10px 2px 0; font-size: 0.74rem; line-height: 1.45; color: var(--text-muted);
+}
+
+/* Move-picked-workers dialog */
+.pickmove-modal { max-width: 460px; width: 100%; }
+.pickmove-body { padding: 4px 20px 8px; max-height: 52vh; overflow-y: auto; }
+.pm-group {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 14px; margin-bottom: 6px; cursor: pointer; text-align: left;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--bg-card); color: var(--text); font-family: inherit; font-size: 0.86rem;
+  transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+}
+.pm-group:hover { background: var(--hover); border-color: var(--accent); }
+.pm-group-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-group-n { flex: none; font-size: 0.74rem; font-weight: 700; color: var(--text-muted); background: var(--chip-bg); padding: 2px 9px; border-radius: var(--r-pill); }
+.pm-empty { padding: 18px 4px; text-align: center; color: var(--text-muted); font-size: 0.84rem; }
+
+@media (max-width: 640px) {
+  .pick-bar { margin: 0 12px 10px; padding: 10px; }
+  .pick-bar-acts { margin-left: 0; width: 100%; }
+  .pick-act { flex: 1; justify-content: center; }
+}
 
 /* Expiry colours */
 .expiry-expired { color: var(--red); font-weight: 700; }
@@ -520,7 +1069,7 @@ tr:last-child td { border-bottom: none; }
 }
 .idc-cell {
   cursor: pointer;
-  animation: dzCardIn 0.45s var(--ease) both;
+  /* Entrance comes from the grid's .rows-in cascade — see the MOTION section. */
   transition: transform 0.2s var(--ease-spring), filter 0.2s var(--ease);
 }
 .idc-cell:hover { transform: translateY(-4px); }
@@ -550,11 +1099,29 @@ tr:last-child td { border-bottom: none; }
 .kebab:hover { background: var(--hover); color: var(--text); }
 .stat-clickable { cursor: pointer; transition: transform 0.1s, box-shadow 0.15s; }
 .stat-clickable:hover { transform: translateY(-2px); box-shadow: 0 8px 20px -8px rgba(20,40,30,0.22); }
+/* ── Row menu ── glass ──
+ * Fixed, and it opens directly over the worker table — the rows behind it are
+ * exactly the backdrop the material needs. */
 .row-menu {
   display: none; position: fixed; z-index: 800;
-  min-width: 188px; background: var(--bg-elev);
-  border: 1px solid var(--line); border-radius: 12px;
-  box-shadow: 0 16px 40px -10px rgba(0,0,0,0.4); padding: 6px;
+  min-width: 188px; background: var(--glass-tint-thick);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+          backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border); border-radius: 12px;
+  box-shadow: var(--glass-shadow); padding: 6px;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .row-menu { background: var(--bg-elev); border-color: var(--line); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .row-menu {
+    background: var(--bg-elev); border-color: var(--line);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+}
+body.exporting .row-menu {
+  background: var(--bg-elev) !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
 }
 .row-menu.open { display: block; }
 .row-menu button {
@@ -573,7 +1140,13 @@ tr:last-child td { border-bottom: none; }
 /* ── Overlays / Modals ── */
 .overlay {
   display: none; position: fixed; inset: 0;
-  background: rgba(15,23,30,0.5); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  /* The page behind frosts over so the dialog stands out — on EVERY overlay
+     (detail drawer, export, settings, forms…) for one consistent look.
+     Now on the shared glass scale: a deeper blur and a lighter tint, so what
+     separates the layers is the material rather than a grey wash. */
+  background: rgba(15,23,30,0.30);
+  backdrop-filter: blur(var(--glass-blur-thick)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur-thick)) saturate(var(--glass-sat));
   z-index: 600;
   align-items: center; justify-content: center; padding: 20px;
 }
@@ -590,6 +1163,15 @@ tr:last-child td { border-bottom: none; }
 .overlay.open > .docview-modal { animation: modalPopIn 0.26s var(--ease-spring); }
 @keyframes modalPopIn { from { opacity: 0; transform: translateY(12px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
 
+/* Long KD-card grids: let the browser skip rendering cards that are scrolled out
+   of view (each card is heavy — photo + table + shadow). Cuts scroll repaint cost
+   dramatically on big groups. contain-intrinsic-size reserves space so the
+   scrollbar stays stable. */
+.kd-grid > .idc-cell {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 300px;
+}
+
 /* ── Worker detail — large pop-up panel (all devices) ── */
 .drawer-overlay {
   display: flex !important;
@@ -598,20 +1180,21 @@ tr:last-child td { border-bottom: none; }
   padding: 28px 40px;
   visibility: hidden; opacity: 0; pointer-events: none;
   background: rgba(15,23,30,0);
-  backdrop-filter: blur(0px); -webkit-backdrop-filter: blur(0px);
-  transition: background 0.3s var(--ease), opacity 0.25s var(--ease), visibility 0.3s var(--ease), backdrop-filter 0.3s var(--ease);
+  transition: background 0.22s var(--ease), opacity 0.2s var(--ease), visibility 0.22s var(--ease);
 }
 .drawer-overlay.open {
   visibility: visible; opacity: 1; pointer-events: auto;
-  background: rgba(15,23,30,0.55);
-  backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+  /* Match the shared overlay tint; the blur comes from the base .overlay rule. */
+  background: rgba(15,23,30,0.42);
 }
 .detail-drawer {
   width: 100%; max-width: min(82vw, 1280px); height: calc(100dvh - 56px); max-height: calc(100dvh - 56px);
-  background: var(--bg-card); overflow: hidden; position: relative;
+  /* NO sheet: the drawer itself is transparent, so only the pill menu bar and the
+     bento tiles (each with its own --bg-card) float over the blurred overlay
+     backdrop — there is no dark panel behind them. */
+  background: transparent; overflow: hidden; position: relative;
   display: flex; flex-direction: column;
-  border-radius: 8px;
-  box-shadow: var(--shadow-xl);
+  border-radius: var(--r-xl);
   opacity: 0;
   transform: scale(0.8) translateY(40px);
   transform-origin: center;
@@ -620,24 +1203,16 @@ tr:last-child td { border-bottom: none; }
 .detail-drawer .vm-topbar { flex-shrink: 0; }
 .detail-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .drawer-overlay.open .detail-drawer {
-  animation: drawerPop 0.5s var(--ease-spring) forwards;
+  animation: drawerPop 0.26s var(--ease-out) forwards;
 }
 @keyframes drawerPop {
-  0%   { transform: scale(0.8) translateY(40px); opacity: 0; }
-  55%  { opacity: 1; }
-  100% { transform: scale(1)   translateY(0);    opacity: 1; }
+  from { transform: scale(0.98) translateY(10px); opacity: 0; }
+  to   { transform: scale(1)    translateY(0);    opacity: 1; }
 }
 @media (max-width: 640px) {
   .drawer-overlay { padding: 0; }
   .detail-drawer { max-width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; }
 }
-.detail-drawer .vm-close {
-  position: absolute; top: 10px; right: 12px; z-index: 20;
-  width: 32px; height: 32px; border-radius: 50%;
-  background: rgba(0,0,0,0.45); border: none; color: #fff;
-  font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center;
-}
-.detail-drawer .vm-close:hover { background: rgba(0,0,0,0.7); }
 
 /* VIEW CARD (PDF-style) */
 .view-modal {
@@ -726,8 +1301,15 @@ tr:last-child td { border-bottom: none; }
 .form-section {
   background: var(--bg-card); border-radius: var(--r-xl); box-shadow: var(--shadow-sm);
   padding: var(--sp-6); margin-bottom: 18px;
-  animation: dzCardIn 0.4s var(--ease) both;
+  animation: tileIn 0.4s var(--ease-out) both;
 }
+/* Counted with sibling combinators, not nth-child: the sections are preceded by
+   hidden inputs and the photo row, so nth-child would count those too and give
+   every section the same delay. */
+.form-section ~ .form-section { animation-delay: 0.04s; }
+.form-section ~ .form-section ~ .form-section { animation-delay: 0.08s; }
+.form-section ~ .form-section ~ .form-section ~ .form-section { animation-delay: 0.12s; }
+.form-section ~ .form-section ~ .form-section ~ .form-section ~ .form-section { animation-delay: 0.16s; }
 .form-section:hover { box-shadow: var(--shadow-md); }
 .form-sec-title {
   font-size: 0.96rem; font-weight: 800; text-transform: none;
@@ -1000,9 +1582,20 @@ tr:last-child td { border-bottom: none; }
 /* ════════════════════════════════════════════════════
    AUTH — role visibility (login lives on login.html)
    ════════════════════════════════════════════════════ */
-body[data-role="viewer"] .admin-only { display: none !important; }
-/* Viewer role cannot see admin-only controls */
-body[data-role="viewer"] .admin-only { display: none !important; }
+/* ── Write-control visibility ──────────────────────────────────────
+ * P4: gated on CAPABILITY, not on a role name.
+ *
+ * This rule used to read `body[data-role="viewer"] .admin-only`, which hid the
+ * controls from viewers and showed all of them to every other role — so a
+ * Manager, an Employee and an Auditor each saw the full set of administrative
+ * buttons and collected a 403 from the server on click. `data-can-write` is set
+ * in startApp() from the permission those controls actually require.
+ *
+ * The old selector is kept below it so an older cached index.html (which still
+ * sets only data-role) keeps hiding the same controls from viewers rather than
+ * revealing them mid-upgrade. */
+body[data-can-write="no"] .admin-only { display: none !important; }
+body[data-role="viewer"]  .admin-only { display: none !important; }
 
 /* ── Header user chip (white header) ── */
 .header-user { display: flex; align-items: center; gap: 10px; margin-left: 8px; padding-left: 14px; border-left: 1px solid var(--line); }
@@ -1019,8 +1612,13 @@ body[data-role="viewer"] .admin-only { display: none !important; }
   font-size: 0.6rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;
   padding: 1px 6px; border-radius: 20px; white-space: nowrap;
 }
-.role-admin  { background: var(--green-soft); color: var(--green); }
-.role-viewer { background: #eef0f4; color: #667; }
+.role-admin   { background: var(--green-soft); color: var(--green); }
+/* P4 roles. Manager and Auditor are distinguishable from a read-only account at
+   a glance — the badge is how somebody checks what they are signed in as. */
+.role-manager { background: color-mix(in srgb, var(--gold) 16%, transparent); color: var(--gold); }
+.role-auditor { background: color-mix(in srgb, var(--blue-lt) 14%, transparent); color: var(--blue-lt); }
+.role-viewer  { background: #eef0f4; color: #667; }
+[data-theme="dark"] .role-viewer { background: rgba(255,255,255,0.08); color: var(--text-muted); }
 .hdr-logout {
   background: var(--bg-card); border: 1px solid var(--line);
   color: var(--text-muted); border-radius: 9px; padding: 7px 13px;
@@ -1040,7 +1638,7 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 
 /* ── Settings modal (fluid: left nav + content, clean — no top bar) ── */
 .settings-modal {
-  background: var(--bg-card); border-radius: var(--r-lg);
+  background: var(--bg-card); border-radius: var(--r-xl);
   width: min(1060px, 95vw);
   height: min(840px, 90vh);
   display: flex; flex-direction: column; overflow: hidden; position: relative;
@@ -1074,6 +1672,11 @@ body[data-role="viewer"] .admin-only { display: none !important; }
   color: var(--text); font-family: inherit; font-size: 0.84rem; min-width: 0;
 }
 .settings-search input::placeholder { color: var(--text-faint); }
+/* In dark mode the global `[data-theme="dark"] input:not(…)` rule paints every
+   input with --field-bg, and it outranks `.settings-search input`. Rather than
+   escalate specificity to undo it, the surrounding box takes the same colour —
+   so the field reads as one control instead of a box inside a box. */
+[data-theme="dark"] .settings-search { background: var(--field-bg); }
 /* Grouped nav (label + items, like the reference) */
 .set-nav-group { display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; }
 .set-nav-group-label {
@@ -1088,8 +1691,52 @@ body[data-role="viewer"] .admin-only { display: none !important; }
   transition: background 0.14s var(--ease), color 0.14s var(--ease);
 }
 .set-nav-item svg { width: 17px; height: 17px; flex-shrink: 0; }
+/* ── One line per section, always (P4.8.4) ────────────────────────────
+ * The nav is a fixed 232px, but the labels were free to wrap — and they are
+ * translated, so their length changes with the language. "Security Overview"
+ * fits; "ພາບລວມຄວາມປອດໄພ" and "ภาพรวมความปลอดภัย" do not, and a wrapped label
+ * makes that one item two lines tall, pushing every section below it down. The
+ * list visibly re-flowed on every language switch.
+ *
+ * Locking the label to one line with an ellipsis fixes the position of all 24
+ * rows in all four languages. `min-width: 0` is what actually lets a flex child
+ * shrink far enough to ellipsis — without it the label refuses to go below its
+ * content width and overflows the button instead. */
+.set-nav-item { white-space: nowrap; }
+.set-nav-item > span {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis;
+}
+/* The padlock must never be the thing that gets truncated. */
+.set-nav-item.set-nav-locked::after { flex: 0 0 12px; }
 .set-nav-item:hover { background: var(--hover); color: var(--text); }
 .set-nav-item.active { background: var(--bg-card); color: var(--text); font-weight: 600; box-shadow: var(--shadow-xs); }
+
+/* ── Locked section (P4.8.1) ──────────────────────────────────────────
+ * A section this account may not open. Shown rather than hidden, so the
+ * capability is discoverable and the refusal is explainable — but it must not
+ * look like an ordinary tab, which is exactly the state that made these read as
+ * broken buttons. Still focusable and still clickable: the click is what
+ * produces the "no permission" toast. */
+.set-nav-item.set-nav-locked { opacity: 0.42; cursor: not-allowed; }
+.set-nav-item.set-nav-locked:hover { background: transparent; color: var(--text-muted); }
+.set-nav-item.set-nav-locked::after {
+  content: "";
+  margin-left: auto; flex: none; width: 12px; height: 12px;
+  background-color: currentColor;
+  -webkit-mask: var(--kd-lock) center/contain no-repeat;
+          mask: var(--kd-lock) center/contain no-repeat;
+}
+:root {
+  /* padlock, inlined so it needs no network request and inherits currentColor */
+  --kd-lock: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+  /* the "tap to open" chevron on a phone row, same technique */
+  --kd-chev: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='9 18 15 12 9 6'/%3E%3C/svg%3E");
+}
+
+/* The phone chrome — header, back button, account card — exists in the markup at
+   every width and is switched on only by the mobile layout below. */
+.set-mhead, .set-acct, .set-nav-sub { display: none; }
 .set-body, .settings-content { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: 26px 34px 40px; position: relative; }
 .settings-content .set-pane { max-width: 660px; }
 
@@ -1173,6 +1820,25 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 .set-add-row .code-in { width: 70px; flex: none; text-transform: uppercase; font-family: 'Courier New', monospace; font-weight: 700; }
 .users-add { flex-wrap: wrap; }
 .users-add input { flex: 1; min-width: 120px; }
+
+/* P4.8 — the field a Settings "Add"/"Save" was waiting on. Applied for ~1.2 s by
+   _setNeedInput() alongside the toast, so the message and the field that caused
+   it are visibly connected. Overrides :focus, which fires at the same moment. */
+.set-input-error,
+.set-add-row input.set-input-error:focus,
+input.set-input-error:focus {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.16) !important;
+  animation: setInputNudge 0.32s ease-out;
+}
+@keyframes setInputNudge {
+  0%, 100% { transform: translateX(0); }
+  25%      { transform: translateX(-3px); }
+  75%      { transform: translateX(3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .set-input-error { animation: none; }
+}
 
 /* ── Settings: dark mode fixes ── */
 [data-theme="dark"] .set-item { background: var(--field-bg); border-color: var(--border); }
@@ -1274,17 +1940,6 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 .theme-opt:hover { border-color: var(--green); color: var(--text); background: var(--hover); }
 .theme-opt.active { border-color: var(--green); color: var(--green); background: var(--green-soft); }
 .theme-opt-icon { font-size: 1.4rem; line-height: 1; }
-
-/* ── Appearance tab: language row ── */
-.lang-row { display: flex; gap: 6px; flex-wrap: wrap; }
-.lang-row .lang-btn {
-  padding: 8px 16px; border: 1.5px solid var(--border); border-radius: 9px;
-  background: var(--bg-card); color: var(--text-muted);
-  font-size: 0.82rem; font-weight: 700; cursor: pointer; font-family: inherit;
-  transition: border-color 0.15s, color 0.15s, background 0.15s;
-}
-.lang-row .lang-btn:hover { border-color: var(--green); color: var(--text); }
-.lang-row .lang-btn.active { border-color: var(--green); background: var(--green-soft); color: var(--green); }
 
 /* ── Appearance section title (Settings pane) ── */
 .app-section-title {
@@ -1437,17 +2092,15 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 .set-about-ver  { text-align: center; font-size: 0.78rem; color: var(--text-muted); margin-bottom: 16px; }
 
 /* ── GROUPS OVERVIEW (pick-a-group landing) ── */
-.go-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(258px, 1fr));
-  gap: 16px; padding: 4px 28px 40px;   /* align with .page-head; keep cards off the sidebar/window edges */
-}
-.go-empty { color: var(--text-muted); font-size: 0.86rem; padding: 30px 4px; }
+/* .bento supplies the grid; this only sets the page rhythm. */
+.go-grid { padding: 4px 28px 40px; }
+.go-empty { color: var(--text-muted); font-size: 0.86rem; padding: 30px 4px; grid-column: 1 / -1; }
 .go-card {
-  background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--r-lg);
-  padding: 16px 18px; cursor: pointer;
-  transition: box-shadow 0.16s var(--ease), transform 0.16s var(--ease), border-color 0.16s var(--ease);
+  background: var(--bg-card); border: none; border-radius: var(--r-xl);
+  padding: var(--sp-5); cursor: pointer; box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
 }
-.go-card:hover { box-shadow: var(--shadow-md); border-color: var(--green); transform: translateY(-2px); }
+.go-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
 .go-card-top { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
 .go-ic {
   width: 44px; height: 44px; border-radius: 12px; flex: none;
@@ -1458,7 +2111,9 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 .go-route { font-size: 0.74rem; color: var(--text-muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .go-arrow { width: 18px; height: 18px; color: var(--text-faint); flex: none; margin-left: auto; }
 .go-card:hover .go-arrow { color: var(--green); }
-.go-stats { display: flex; gap: 22px; border-top: 1px solid var(--line); padding-top: 12px; }
+/* margin-top:auto pins the stats to the bottom, so tiles stretched to a common
+   row height keep their numbers on one line instead of floating mid-card. */
+.go-stats { display: flex; gap: 22px; border-top: 1px solid var(--line); padding-top: 12px; margin-top: auto; }
 .go-stat { display: flex; flex-direction: column; gap: 1px; }
 .go-stat .n { font-size: 1.15rem; font-weight: 800; color: var(--text); line-height: 1; }
 .go-stat .l { font-size: 0.68rem; color: var(--text-faint); }
@@ -1717,6 +2372,7 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 }
 .dz-btn-pri:hover { background: var(--blue-lt); }
 .dz-btn-sec {
+  display: inline-flex; align-items: center; gap: 6px;
   background: transparent; color: var(--text); border: 1.5px solid var(--border);
   border-radius: 10px; padding: 10px 20px;
   font-family: inherit; font-size: 0.85rem; font-weight: 600;
@@ -1724,17 +2380,76 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 }
 .dz-btn-sec:hover { background: var(--hover); }
 
-/* Stats row */
-.dz-stats-row {
-  display: grid; grid-template-columns: repeat(4, 1fr);
-  gap: var(--sp-5); margin-bottom: var(--sp-5);
+/* ── Dashboard switcher (one Bento arrangement per view) ── */
+.dz-views {
+  display: flex; gap: 6px; margin-bottom: var(--sp-5);
+  overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
 }
+.dz-views::-webkit-scrollbar { display: none; }
+.dz-view-btn {
+  display: inline-flex; align-items: center; gap: 7px; flex: none;
+  font-family: inherit; font-size: 0.82rem; font-weight: 600;
+  color: var(--text-muted); background: var(--bg-card);
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 8px 15px; cursor: pointer; white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.dz-view-btn svg { width: 15px; height: 15px; flex: none; }
+.dz-view-btn:hover { color: var(--text); border-color: var(--text-faint); }
+.dz-view-btn.active { background: var(--green); border-color: var(--green); color: #fff; }
+
+/* ── Bento grid ──
+   12 columns on desktop; data-size picks the span. Tiles stretch to the
+   tallest in their row, so a row always reads as one clean band. */
+.bento {
+  display: grid; grid-template-columns: repeat(12, 1fr);
+  gap: var(--sp-5); align-items: stretch;
+}
+.bento-tile[data-size="s"]    { grid-column: span 3; }
+.bento-tile[data-size="m"]    { grid-column: span 4; }
+.bento-tile[data-size="l"]    { grid-column: span 6; }
+.bento-tile[data-size="full"] { grid-column: span 12; }
+.bento-tile { min-width: 0; display: flex; flex-direction: column; }
+
+/* ── Tile reveal ──
+   Tiles sit still by default and only animate while the grid carries .reveal,
+   which JS re-adds on every view/tab change. Re-triggering one class on the
+   grid costs a single reflow, where restarting each tile would cost one each.
+   --i is the tile's position in the stagger: nth-child covers static grids,
+   and applyBentoLayout() overrides it inline where `order` moves tiles around
+   (nth-child follows DOM order, not the order the eye sees). */
+.bento.reveal > .bento-tile {
+  animation: tileIn var(--t-slow) var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * var(--t-stagger));
+}
+@keyframes tileIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+.bento > .bento-tile:nth-child(1)  { --i: 0; }
+.bento > .bento-tile:nth-child(2)  { --i: 1; }
+.bento > .bento-tile:nth-child(3)  { --i: 2; }
+.bento > .bento-tile:nth-child(4)  { --i: 3; }
+.bento > .bento-tile:nth-child(5)  { --i: 4; }
+.bento > .bento-tile:nth-child(6)  { --i: 5; }
+.bento > .bento-tile:nth-child(7)  { --i: 6; }
+.bento > .bento-tile:nth-child(8)  { --i: 7; }
+.bento > .bento-tile:nth-child(9)  { --i: 8; }
+.bento > .bento-tile:nth-child(10) { --i: 9; }
+.bento > .bento-tile:nth-child(11) { --i: 10; }
+/* Past a dozen the cascade would out-stay its welcome — the rest arrive together. */
+.bento > .bento-tile:nth-child(n+12) { --i: 11; }
+
+/* Charts must scroll inside their tile, never widen the page */
+.dz-scroll-x { overflow-x: auto; overflow-y: hidden; margin: 0 calc(var(--sp-6) * -1); padding: 0 var(--sp-6); flex: 1; }
+.dz-scroll-x > * { min-width: 260px; }
+
 .dz-stat-card {
   background: var(--bg-card); border: none;
   border-radius: var(--r-xl); padding: var(--sp-6) var(--sp-5);
   box-shadow: var(--shadow-sm);
   transition: box-shadow 0.22s var(--ease), transform 0.22s var(--ease);
-  animation: dzCardIn 0.5s var(--ease) both;
 }
 .dz-stat-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-3px); }
 .dz-stat-highlight { background: var(--green); box-shadow: var(--shadow-green); }
@@ -1755,39 +2470,19 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 .dz-stat-foot { font-size: 0.77rem; color: var(--text-muted); display: flex; align-items: center; gap: 5px; }
 .dz-stat-highlight .dz-stat-foot { color: rgba(255,255,255,0.75); }
 
-/* Mid / Bot rows */
-.dz-mid-row {
-  display: grid; grid-template-columns: 2fr 1fr 1fr;
-  gap: var(--sp-5); margin-bottom: var(--sp-5);
-}
-.dz-bot-row { display: grid; grid-template-columns: 2fr 1fr; gap: var(--sp-5); }
-
 .dz-card {
   background: var(--bg-card); border: none;
   border-radius: var(--r-xl); padding: var(--sp-6);
   box-shadow: var(--shadow-sm);
   transition: box-shadow 0.22s var(--ease);
-  animation: dzCardIn 0.5s var(--ease) both;
 }
 .dz-card:hover { box-shadow: var(--shadow-md); }
-.dz-card-span2 { grid-column: span 2; }
 .dz-card-head {
   display: flex; align-items: center; justify-content: space-between;
   gap: 10px; margin-bottom: var(--sp-5); flex-wrap: wrap;
 }
 .dz-card-title { font-size: 1rem; font-weight: 600; color: var(--text); }
 
-/* Staggered fade-up entrance for dashboard blocks */
-@keyframes dzCardIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
-.dz-stats-row .dz-stat-card:nth-child(1) { animation-delay: 0.02s; }
-.dz-stats-row .dz-stat-card:nth-child(2) { animation-delay: 0.06s; }
-.dz-stats-row .dz-stat-card:nth-child(3) { animation-delay: 0.10s; }
-.dz-stats-row .dz-stat-card:nth-child(4) { animation-delay: 0.14s; }
-.dz-mid-row .dz-card:nth-child(1) { animation-delay: 0.16s; }
-.dz-mid-row .dz-card:nth-child(2) { animation-delay: 0.20s; }
-.dz-mid-row .dz-card:nth-child(3) { animation-delay: 0.24s; }
-.dz-bot-row .dz-card:nth-child(1) { animation-delay: 0.26s; }
-.dz-bot-row .dz-card:nth-child(2) { animation-delay: 0.30s; }
 
 /* Analytics chart filter toolbar */
 .dz-chart-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -1838,7 +2533,6 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 .dz-bar-empty { color: var(--text-muted); font-size: 0.82rem; margin: auto; }
 
 /* Group comparison chart */
-.dz-compare-row { margin-top: var(--sp-5); }
 .dz-cmp-vs { font-size: 0.72rem; font-weight: 700; color: var(--text-faint); padding: 0 2px; }
 .dz-cmp-legend { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 14px; }
 .dz-cmp-leg { display: inline-flex; align-items: center; gap: 7px; font-size: 0.78rem; font-weight: 600; color: var(--text-muted); }
@@ -1916,17 +2610,45 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 .sb-nav-badge { margin-left: auto; background: rgba(255,255,255,0.15); color: var(--sb-text); font-size: 0.68rem; font-weight: 800; border-radius: 999px; padding: 1px 8px; }
 .sb-nav-badge-red { margin-left: auto; background: rgba(248,113,113,0.2); color: #f87171; font-size: 0.68rem; font-weight: 800; border-radius: 999px; padding: 1px 8px; }
 
-/* Responsive */
-@media (max-width: 900px) {
-  .dz-stats-row { grid-template-columns: repeat(2, 1fr); }
-  .dz-mid-row   { grid-template-columns: 1fr; }
-  .dz-bot-row   { grid-template-columns: 1fr; }
-  .dz-card-span2 { grid-column: span 1; }
+/* ── Responsive Bento ──
+   The grid narrows in steps rather than collapsing to one column: two stat
+   tiles still sit side by side on a phone, which is what makes the dashboard
+   readable at a glance instead of a long scroll of full-width blocks. */
+@media (max-width: 1000px) {
+  .bento { grid-template-columns: repeat(6, 1fr); }
+  .bento-tile[data-size="s"]    { grid-column: span 3; }
+  .bento-tile[data-size="m"]    { grid-column: span 3; }
+  .bento-tile[data-size="l"]    { grid-column: span 6; }
+  .bento-tile[data-size="full"] { grid-column: span 6; }
+}
+@media (max-width: 700px) {
+  .bento { grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .bento-tile[data-size="s"]    { grid-column: span 2; }
+  .bento-tile[data-size="m"]    { grid-column: span 4; }
+  .bento-tile[data-size="l"]    { grid-column: span 4; }
+  .bento-tile[data-size="full"] { grid-column: span 4; }
+  .dz-card     { padding: var(--sp-5); border-radius: var(--r-lg); }
+  .dz-stat-card { padding: var(--sp-5) var(--sp-4); border-radius: var(--r-lg); }
+  .dz-stat-num  { font-size: 1.75rem; margin-bottom: 6px; }
+  .dz-stat-arrow { width: 24px; height: 24px; font-size: 0.7rem; }
+  .dz-stat-label { font-size: 0.76rem; }
+  .dz-stat-foot  { font-size: 0.7rem; }
+  .dz-scroll-x { margin: 0 calc(var(--sp-5) * -1); padding: 0 var(--sp-5); }
+  /* Hover lift is meaningless on touch and makes taps feel laggy */
+  .dz-stat-card:hover { transform: none; }
 }
 @media (max-width: 600px) {
-  .dz-dashboard { padding: 16px; }
-  .dz-stats-row { grid-template-columns: 1fr 1fr; gap: 10px; }
-  .dz-head-actions { display: none; }
+  /* The dashboard is the landing screen on a phone — Import and Add Group are
+     the two things people come here to do, so they stay reachable. The last
+     tile must also clear the fixed bottom nav. */
+  .dz-dashboard { padding: 16px 16px calc(var(--bottom-nav-h) + 24px); }
+  .dz-head-row { flex-direction: column; align-items: stretch; margin-bottom: var(--sp-5); }
+  .dz-title { font-size: 1.5rem; }
+  .dz-sub { font-size: 0.8rem; }
+  .dz-head-actions { padding-top: 0; flex-wrap: wrap; }
+  .dz-head-actions .dz-btn-sec, .dz-head-actions .dz-btn-pri { flex: 1 1 auto; justify-content: center; }
+  .dz-views { margin-bottom: var(--sp-4); }
+  .dz-card-head { margin-bottom: var(--sp-4); }
 }
 .scan-capture-btn:hover { background: #4fc3f7 !important; color: #0a0a0f !important; }
 
@@ -2035,10 +2757,15 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 /* Tablet & down */
 @media (max-width: 900px) {
   .form-grid, .form-grid.col3 { grid-template-columns: 1fr; }
+  /* One column means one column: a leftover `grid-column: span 2` on a single
+     field (Language Skills carries it inline) creates an IMPLICIT second track,
+     which quietly turned this section back into two uneven columns on phones —
+     Grade ended up 92px wide. Now visible because tile groups need the width. */
+  .form-grid > .form-group[style*="span 2"] { grid-column: auto !important; }
   .vm-body { flex-direction: column; }
   .vm-left, .vm-right { flex: unset; width: 100%; }
   .set-cols { grid-template-columns: 1fr; }
-  .stats-row { grid-template-columns: repeat(2, 1fr); }
+  /* .stats-row columns come from .bento's own breakpoints now. */
 }
 
 /* Phones */
@@ -2047,16 +2774,17 @@ body[data-role="viewer"] .admin-only { display: none !important; }
   .page-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .page-actions .btn { justify-content: center; }
   .page-actions .btn-add { grid-column: 1 / -1; }   /* primary action full-width */
-  .stats-row { grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 12px 14px; }
+  .stats-row { gap: 10px; padding: 12px 14px; }
   .stat-card { padding: 12px; }
   .stat-card .num { font-size: 1.5rem; }
   .toolbar { flex-wrap: wrap; gap: 8px; }
   .toolbar .search-wrap { flex: 1 1 100%; }
   .toolbar select { flex: 1 1 auto; min-width: 0; }
-  .view-toggle { display: none; }      /* cards are forced on phones */
+  #view-toggle { display: none; }      /* cards are forced on phones */
   .cards-grid { grid-template-columns: 1fr; }
   .detail-drawer { max-width: 100%; }
-  .data-panel { border-radius: 0; border-left: none; border-right: none; }
+  /* The panel used to run edge-to-edge here, which is why it squared off; it is
+     inset by a margin now, so it keeps the same corners as every other tile. */
   .cards-wrap { padding: 10px 12px 16px; }
   /* Detail drawer: comfortable touch targets + room for documents */
   .vm-docs { padding: 0 4px 8px; }
@@ -2084,7 +2812,6 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 .doc-add:hover, .doc-scan:hover { border-color: var(--green); color: var(--green); }
 .doc-empty { font-size: 0.76rem; color: var(--text-faint); }
 .doc-ver { position: absolute; bottom: 3px; left: 3px; background: rgba(0,0,0,0.55); color: #fff; font-size: 0.55rem; font-weight: 800; padding: 1px 4px; border-radius: 4px; pointer-events: none; }
-.doc-history { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
 .doc-hist-item { display: inline-flex; align-items: center; gap: 4px; font-size: 0.68rem; font-weight: 700; color: var(--text-muted); background: var(--field-bg); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; cursor: pointer; transition: border-color 0.15s, color 0.15s; }
 .doc-hist-item:hover { border-color: var(--green); color: var(--green); }
 .doc-hist-item button { border: none; background: none; color: inherit; cursor: pointer; font-size: 0.6rem; padding: 0 0 0 3px; line-height: 1; }
@@ -2096,15 +2823,50 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 /* Preview wraps the image exactly — no white letterbox bars. Format consistency
    is handled at UPLOAD time (the crop editor normalises every photo before it is
    stored), so documents already look uniform here without padding. */
-.docview-modal { background: var(--bg-card); border-radius: 12px; max-width: 96vw; max-height: 92vh; overflow: hidden; position: relative; display: block; padding: 0; box-shadow: var(--shadow-xl); }
-#docview-body { display: flex; align-items: center; justify-content: center; }
-/* Lock the on-screen HEIGHT so every document shows at the SAME, large size no
-   matter its source resolution — small/low-res photos from any device scale UP
-   to fill, instead of rendering tiny. object-fit:contain keeps aspect (and only
-   an unusually wide/landscape scan gets minor side padding). */
-.docview-img { height: 86vh; width: auto; max-width: 96vw; object-fit: contain; border-radius: 6px; display: block; cursor: zoom-in; transition: transform 0.22s ease; will-change: transform; }
+/* Bento lightbox: a centred image STAGE + a details TILE beside it. The stage
+   keeps every document framed identically; the tile answers "what is this file". */
+.docview-modal { background: var(--bg-card); border-radius: 14px; width: min(1080px, 96vw); max-width: 96vw; max-height: 92vh; overflow: hidden; position: relative; display: block; padding: 0; box-shadow: var(--shadow-xl); }
+#docview-body { display: flex; align-items: stretch; max-height: 92vh; }
+.docview-stage {
+  flex: 1 1 auto; min-width: 0; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--field-bg); padding: 20px; overflow: hidden; min-height: 340px;
+}
+/* The image scales to fit WHOLE inside the stage (contain), centred both axes —
+   a small/low-res scan scales up, a tall ID or wide passport both sit centred
+   with even breathing room instead of being cropped or shoved to one edge. */
+.docview-img { max-height: 84vh; max-width: 100%; width: auto; height: auto; object-fit: contain; border-radius: 6px; display: block; cursor: zoom-in; transition: transform 0.22s ease; will-change: transform; }
 .docview-img.zoomed { cursor: zoom-out; }
-.docview-pdf { width: 92vw; height: 88vh; max-width: 850px; border: none; display: block; }
+.docview-pdf { width: 100%; height: 84vh; border: none; display: block; background: #fff; }
+.docview-meta {
+  flex: 0 0 264px; max-width: 264px; box-sizing: border-box;
+  border-left: 1px solid var(--line); background: var(--bg-card);
+  padding: 22px 20px 18px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.docview-meta-head { font-size: 0.95rem; font-weight: 800; color: var(--text); line-height: 1.3; padding-right: 34px; word-break: break-word; }
+.docview-meta-rows { display: flex; flex-direction: column; gap: 8px; }
+.docview-row { display: flex; gap: 10px; font-size: 0.8rem; line-height: 1.35; }
+.docview-k { color: var(--text-faint); flex: 0 0 62px; }
+.docview-v { color: var(--text); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.docview-meta-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  font-size: 0.8rem; font-weight: 700; color: #fff; font-family: inherit;
+  background: var(--green); border: none; border-radius: 9px; padding: 9px 12px;
+  cursor: pointer; transition: filter 0.15s; margin-top: 2px;
+}
+.docview-meta-btn:hover { filter: brightness(1.06); }
+.docview-meta-btn svg { width: 15px; height: 15px; }
+.docview-meta-hint { font-size: 0.72rem; color: var(--text-faint); margin-top: auto; }
+@media (max-width: 720px) {
+  .docview-modal { width: 96vw; }
+  #docview-body { flex-direction: column; }
+  .docview-stage { padding: 14px; min-height: 0; max-height: 62vh; }
+  .docview-img { max-height: 58vh; }
+  .docview-pdf { height: 58vh; }
+  .docview-meta { flex: 0 0 auto; max-width: none; border-left: none; border-top: 1px solid var(--line); }
+  .docview-meta-hint { margin-top: 4px; }
+}
 /* Close button — pinned to the preview's top-right corner */
 .docview-modal .fm-close {
   position: absolute; top: 10px; right: 10px; z-index: 10;
@@ -2127,7 +2889,10 @@ body[data-role="viewer"] .admin-only { display: none !important; }
   width: 54px; height: 54px; border-radius: 50%;
   background: var(--green); color: #fff;
   border: none; cursor: pointer; z-index: 500;
-  box-shadow: 0 6px 22px -6px rgba(45,106,79,0.7);
+  /* Stays a solid accent rather than becoming glass: it is the primary action,
+     and its colour is the signal. It takes the material's LIGHT instead, so it
+     still belongs to the same system as the panes around it. */
+  box-shadow: var(--ctl-lit-strong), 0 6px 22px -6px rgba(45,106,79,0.7);
   align-items: center; justify-content: center;
   font-size: 1.6rem; font-weight: 300;
   transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
@@ -2136,17 +2901,35 @@ body[data-role="viewer"] .admin-only { display: none !important; }
 .fab:active { transform: scale(0.96); }
 body[data-role="viewer"] .fab { display: none !important; }
 
-/* ── Bottom Navigation (mobile) ── */
+/* ── Bottom Navigation (mobile) ── glass ──
+ * The clearest case for the material in the whole app: the list scrolls
+ * underneath it continuously, so there is always something moving behind the
+ * pane. This is the surface Apple's own tab bar is. */
 .bottom-nav {
   display: none;
   position: fixed; bottom: 0; left: 0; right: 0;
   height: 60px;
-  background: var(--bg-card);
-  border-top: 1px solid var(--line);
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+          backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border-top: 1px solid var(--glass-border);
   z-index: 200;
   padding: 0 8px;
   align-items: stretch;
   gap: 0;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .bottom-nav { background: var(--bg-card); border-top-color: var(--line); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .bottom-nav {
+    background: var(--bg-card); border-top-color: var(--line);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+}
+body.exporting .bottom-nav {
+  background: var(--bg-card) !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
 }
 .bn-item {
   flex: 1; display: flex; flex-direction: column;
@@ -2166,15 +2949,36 @@ body[data-role="viewer"] .fab { display: none !important; }
   position: fixed; top: 16px; right: 16px; z-index: 2000;
   display: flex; flex-direction: column; gap: 8px; pointer-events: none;
 }
+/* ── Toast ── glass ──
+ * Floats over the page, so it has a genuine backdrop. It keeps its inverted
+ * dark chip in both themes (that is what makes a toast read as a notification
+ * rather than as part of the page), so it uses the invert tint rather than the
+ * theme-following one. */
 .toast {
   display: flex; align-items: center; gap: 10px;
-  background: var(--navy2); color: #f0f0f0;
+  background: var(--glass-tint-invert); color: #f0f0f0;
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+          backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border-invert);
   border-radius: 10px; padding: 12px 16px;
   font-size: 0.84rem; font-weight: 600;
   box-shadow: 0 8px 28px -8px rgba(0,0,0,0.5);
   pointer-events: auto; min-width: 220px; max-width: 360px;
   animation: toastIn 0.25s ease;
   transition: opacity 0.3s, transform 0.3s;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .toast { background: var(--navy2); border-color: transparent; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .toast {
+    background: var(--navy2); border-color: transparent;
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+}
+body.exporting .toast {
+  background: var(--navy2) !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
 }
 .toast.removing { opacity: 0; transform: translateX(20px); }
 .toast-ok   { border-left: 4px solid #22c55e; }
@@ -2209,65 +3013,15 @@ body[data-role="viewer"] .fab { display: none !important; }
 .chart-leg-item { display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: var(--text-muted); }
 .chart-leg-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 
-/* ── Detail view — tabs ── */
-.detail-tabs {
-  display: flex; gap: 0;
-  border-bottom: 2px solid var(--line);
-  padding: 0 20px;
-  background: var(--bg-card);
-  position: sticky; top: 57px; z-index: 10;
-}
-.detail-tab {
-  background: none; border: none; border-bottom: 2px solid transparent;
-  margin-bottom: -2px; cursor: pointer; font-family: inherit;
-  padding: 12px 18px; font-size: 0.82rem; font-weight: 700;
-  color: var(--text-muted); transition: color 0.15s, border-color 0.15s;
-  white-space: nowrap;
-}
-.detail-tab:hover { color: var(--text); }
-.detail-tab.active { color: var(--green); border-bottom-color: var(--green); }
-
-/* ── Detail view — panes ── */
-.detail-pane { display: none; }
-.detail-pane.active { display: block; }
-
-/* ── Activity log ── */
-.activity-list { padding: 16px; display: flex; flex-direction: column; gap: 0; }
-.act-item {
-  display: flex; align-items: flex-start; gap: 12px;
-  padding: 10px 0; border-bottom: 1px solid var(--line);
-}
-.act-item:last-child { border-bottom: none; }
-.act-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--green); flex-shrink: 0; margin-top: 5px;
-}
-.act-dot.updated { background: var(--orange); }
-.act-dot.deleted { background: var(--red); }
-.act-body { flex: 1; min-width: 0; }
-.act-action { font-size: 0.82rem; font-weight: 700; color: var(--text); }
-.act-by { font-size: 0.72rem; font-weight: 400; color: var(--text-muted); }
-.act-detail { font-size: 0.76rem; color: var(--text-muted); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.act-time { font-size: 0.68rem; color: var(--text-faint); margin-top: 3px; }
-.act-meta { font-size: 0.68rem; color: var(--text-faint); margin-top: 3px; }
-.act-empty { padding: 32px; text-align: center; color: var(--text-faint); font-size: 0.84rem; }
+/* The detail drawer's tabs/panes and the old .act-* activity list were replaced
+   by a single scroll body plus the shared history timeline (.hist-*). */
 
 /* ── Detail view header (compact) ── */
-.vm-topbar {
-  display: flex; align-items: center; gap: 12px;
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--line);
-  background: var(--bg-card);
-  position: relative; z-index: 11;
-}
-.vm-close-new {
-  width: 34px; height: 34px; border-radius: 9px;
-  background: var(--field-bg); border: none; color: var(--text);
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer; flex-shrink: 0; font-size: 1.1rem;
-  transition: background 0.12s;
-}
-.vm-close-new:hover { background: var(--hover); }
+/* The drawer's header and close button used to be defined here
+   (.vm-topbar / .vm-close-new). Both were dead: the drawer renders
+   .vm-menubar. Their CHILDREN below are live — the ids #vm-topbar-en /
+   #vm-topbar-lo / #vm-topbar-actions are what kept the name alive in app.js
+   and made these look load-bearing. */
 .vm-topbar-name { flex: 1; min-width: 0; }
 .vm-topbar-en { font-size: 1.05rem; font-weight: 800; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vm-topbar-lo { font-size: 0.78rem; color: var(--text-muted); margin-top: 1px; }
@@ -2324,18 +3078,38 @@ body[data-role="viewer"] .fab { display: none !important; }
 }
 
 /* ── Mobile menu floating button (replaces header hamburger) ── */
+/* ── Floating menu button (mobile) ── glass ──
+ * It floats directly over the scrolling list, so it gets the material. It also
+ * stops being charcoal in light mode: the colour was hard-coded to #171717 for
+ * both themes, which read as a stray dark chip on a light page. Now it takes
+ * the theme like everything else. */
 .mobile-fab-menu {
   display: none;
   position: fixed; top: 14px; left: 14px;
   width: 40px; height: 40px; border-radius: 11px;
-  background: #171717; color: #e5e7eb;
-  border: 1px solid rgba(255,255,255,0.1);
+  background: var(--glass-tint); color: var(--text);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+          backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border);
   align-items: center; justify-content: center;
   font-size: 1.15rem; cursor: pointer; z-index: 160;
-  box-shadow: 0 4px 14px -4px rgba(0,0,0,0.5);
+  box-shadow: var(--glass-shadow);
   transition: background 0.12s;
 }
-.mobile-fab-menu:hover { background: #262626; }
+.mobile-fab-menu:hover { background: var(--glass-tint-thick); }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .mobile-fab-menu { background: var(--bg-card); border-color: var(--border); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .mobile-fab-menu {
+    background: var(--bg-card); border-color: var(--border);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+}
+body.exporting .mobile-fab-menu {
+  background: var(--bg-card) !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+}
 @media (max-width: 768px) {
   .mobile-fab-menu { display: flex; }
   /* When the sidebar is open it already shows the brand/logo — hide the
@@ -2379,16 +3153,22 @@ body[data-role="viewer"] .fab { display: none !important; }
 /* ── Detail topbar secondary elements ── */
 .vm-topbar-lo-text { margin-left: 6px; color: var(--text-muted); }
 .vm-action-btn {
-  padding: 5px 12px; border: 1px solid var(--green); background: transparent;
-  color: var(--green); border-radius: 7px; font-size: 0.8rem; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border: 1px solid var(--green); background: transparent;
+  color: var(--green); border-radius: 9px; font-size: 0.8rem; font-weight: 600;
   cursor: pointer; transition: background 0.12s, color 0.12s;
-  font-family: inherit;
+  font-family: inherit; line-height: 1.2;
 }
 .vm-action-btn:hover { background: var(--green); color: #fff; }
 .vm-action-save { background: var(--green); color: #fff; }
 .vm-action-save:hover { background: var(--blue-lt); }
-.vm-nav-btn { padding: 5px 10px; font-size: 1rem; line-height: 1; }
+/* Inline shape icons: crisp 15px, never shrink, inherit the button's colour. */
+.vm-ico { width: 15px; height: 15px; flex-shrink: 0; }
+/* Nav arrows + zoom are icon-only squares. */
+.vm-nav-btn { padding: 6px 8px; }
 .vm-nav-btn:disabled { opacity: 0.32; cursor: default; background: transparent; color: var(--green); }
+/* Selected (★) fills the star so the "on" state reads at a glance. */
+.vm-action-btn.vm-select.on .vm-ico { fill: currentColor; }
 .vm-nav-count { font-size: 0.74rem; color: var(--muted, #6b7280); font-weight: 600; align-self: center; margin: 0 2px 0 -2px; }
 
 /* ── Inline edit fields in the detail table ── */
@@ -2407,15 +3187,26 @@ body[data-role="viewer"] .fab { display: none !important; }
   display: flex; align-items: center; justify-content: center;
   width: 100%; max-width: 100vw; max-height: 100vh; overflow: auto; padding: 24px;
 }
-/* Locked 16:10 sheet — fit the screen while keeping the exact proportions. */
-.cardzoom-stage .kd-card {
-  width: min(1000px, calc(100vw - 48px)); max-width: none; flex-shrink: 0;
+/* Locked 16:10 slide — grow as large as the screen allows, capped by BOTH the
+   viewport width and height so the whole card always fits (16:10 → h = w / 1.6).
+   Only the FIT box is sized; the surface inside it is scaled, never re-laid-out. */
+.cardzoom-stage .kd-fit {
+  width: min(calc(100vw - 48px), calc((100vh - 48px) * 1.6));
+  max-width: none; flex-shrink: 0;
   box-shadow: var(--shadow-xl);
-  animation: modalPopIn 0.3s var(--ease-spring);
+  /* No pop-in animation: it replayed on EVERY worker swap, so each flip looked
+     like the card re-centred and re-scaled itself. Present opens and flips
+     dead-still now. */
+}
+/* In true fullscreen there is no browser chrome — use the full surface. */
+#cardzoom-overlay:fullscreen { background: var(--bg); }
+#cardzoom-overlay:fullscreen .cardzoom-stage { padding: 0; }
+#cardzoom-overlay:fullscreen .cardzoom-stage .kd-fit {
+  width: min(100vw, calc(100vh * 1.6));
 }
 /* KD card shown when viewing a worker (detail Info tab) */
 .vm-kd-view { padding: var(--sp-5) var(--sp-6); display: flex; justify-content: center; cursor: zoom-in; }
-.vm-kd-view .kd-card { width: 100%; max-width: 620px; cursor: default; }
+.vm-kd-view .kd-fit { width: 100%; max-width: 620px; cursor: default; }
 
 /* ── Detail section cards ── */
 .vd-sections { display: flex; flex-direction: column; gap: 10px; padding: 14px 18px 24px; }
@@ -2440,14 +3231,64 @@ body[data-role="viewer"] .fab { display: none !important; }
 .vd-sec-sub   { font-size: 0.65rem; font-weight: 400; color: var(--text-muted); margin-left: 4px; }
 
 .vd-rows { display: flex; flex-direction: column; }
-.vd-row { display: flex; align-items: center; padding: 8px 14px; min-height: 36px; border-bottom: 1px solid var(--border); }
+.vd-row { display: flex; align-items: center; gap: 12px; padding: 8px 14px; min-height: 36px; border-bottom: 1px solid var(--border); }
 .vd-row:last-child { border-bottom: none; }
 
-.vd-lbl { flex: 0 0 44%; font-size: 0.74rem; font-weight: 600; color: var(--text-muted); line-height: 1.3; }
+/* min-width:0 lets the label shrink; the value gets the rest and wraps long tokens
+   (phone numbers, names, IDs) instead of overflowing the row like it used to. */
+.vd-lbl { flex: 0 0 42%; min-width: 0; font-size: 0.74rem; font-weight: 600; color: var(--text-muted); line-height: 1.3; }
 .vd-lbl .vd-sub { display: block; font-size: 0.62rem; color: var(--text-faint); font-weight: 400; margin-top: 1px; }
-.vd-val { flex: 1; font-size: 0.8rem; font-weight: 600; color: var(--text); text-align: right; }
+.vd-val { flex: 1 1 0; min-width: 0; font-size: 0.8rem; font-weight: 600; color: var(--text); text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .vd-val .vm-edit-in { width: 100%; text-align: left; font-size: 0.8rem; }
-.vd-split { display: flex; justify-content: flex-end; gap: 14px; }
+.vd-split { display: flex; justify-content: flex-end; gap: 14px; min-width: 0; flex-wrap: wrap; }
+/* A value that belongs to the GROUP, shown because the worker has none of their
+   own (Korea destination). Lighter and italic so it never reads as data that was
+   entered on this record — but --text-muted, not --text-faint: it is still meant
+   to be read. */
+.vd-inherited { font-weight: 500; font-style: italic; color: var(--text-muted); }
+
+/* ── Bento layout for the worker detail (VIEW mode only) ──────────────
+   Apple-minimal: the stacked section cards become a 2-column grid of tiles
+   with the profile a hero card and Identity spanning the full width. Scoped
+   to .vm-bento so the inline EDIT layout keeps its original single column. */
+.vm-single-view.vm-bento { padding: 16px 18px 26px; }
+.vm-bento .vm-profile-header {
+  margin: 0 0 14px; padding: 18px 20px;
+  border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--bg-card); box-shadow: var(--shadow-sm);
+}
+.vm-bento .vd-sections {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px; padding: 0; align-items: start;
+}
+.vm-bento .vd-section { border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
+.vm-bento .vd-section.vd-wide { grid-column: 1 / -1; }
+.vm-bento .vd-warn { grid-column: 1 / -1; margin: 0; }
+.vm-bento .vd-section-head { padding: 10px 16px; }
+.vm-bento .vd-row { padding: 9px 16px; }
+@media (max-width: 760px) {
+  .vm-single-view.vm-bento { padding: 12px 12px 22px; }
+  .vm-bento .vd-sections { grid-template-columns: 1fr; }
+}
+
+/* ── Detail overlay tabs (Details · Documents · Activity) ── */
+.vm-tabs {
+  display: flex; gap: 2px; flex-shrink: 0;
+  padding: 4px 14px 0; background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.vm-tab {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 11px 16px; border: none; background: none; cursor: pointer;
+  font-family: inherit; font-size: 0.82rem; font-weight: 600; color: var(--text-muted);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  border-radius: 8px 8px 0 0; transition: color .15s, border-color .15s, background .15s;
+}
+.vm-tab svg { width: 15px; height: 15px; }
+.vm-tab:hover { color: var(--text); background: var(--hover); }
+.vm-tab.active { color: var(--green); border-bottom-color: var(--green); }
+.vm-tab-panel { display: none; }
+.vm-tab-panel.active { display: block; }
 
 .vd-warn {
   margin: 0 0 10px; padding: 8px 14px; border-radius: var(--r-sm);
@@ -2513,6 +3354,36 @@ body[data-role="viewer"] .fab { display: none !important; }
   transition: background 0.15s;
 }
 .cardzoom-close:hover { background: rgba(0,0,0,0.75); }
+
+/* Preview Mode HUD — selection state + current grade + shortcut hint */
+.cardzoom-hud {
+  position: fixed; top: 18px; left: 18px; z-index: 12;
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap; max-width: 72vw;
+}
+.cardzoom-hud .cz-chip {
+  background: rgba(0,0,0,0.55); color: #fff; border-radius: 999px;
+  padding: 7px 14px; font-size: 0.86rem; font-weight: 700;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.cardzoom-hud .cz-sel.on { background: var(--green); }
+.cardzoom-hud .cz-keys { background: rgba(0,0,0,0.34); color: #cfcfcf; font-weight: 600; letter-spacing: 0.5px; }
+
+/* Center burst that confirms select / deselect / grade */
+.cardzoom-flash { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; z-index: 1200; }
+.cardzoom-flash .cz-burst {
+  opacity: 0; font-size: 2rem; font-weight: 800; color: #fff;
+  padding: 18px 34px; border-radius: 18px; background: rgba(20,20,20,0.82);
+  box-shadow: 0 20px 50px -12px rgba(0,0,0,0.6);
+}
+.cardzoom-flash .cz-burst.cz-on  { background: var(--green); }
+.cardzoom-flash .cz-burst.cz-off { background: rgba(72,72,72,0.92); }
+.cardzoom-flash.show .cz-burst { animation: czBurst 0.72s var(--ease-out); }
+@keyframes czBurst {
+  0%   { opacity: 0; transform: scale(0.6); }
+  18%  { opacity: 1; transform: scale(1.06); }
+  70%  { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.02); }
+}
 
 /* ── Photo editor (upload + rotate, opens from the KD card photo) ── */
 .pe-modal {
@@ -2655,11 +3526,19 @@ body[data-role="viewer"] .fab { display: none !important; }
     width: 100%; page-break-after: always; break-after: page;
   }
   .print-group-page:last-child { page-break-after: auto; break-after: auto; }
-  .print-group-page .kd-card {
+  /* The slide surface is scaled for paper too, but a printout has no JS-visible
+     layout to measure, so --kd-scale is pinned here instead of by _kdFit():
+     A4 landscape (297mm) − 2×8mm margin = 281mm of printable width, which is
+     281 × 96 / 25.4 ≈ 1062px, and 1062 / 1920 ≈ 0.553. Rounded a hair DOWN and
+     with overflow released, so a rounding difference can never clip the card. */
+  .print-group-page .kd-fit {
     width: 100% !important; max-width: 100% !important;
+    --kd-scale: 0.5531 !important;
+    overflow: visible !important;
     box-shadow: none !important; animation: none !important;
     page-break-inside: avoid !important; break-inside: avoid !important;
   }
+  .print-group-page .kd-card { box-shadow: none !important; animation: none !important; }
   .print-group-page .kd-head,
   .print-group-page .kd-sum-h,
   .print-group-page .kd-l,
@@ -2851,24 +3730,47 @@ body[data-role="viewer"] .fab { display: none !important; }
 .idc-cell { display: flex; justify-content: center; }
 
 /* ══ KD original-form card (brown layout — primary worker card) ══
-   LOCKED FORMAT: every card is a fixed 16:10 "sheet". The card scales to the
-   width it is given, but its proportions and internal layout are pixel-identical
-   on every device / account because all sizes use container units (cqw) and the
-   body fills a fixed aspect-ratio. Data amount never changes the dimensions. */
+   POWERPOINT SLIDE MODEL — the card is ONE immutable design surface.
+   It is laid out at a FIXED 1920 × 1200 px (16:10) in every context — the grid,
+   the detail view, Present, print, exports — and is never re-flowed to fit a
+   box. To make it fit, the whole surface is scaled by a single transform, the
+   way a PowerPoint slide show scales a slide to the projector:
+
+       .kd-fit   the box that takes part in page layout. It reserves the SCALED
+                 footprint (aspect-ratio 16/10) and carries the chrome that must
+                 NOT scale with the slide: corner radius, shadow, hover lift.
+       .kd-card  the surface. Always exactly 1920 × 1200 px, positioned at the
+                 fit box's origin and scaled by transform: scale(--kd-scale).
+
+   --kd-scale = fit width / 1920, written by _kdFit() in app.js (print pins its
+   own constant — see the print block). Because every card is the same surface,
+   the photo box is byte-for-byte the same box everywhere, so object-fit: cover
+   crops the SAME pixels in the grid, in the detail view and in Present. No
+   layout ever depends on the viewport, so no device or window size can change
+   the geometry, and nothing inside the card is ever stretched on its own. */
 .cards-grid.kd-grid { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
 .kd-grid .idc-cell { display: block; }
-.kd-card {
-  background: var(--bg-card); border-radius: var(--r-md); overflow: hidden;
+.kd-fit {
+  position: relative; width: 100%; aspect-ratio: 16 / 10;
+  overflow: hidden;                        /* nothing may spill / scroll */
+  border-radius: var(--r-md); background: var(--bg-card);
   box-shadow: var(--shadow-sm);
   transition: box-shadow 0.18s var(--ease), transform 0.18s var(--ease);
-  animation: dzCardIn 0.4s var(--ease) both;
-  /* the lock ↓ */
-  width: 100%; aspect-ratio: 16 / 10;
-  container-type: inline-size;            /* 100cqw == card width → cqw = stable scale */
+}
+.kd-card {
+  position: absolute; top: 0; left: 0;
+  width: 1920px; height: 1200px;           /* the slide surface — never varies */
+  transform-origin: 0 0;
+  transform: scale(var(--kd-scale, 1));    /* the ONLY thing that varies */
+  background: var(--bg-card); overflow: hidden;
+  container-type: inline-size;             /* 100cqw == 1920px → cqw is a fixed step */
   display: flex; flex-direction: column;
   font-size: 1.35cqw; line-height: 1.2;
+  /* Deliberately NOT animated: its .idc-cell wrapper already fades the card in,
+     an entrance here would let html2canvas capture the card mid-fade — and a
+     transition on transform would make every re-scale visibly slide. */
 }
-.kd-grid .idc-cell:hover .kd-card { box-shadow: var(--shadow-lg); transform: translateY(-3px); }
+.kd-grid .idc-cell:hover .kd-fit { box-shadow: var(--shadow-lg); transform: translateY(-3px); }
 .kd-top { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0.55cqw 1.3cqw; border-bottom: 1px solid var(--line); }
 .kd-code { font-weight: 700; font-size: 1.35cqw; color: var(--text); }
 .kd-top-mid { display: flex; align-items: center; gap: 1cqw; }
@@ -2889,8 +3791,16 @@ body[data-role="viewer"] .fab { display: none !important; }
 .kd-right { display: flex; flex-direction: column; min-height: 0; }
 .kd-photo { position: relative; flex: 1 1 auto; min-height: 0; background: var(--field-bg); display: flex; align-items: center; justify-content: center; overflow: hidden; }
 /* Anchor to the top so the forehead is never cropped (cover would otherwise
-   centre-crop and eat the top of the head). Consistent across every photo. */
-.kd-photo img { width: 100%; height: 100%; object-fit: cover; object-position: center top; display: block; }
+   centre-crop and eat the top of the head). Consistent across every photo —
+   the box itself is part of the fixed 1920×1200 surface, so "cover" resolves to
+   the same crop in the grid, in the detail view, in Present and in exports.
+   image-rendering: the slide is scaled by a transform and can land on any
+   device-pixel ratio, so ask for the browser's best resampling (high-quality is
+   the modern name, auto the fallback — the last one a browser understands wins). */
+.kd-photo img {
+  width: 100%; height: 100%; object-fit: cover; object-position: center top; display: block;
+  image-rendering: auto; image-rendering: high-quality;
+}
 /* tap-to-edit affordance (admin, detail view only) */
 .kd-photo.editable { cursor: pointer; }
 .kd-photo-edit {
@@ -2909,6 +3819,77 @@ body[data-role="viewer"] .fab { display: none !important; }
 .kd-sum-r:last-child { border-bottom: none; }
 .kd-sum-r b { color: var(--text); font-weight: 700; }
 @media (max-width: 560px) { .cards-grid.kd-grid { grid-template-columns: 1fr; } }
+
+/* ══ Photo card grid (Apple bento, portrait — 3rd browse view) ══
+   Full uploaded photo (uncropped), bold EN name, muted Lao name, an ID pill and
+   a small status badge. Theme-aware: the dark bento in dark mode (matches the
+   user's mockup exactly), a clean card in light mode. */
+.cards-grid.photo-grid {
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: var(--sp-5);
+}
+.pcard {
+  position: relative; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 14px 14px 18px; border-radius: 22px;
+  background: var(--bg-card); border: 1px solid var(--hairline);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease), border-color 0.18s var(--ease);
+}
+.pcard:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: var(--border); }
+/* Photo: square frame, whole image shown (contain — never cropped). A subtly
+   recessed surface fills the letterbox so a portrait or a wide scan both sit
+   cleanly inside the rounded frame. */
+.pcard-photo {
+  position: relative; width: 100%; aspect-ratio: 1 / 1;
+  border-radius: 18px; overflow: hidden;
+  background: var(--field-bg);
+  display: flex; align-items: center; justify-content: center;
+}
+.pcard-photo img {
+  width: 100%; height: 100%; object-fit: contain; display: block;
+  image-rendering: auto; image-rendering: high-quality;
+}
+.pcard-noimg { font-size: 2.6rem; font-weight: 800; color: var(--text-faint); }
+/* Grade chip floats on the photo (top-right) */
+.pcard-grade {
+  position: absolute; top: 9px; right: 9px;
+  min-width: 22px; padding: 2px 8px; border-radius: 999px;
+  font-size: 0.72rem; font-weight: 800; color: #fff; text-align: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.28);
+}
+.pcard-name {
+  margin-top: 14px; font-size: 0.98rem; font-weight: 800; letter-spacing: -0.01em;
+  color: var(--text); text-align: center; line-height: 1.2;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pcard-lo {
+  margin-top: 3px; min-height: 1.1em; font-size: 0.82rem; font-weight: 500;
+  color: var(--text-muted); text-align: center; line-height: 1.2;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pcard-foot {
+  margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px;
+  align-items: center; justify-content: center;
+}
+.pcard-id {
+  font-family: 'Inter', monospace; font-size: 0.74rem; font-weight: 700; letter-spacing: 0.02em;
+  color: var(--text); background: var(--field-bg); border: 1px solid var(--hairline);
+  padding: 5px 14px; border-radius: 999px;
+}
+.pcard-exp {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 0.68rem; font-weight: 700;
+  padding: 4px 10px; border-radius: 999px;
+}
+.pcard-exp svg { width: 12px; height: 12px; }
+.pcard-exp.expiry-warn    { color: #9a5b00; background: rgba(217,119,6,0.12); }
+.pcard-exp.expiry-expired { color: #b91c1c; background: rgba(185,28,28,0.12); }
+[data-theme="dark"] .pcard-exp.expiry-warn    { color: #f0b429; background: rgba(217,119,6,0.18); }
+[data-theme="dark"] .pcard-exp.expiry-expired { color: #ff6b6b; background: rgba(185,28,28,0.22); }
+/* The select star sits above the photo's rounded corner */
+.pcard > .sel-star { position: absolute; top: 9px; left: 9px; z-index: 4; box-shadow: var(--shadow-sm); }
+@media (max-width: 560px) { .cards-grid.photo-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; } }
 
 /* ══ Worker detail — Info pane: two columns (table left, ID card right) ══ */
 .vm-info-layout {
@@ -2946,12 +3927,14 @@ body[data-role="viewer"] .fab { display: none !important; }
 .docb.dragover * { pointer-events: none; }
 .docb-paste-hint { font-size: 0.72rem; color: var(--text-faint); margin: -4px 4px 10px; }
 .docb-preview {
-  width: 100%; height: 186px; flex-shrink: 0;
-  border-bottom: 1px solid var(--line);
+  width: 100%; height: 186px; flex-shrink: 0; box-sizing: border-box;
+  border-bottom: 1px solid var(--line); padding: 12px;
   background: var(--field-bg); display: flex; align-items: center; justify-content: center;
   cursor: pointer; color: var(--text-faint);
 }
-.docb-preview img { width: 100%; height: 100%; object-fit: cover; }
+/* Show the WHOLE document, centred — a card/passport keeps its shape and never
+   gets edge-cropped by cover. Small scans scale up to fill the tile height. */
+.docb-preview img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; border-radius: 4px; }
 .docb-pdf { font-size: 0.95rem; font-weight: 800; color: var(--text-muted); letter-spacing: 0.06em; }
 .docb-preview-empty { cursor: default; }
 .docb-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 12px 14px 14px; }
@@ -2966,14 +3949,7 @@ body[data-role="viewer"] .fab { display: none !important; }
 .docb-k { color: var(--text-faint); flex: 0 0 52px; }
 .docb-v { color: var(--text); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .docb-none { font-size: 0.78rem; color: var(--text-faint); font-style: italic; }
-.docb-history { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 2px; }
-.docb-hist-label { font-size: 0.66rem; color: var(--text-faint); }
-.docb-hist-item {
-  font-size: 0.66rem; font-weight: 700; color: var(--text-muted);
-  background: var(--field-bg); border-radius: 5px; padding: 1px 6px; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 3px;
-}
-.docb-hist-item button { background: none; border: none; color: var(--text-faint); cursor: pointer; padding: 0; line-height: 1; }
+.docb-history { margin-top: 2px; }
 .docb-actions { display: flex; gap: 6px; margin-top: 6px; }
 .docb-btn {
   display: inline-flex; align-items: center; gap: 5px;
@@ -3002,46 +3978,166 @@ body[data-role="viewer"] .fab { display: none !important; }
    ════════════════════════════════════════════════════ */
 @media (max-width: 768px) {
 
-  /* Full-screen overlay */
+  /* ══════════════════════════════════════════════════════════════
+   * PHONE LAYOUT — a list of sections, then one section at a time
+   * ══════════════════════════════════════════════════════════════
+   * Two panes side by side is a desktop shape. On a phone it means a 196px
+   * strip of truncated labels next to a 180px column of content, and neither
+   * is usable. So the same two panes become two SCREENS: tap a row to go in,
+   * back to come out — the pattern every phone settings app uses.
+   *
+   * ── The rule this block must never break ──
+   * An earlier attempt at a phone layout hid the nav and stacked "every pane"
+   * from a HAND-WRITTEN list of the eight sections that existed at the time.
+   * Sixteen more were added later, nobody updated the list, and Settings on any
+   * screen ≤768px silently showed 8 of 24 sections with no way to reach the
+   * rest. Nothing below names a section. The list is the nav that is already in
+   * the document, restyled; the detail screen is whichever pane switchSettingsTab
+   * already chose. A section added tomorrow needs no CSS here and cannot be
+   * dropped by this file. */
   #settings-overlay { padding: 0 !important; }
   .settings-modal {
     width: 100%; max-width: 100%;
     height: 100dvh; max-height: 100dvh;
-    border-radius: 0; background: var(--bg);
+    border-radius: 0;
   }
 
-  /* Nav collapses to a top bar showing only the search; groups hidden */
+  /* ── The header owns the top of the screen ── */
+  .set-mhead {
+    display: flex; align-items: center; gap: 4px; flex: none;
+    padding: 10px 52px 10px 8px;              /* right: clear the × */
+    border-bottom: 1px solid var(--line);
+    background: var(--bg-card);
+  }
+  .set-mback {
+    width: 38px; height: 38px; flex: none; border: none; background: transparent;
+    color: var(--text); border-radius: 50%; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .set-mback svg { width: 21px; height: 21px; }
+  .set-mback:active { background: var(--hover); }
+  .set-mtitle {
+    font-size: 1.02rem; font-weight: 700; color: var(--text);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* On the list screen there is nothing to go back to, and the title is the
+     screen's own name rather than a section's. */
+  .settings-modal.set-m-list .set-mback { visibility: hidden; }
+  .settings-close { top: 14px; right: 12px; }
+
+  /* ── The two screens ── */
   .settings-main { flex-direction: column; }
-  .settings-nav {
-    flex: 0 0 auto; flex-direction: row; gap: 0;
-    padding: 11px 52px 11px 14px;       /* room for the × on the right */
-    border-right: none; border-bottom: 1px solid var(--line);
-    background: var(--bg-card); overflow: visible;
+  .settings-modal.set-m-list   .set-body,
+  .settings-modal.set-m-list   .settings-content { display: none; }
+  .settings-modal.set-m-detail .settings-nav { display: none; }
+  .settings-modal.set-m-detail .set-body,
+  .settings-modal.set-m-detail .settings-content {
+    display: block;
+    animation: setSlideIn 0.22s var(--ease-out);
   }
-  .settings-search { margin-bottom: 0; flex: 1; }
-  .set-nav-group { display: none; }
-  .settings-close { top: 12px; right: 14px; }
+  @keyframes setSlideIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
 
-  /* Content = full-width scrollable page, all panes stacked */
-  .set-body, .settings-content { padding: 0; background: var(--bg); }
-  .settings-content .set-pane { max-width: 100%; padding: 4px 16px 10px; }
+  /* ── Screen 1: the list ── */
+  .settings-nav {
+    flex: 1 1 auto; width: 100%;
+    padding: 12px 14px 32px; gap: 0;
+    background: var(--bg); border-right: none;
+  }
+  .settings-search { margin-bottom: 16px; }
 
-  /* Show ALL panes (CSS !important beats JS inline display:none); respect role */
-  .settings-modal #set-pane-appearance     { display: block !important; }
-  .settings-modal #set-pane-about           { display: block !important; }
-  body:not([data-role="viewer"]) .settings-modal #set-pane-company       { display: block !important; }
-  body:not([data-role="viewer"]) .settings-modal #set-pane-cities        { display: block !important; }
-  body:not([data-role="viewer"]) .settings-modal #set-pane-documents     { display: block !important; }
-  body:not([data-role="viewer"]) .settings-modal #set-pane-notifications { display: block !important; }
-  body:not([data-role="viewer"]) .settings-modal #set-pane-data          { display: block !important; }
-  body:not([data-role="viewer"]) .settings-modal #set-pane-users         { display: block !important; }
+  /* Account card — who is signed in, and what they are allowed to be. */
+  .set-acct {
+    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+    padding: 14px; margin-bottom: 20px; cursor: pointer;
+    background: var(--bg-card); border: none; border-radius: var(--r-lg);
+    font-family: inherit; color: var(--text);
+  }
+  .set-acct:active { background: var(--hover); }
+  .set-acct-av {
+    width: 38px; height: 38px; flex: none; border-radius: 50%;
+    background: var(--accent); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.9rem; font-weight: 800;
+  }
+  .set-acct-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .set-acct-name { font-size: 0.95rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .set-acct-sub  { font-size: 0.76rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .set-acct-role {
+    flex: none; padding: 3px 10px; border-radius: var(--r-pill);
+    background: var(--chip-bg); color: var(--text);
+    font-size: 0.7rem; font-weight: 800; white-space: nowrap;
+  }
 
-  /* Each stacked section: bold title + divider rows */
-  .set-section-head { padding-top: 18px; margin-bottom: 6px; }
+  /* A group is a heading with a card of rows under it. The heading lives INSIDE
+     the group element, so the card look is built on the rows rather than on
+     their container — which also means a group with no heading still works. */
+  .set-nav-group { gap: 0; margin-bottom: 20px; }
+  .set-nav-group-label {
+    font-size: 0.74rem; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--text-muted); font-weight: 700; padding: 0 6px 8px;
+  }
+  .set-nav-item {
+    display: grid; grid-template-columns: auto 1fr auto;
+    align-items: center; column-gap: 13px;
+    padding: 13px 14px; border-radius: 0;
+    background: var(--bg-card); color: var(--text);
+    font-size: 0.94rem; font-weight: 500;
+    border-bottom: 1px solid var(--line);
+    white-space: normal;
+  }
+  .set-nav-item svg { width: 19px; height: 19px; grid-row: 1 / span 2; color: var(--text-muted); }
+  .set-nav-item > span { grid-column: 2; white-space: nowrap; }
+  .set-nav-sub {
+    display: block; grid-column: 2;
+    font-size: 0.78rem; font-weight: 500; color: var(--text-muted);
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .set-nav-sub:empty { display: none; }
+  /* The chevron says "this opens a screen". The locked rule below replaces it
+     with the padlock, which says the opposite — one slot, two states. */
+  .set-nav-item::after {
+    content: ""; grid-column: 3; grid-row: 1 / span 2;
+    width: 15px; height: 15px; flex: none; opacity: 0.45;
+    background-color: currentColor;
+    -webkit-mask: var(--kd-chev) center/contain no-repeat;
+            mask: var(--kd-chev) center/contain no-repeat;
+  }
+  .set-nav-item.set-nav-locked::after {
+    width: 14px; height: 14px; margin-left: 0; opacity: 1;
+    -webkit-mask: var(--kd-lock) center/contain no-repeat;
+            mask: var(--kd-lock) center/contain no-repeat;
+  }
+  /* First and last row of each card get the corners.
+     Several selectors, because "first row" is not simply :first-child: a group
+     may or may not open with a heading, and a search hides rows in the middle
+     (.set-nav-miss is display:none in admin.css) — so the first VISIBLE row is
+     the one that has to be rounded, or a filtered card ends up square-topped
+     with a hairline floating above it. */
+  .set-nav-group > .set-nav-item:not(.set-nav-miss):first-child,
+  .set-nav-group-label + .set-nav-item:not(.set-nav-miss),
+  .set-nav-item.set-nav-miss + .set-nav-item:not(.set-nav-miss) {
+    border-top-left-radius: var(--r-lg); border-top-right-radius: var(--r-lg);
+  }
+  .set-nav-group > .set-nav-item:not(.set-nav-miss):last-child,
+  .set-nav-item:not(.set-nav-miss):has(+ .set-nav-item.set-nav-miss) {
+    border-bottom-left-radius: var(--r-lg); border-bottom-right-radius: var(--r-lg);
+    border-bottom: none;
+  }
+  /* "active" is a desktop idea — on a phone the open section IS the screen. */
+  .set-nav-item.active { background: var(--bg-card); box-shadow: none; font-weight: 500; }
+  .set-nav-item:active { background: var(--hover); }
+
+  /* ── Screen 2: the section ── */
+  .set-body, .settings-content { padding: 18px 16px 40px; }
+  .settings-content .set-pane { max-width: 100%; }
+  /* The header already names the section, so the pane's own title would say it
+     twice. The description under it still earns its place. */
+  .settings-content .set-pane .ssh-title { display: none; }
+
+  .set-section-head { margin-bottom: 6px; padding-right: 34px; }  /* clear the × */
   .set-card { margin-bottom: 16px; }
   .set-row { padding: 14px 0; flex-wrap: wrap; }
   .set-row .lang-row { justify-content: flex-start; }
-  .set-action, .set-user-row { padding-left: 0; padding-right: 0; }
 
   /* Cities: stack the two columns */
   .settings-modal .set-cols { grid-template-columns: 1fr !important; gap: 14px; }
@@ -3049,12 +4145,23 @@ body[data-role="viewer"] .fab { display: none !important; }
   .settings-modal .set-add-row > input:first-child { min-width: 90px; }
 }
 
+/* ── Small phones ≤560px: the same two screens, a little tighter ──────
+ * The layout does not change here — it is the list-then-section shape from the
+ * block above, which is already the right one at 375px. Only the padding gives
+ * a little back to the content. */
+@media (max-width: 560px) {
+  .settings-nav { padding: 10px 12px 28px; }
+  .set-body, .settings-content { padding: 16px 14px 36px; }
+  .set-acct { padding: 12px; margin-bottom: 16px; }
+  .set-nav-item { padding: 12px 13px; font-size: 0.9rem; }
+}
+
 /* ── Small phones ≤480px: general app tightening ── */
 @media (max-width: 480px) {
   .toolbar { padding: 12px; gap: 7px; }
   .toolbar .search-wrap { min-width: 0; }
   .page-title { font-size: 1.5rem; }
-  .stats-row { grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px 12px 4px; }
+  .stats-row { gap: 8px; padding: 10px 12px 4px; }
   .stat-card .num { font-size: 1.3rem; }
   .import-dropzone { padding: 22px 14px; }
   .form-body { padding: var(--sp-4); }
@@ -3090,6 +4197,128 @@ body[data-role="viewer"] .fab { display: none !important; }
 .cz-item-label { flex: 1; font-size: 0.9rem; font-weight: 600; color: var(--text); }
 .cz-foot { display: flex; justify-content: flex-end; padding: 12px 20px 18px; }
 .cz-foot .btn { min-width: 84px; justify-content: center; }
+.cz-foot-split { justify-content: space-between; }
+
+/* ── Customize dashboard rows (toggle + size picker + drag handle) ── */
+.bz-row {
+  display: flex; align-items: center; gap: 10px;
+  border-radius: 10px; padding: 7px 8px;
+}
+.bz-row:hover { background: var(--hover); }
+.bz-row.dragging { opacity: 0.55; background: var(--hover); }
+.bz-row .drag-handle { cursor: grab; color: var(--text-faint); display: flex; flex: none; padding: 3px; touch-action: none; }
+.bz-toggle {
+  display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;
+  background: transparent; border: none; padding: 4px 0; cursor: pointer;
+  font-family: inherit; text-align: left;
+}
+.bz-label { flex: 1; min-width: 0; font-size: 0.86rem; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bz-row.off .bz-label { color: var(--text-faint); }
+.bz-sizes { display: flex; gap: 2px; flex: none; background: var(--field-bg); border-radius: 7px; padding: 2px; }
+.bz-size-btn {
+  font-family: inherit; font-size: 0.68rem; font-weight: 700; color: var(--text-muted);
+  background: transparent; border: none; border-radius: 5px;
+  padding: 4px 7px; cursor: pointer; min-width: 26px; transition: background 0.12s, color 0.12s;
+}
+.bz-size-btn:hover { color: var(--text); }
+.bz-size-btn.active { background: var(--bg-card); color: var(--green); box-shadow: var(--shadow-sm); }
+.bz-row.off .bz-sizes { opacity: 0.35; pointer-events: none; }
+
+/* ── Ranked bar list (Documents by type / destinations) ── */
+.dz-rank { display: flex; flex-direction: column; gap: 11px; }
+.dz-rank-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; }
+.dz-rank-name { font-size: 0.8rem; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dz-rank-val  { font-size: 0.74rem; font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.dz-rank-track { grid-column: 1 / -1; height: 7px; border-radius: 999px; background: var(--field-bg); overflow: hidden; }
+.dz-rank-fill  { height: 100%; border-radius: 999px; transform-origin: left; animation: dzRankIn 0.5s var(--ease) both; }
+@keyframes dzRankIn { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.dz-empty { color: var(--text-muted); font-size: 0.82rem; text-align: center; padding: 18px 0; }
+
+/* ── HISTORY TIMELINE ──
+   Shared by the worker drawer, the group history dialog and each document's
+   version list. The connecting rail is drawn on the list, not per item, so it
+   never doubles up between rows. */
+.hist-list { position: relative; display: flex; flex-direction: column; gap: 2px; }
+.hist-list::before {
+  content: ''; position: absolute; left: 11px; top: 14px; bottom: 14px;
+  width: 2px; background: var(--border); border-radius: 2px;
+}
+.hist-item {
+  position: relative; display: flex; align-items: flex-start; gap: 11px;
+  padding: 8px 6px; border-radius: 9px; background: transparent;
+  border: none; width: 100%; text-align: left; font-family: inherit;
+}
+.hist-clickable { cursor: pointer; }
+.hist-clickable:hover { background: var(--hover); }
+.hist-dot {
+  position: relative; z-index: 1; flex: none;
+  width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.72rem; line-height: 1;
+  background: var(--field-bg); color: var(--text-muted);
+  border: 2px solid var(--bg-card);
+}
+.hist-dot.hist-ok   { background: #dff3e6; color: #16a34a; }
+.hist-dot.hist-warn { background: #fdf0d5; color: #b45309; }
+.hist-dot.hist-bad  { background: #fbe3e3; color: #dc2626; }
+[data-theme="dark"] .hist-dot.hist-ok   { background: rgba(22,163,74,0.2);  color: #4ade80; }
+[data-theme="dark"] .hist-dot.hist-warn { background: rgba(180,83,9,0.22);  color: #fbbf24; }
+[data-theme="dark"] .hist-dot.hist-bad  { background: rgba(220,38,38,0.2);  color: #f87171; }
+.hist-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.hist-line { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.hist-action { font-size: 0.82rem; font-weight: 700; color: var(--text); }
+.hist-badge {
+  font-size: 0.65rem; font-weight: 800; letter-spacing: .3px;
+  background: var(--field-bg); color: var(--text-muted);
+  border-radius: 5px; padding: 2px 6px;
+}
+.hist-detail {
+  font-size: 0.78rem; color: var(--text-muted); line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.hist-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.7rem; color: var(--text-faint); }
+.hist-by { font-weight: 600; }
+.hist-del {
+  flex: none; align-self: center; background: none; border: none; cursor: pointer;
+  color: var(--text-faint); font-size: 0.78rem; padding: 4px 6px; border-radius: 6px;
+  opacity: 0; transition: opacity 0.12s, color 0.12s;
+}
+.hist-item:hover .hist-del { opacity: 1; }
+.hist-del:hover { color: #e24b4a; background: rgba(226,75,74,0.1); }
+.hist-empty { color: var(--text-muted); font-size: 0.8rem; text-align: center; padding: 16px 0; }
+/* Touch has no hover — a permanently hidden delete button is an unreachable one */
+@media (hover: none) { .hist-del { opacity: 1; } }
+
+/* Worker drawer: collapsed history section */
+.vm-history { background: var(--bg-card); border-top: 8px solid var(--bg); padding: 4px 16px 16px; }
+.vm-hist-summary {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  list-style: none; padding: 12px 0;
+  font-size: 0.82rem; font-weight: 800; color: var(--text);
+}
+.vm-hist-summary::-webkit-details-marker { display: none; }
+.vm-hist-summary svg { width: 15px; height: 15px; color: var(--text-muted); flex: none; }
+.vm-hist-chev { margin-left: auto; color: var(--text-faint); transition: transform 0.18s; }
+.vm-history[open] .vm-hist-chev { transform: rotate(90deg); }
+
+/* Group history dialog */
+.grouphist-modal { width: 460px; max-width: calc(100vw - 32px); }
+.grouphist-modal .cz-head-text p { font-weight: 600; color: var(--text); }
+.gh-body { padding: 0 16px 18px; max-height: min(60vh, 520px); overflow-y: auto; }
+
+/* Document box: version history disclosure */
+.docb-hist-summary {
+  cursor: pointer; list-style: none; padding: 6px 0;
+  font-size: 0.7rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .4px; color: var(--text-faint);
+  display: flex; align-items: center; gap: 6px;
+}
+.docb-hist-summary::-webkit-details-marker { display: none; }
+.docb-hist-summary:hover { color: var(--text-muted); }
+.docb-hist-count {
+  background: var(--field-bg); color: var(--text-muted);
+  border-radius: 999px; padding: 1px 6px; font-size: 0.65rem;
+}
 
 /* Unified Create action-sheet */
 .create-sheet { width: 420px; max-width: calc(100vw - 32px); }
@@ -3103,11 +4332,6 @@ body[data-role="viewer"] .fab { display: none !important; }
 
 .export-modal { width: 480px; max-width: calc(100vw - 32px); }
 .export-modal-body { overflow-y: auto; max-height: calc(92vh - 130px); }
-.export-subject-bar {
-  padding: 7px 20px 10px;
-  font-size: 0.82rem; color: var(--text-muted);
-  border-bottom: 1px solid var(--line);
-}
 .export-modal-inner { padding: 16px 20px 4px; }
 .ef-sec-label {
   font-size: 0.66rem; font-weight: 800; text-transform: uppercase;
@@ -3150,6 +4374,123 @@ body[data-role="viewer"] .fab { display: none !important; }
 }
 .ef-field input { margin: 0; accent-color: var(--green); cursor: pointer; }
 .ef-field:has(input:checked) { border-color: var(--green); color: var(--green); }
+
+/* ════════════════════════════════════════════════════
+   EXPORT — bento sheet, TONED TO MATCH THE APP (2026-07-24)
+   Keeps the tile + check + count + pill layout, but drops the bespoke glass
+   gradient and the Apple-green accent so the modal reads as the same surface as
+   the dashboard and every other dialog: standard --bg-card / --hairline /
+   --shadow, brand green in BOTH themes. Scoped to .exp-bento so no other modal
+   moves. --exp-* tokens stay (one place to retint) but now just alias the app's.
+   ════════════════════════════════════════════════════ */
+.export-modal.exp-bento {
+  --exp-accent: var(--green);
+  --exp-accent-soft: var(--green-soft);
+  --exp-glow: rgba(45,106,79,0.20);
+  --exp-on-accent: #fff;
+  width: 560px; max-width: calc(100vw - 24px);
+  padding: 24px 24px 18px; gap: 16px;
+  border-radius: var(--r-xl); overflow: visible;
+  background: var(--bg-card); border: 1px solid var(--hairline);
+  box-shadow: var(--shadow-xl);
+}
+[data-theme="dark"] .export-modal.exp-bento { --exp-glow: rgba(58,158,111,0.22); }
+
+/* Header: icon chip + title + subject, round close */
+.exp-head {
+  flex: 0 0 auto; display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--hairline);
+}
+.exp-head-l { display: flex; align-items: center; gap: 13px; min-width: 0; }
+.exp-head-ic {
+  flex: 0 0 auto; width: 44px; height: 44px; border-radius: 15px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--field-bg); border: 1px solid var(--hairline); color: var(--exp-accent);
+}
+.exp-head-ic svg { width: 22px; height: 22px; }
+.exp-head-txt { min-width: 0; }
+.exp-head-txt h2 { margin: 0; font-size: 1.15rem; font-weight: 800; letter-spacing: -0.01em; color: var(--text); }
+.exp-subject {
+  margin: 2px 0 0; font-size: 0.74rem; font-weight: 500; letter-spacing: 0.02em;
+  color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.exp-close {
+  flex: 0 0 auto; width: 32px; height: 32px; border-radius: 999px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--field-bg); border: 1px solid var(--hairline); color: var(--text-muted);
+  transition: background 0.15s, color 0.15s;
+}
+.exp-close:hover { background: var(--hover); color: var(--text); }
+.exp-close svg { width: 14px; height: 14px; }
+
+/* Body */
+.exp-bento .export-modal-body { max-height: min(62vh, 560px); margin: 0 -4px; padding: 0 4px; }
+.exp-bento .export-modal-inner { padding: 0; }
+.exp-sec-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.exp-sec-row .ef-sec-label { margin: 0; }
+.exp-count {
+  font-size: 0.66rem; font-weight: 600; letter-spacing: 0.02em; white-space: nowrap;
+  padding: 3px 10px; border-radius: 999px;
+  color: var(--text-faint); background: var(--field-bg); border: 1px solid var(--hairline);
+  transition: color 0.18s, background 0.18s, border-color 0.18s;
+}
+.exp-count.on { color: var(--exp-accent); background: var(--exp-accent-soft); border-color: var(--exp-accent); }
+
+/* Format tiles */
+.exp-bento .export-fmt-grid { grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0; }
+.exp-bento .export-opt {
+  min-height: 112px; justify-content: center; gap: 5px;
+  padding: 16px 8px 14px; border-radius: 18px;
+  background: var(--field-bg); border: 1.5px solid var(--hairline);
+  transition: background 0.25s cubic-bezier(0.16,1,0.3,1), border-color 0.25s cubic-bezier(0.16,1,0.3,1),
+              transform 0.25s cubic-bezier(0.16,1,0.3,1), box-shadow 0.25s cubic-bezier(0.16,1,0.3,1);
+}
+.exp-bento .export-opt:hover { background: var(--hover); border-color: var(--border); transform: translateY(-2px); }
+.exp-bento .export-opt.sel {
+  background: var(--exp-accent-soft); border-color: var(--exp-accent); transform: none;
+  box-shadow: 0 0 20px var(--exp-glow), inset 0 0 12px rgba(255,255,255,0.02);
+}
+.exp-bento .export-opt.sel::after { content: none; }   /* replaced by .eo-check */
+.exp-bento .eo-icon svg { width: 28px; height: 28px; color: var(--text-muted); transition: color 0.2s; }
+.exp-bento .export-opt.sel .eo-icon svg { color: var(--exp-accent); }
+.exp-bento .eo-title { font-size: 0.78rem; font-weight: 700; margin-top: 3px; }
+.exp-bento .eo-sub { font-size: 0.64rem; }
+.eo-check {
+  position: absolute; top: 9px; right: 9px; display: flex; color: var(--exp-accent);
+  opacity: 0; transform: scale(0.5); transition: opacity 0.2s cubic-bezier(0.16,1,0.3,1), transform 0.2s cubic-bezier(0.16,1,0.3,1);
+}
+.eo-check svg { width: 15px; height: 15px; }
+.export-opt.sel .eo-check { opacity: 1; transform: scale(1); }
+
+/* Field picker (CSV / XLSX) keeps the same rhythm as the tiles */
+.exp-bento #export-csv-fields { margin-top: 20px; }
+.exp-bento #export-csv-fields .ef-sec-label { margin-top: 0 !important; margin-bottom: 10px; }
+
+/* Footer pills */
+.exp-foot {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+  padding-top: 15px; border-top: 1px solid var(--hairline);
+}
+.exp-btn {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+  padding: 11px 24px; border-radius: 999px; border: 1px solid transparent;
+  font-family: inherit; font-size: 0.79rem; font-weight: 700;
+  transition: background 0.15s, color 0.15s, filter 0.15s;
+}
+.exp-btn svg { width: 16px; height: 16px; }
+.exp-btn-ghost { background: var(--field-bg); border-color: var(--hairline); color: var(--text); }
+.exp-btn-ghost:hover { background: var(--hover); }
+.exp-btn-go { background: var(--exp-accent); color: var(--exp-on-accent); box-shadow: 0 10px 22px -8px var(--exp-glow); }
+.exp-btn-go:hover { filter: brightness(1.08); }
+
+@media (max-width: 560px) {
+  .export-modal.exp-bento { padding: 18px 16px 14px; border-radius: 24px; }
+  .exp-bento .export-fmt-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .exp-bento .export-opt { min-height: 100px; border-radius: 16px; }
+  .exp-head-ic { width: 38px; height: 38px; border-radius: 13px; }
+  .exp-head-txt h2 { font-size: 1.02rem; }
+  .exp-btn { flex: 1 1 0; justify-content: center; padding: 12px 16px; }
+}
 
 /* ── PROGRESS overlay (export / long operations) ── */
 #progress-overlay { z-index: 900; }   /* above other overlays */
@@ -3236,3 +4577,613 @@ kbd {
 .trash-btn-restore:hover { background: var(--green); color: #fff; border-color: var(--green); }
 .trash-btn-del { color: var(--red); padding: 6px 9px; }
 .trash-btn-del:hover { background: var(--red); color: #fff; border-color: var(--red); }
+
+/* ════════════════════════════════════════════════════
+   Redesign v6 — full-page BENTO worker detail (VIEW mode)
+   Left column: hero photo card + progress card.
+   Right column: data tiles in a 2-col grid (Identity spans full width).
+   Appended last so the rounded/hairline tile look wins over the boxy
+   .vd-section defaults by source order.
+   ════════════════════════════════════════════════════ */
+.vm-bento-page {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  gap: var(--sp-5);
+  align-items: start;
+  padding: var(--sp-5) var(--sp-6) var(--sp-8);
+}
+.vm-bento-left { display: flex; flex-direction: column; gap: var(--sp-5); }
+.vm-bento-right { min-width: 0; }
+.vm-bento-right > .vd-sections {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-5); padding: 0; align-items: stretch;   /* tiles in a row share height */
+}
+
+/* Bento card shell — rounded, hairline border, soft shadow (Apple feel). */
+.bento-card {
+  background: var(--card); border: 1px solid var(--hairline);
+  border-radius: var(--r-bento); padding: var(--sp-6);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Right-column data tiles adopt the same shell + a gentle hover lift. */
+.vm-bento-right .vd-section {
+  background: var(--card); border: 1px solid var(--hairline);
+  border-radius: var(--r-bento); box-shadow: var(--shadow-sm); overflow: hidden;
+  transition: background .2s var(--ease), transform .2s var(--ease), box-shadow .2s var(--ease);
+}
+.vm-bento-right .vd-section:hover { background: var(--card-hover); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.vm-bento-right .vd-section.vd-wide { grid-column: 1 / -1; }
+.vm-bento-right .vd-warn { grid-column: 1 / -1; margin: 0 0 2px; }
+.vm-bento-right .vd-section-head {
+  background: transparent; border-bottom: 1px solid var(--hairline);
+  padding: 15px 20px;
+}
+.vm-bento-right .vd-sec-icon { color: var(--accent); }
+.vm-bento-right .vd-sec-title { font-size: 0.92rem; text-transform: none; letter-spacing: -0.01em; }
+.vm-bento-right .vd-sec-sub { font-size: 0.72rem; }
+.vm-bento-right .vd-rows { padding: 4px 6px; }
+.vm-bento-right .vd-row { padding: 11px 14px; border-bottom: 1px solid var(--hairline); min-height: 40px; }
+.vm-bento-right .vd-row:last-child { border-bottom: none; }
+.vm-bento-right .vd-lbl { font-size: 0.78rem; }
+/* Clamp values to a single line so a long surname can't grow the row and shift
+   the layout — the full text stays available on hover (title). */
+.vm-bento-right .vd-val { font-size: 0.86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The weight/height split is two short spans — keep them on the one line too. */
+.vm-bento-right .vd-val .vd-split { flex-wrap: nowrap; }
+
+/* ── Edit mode: same bento page, tiles hold inputs (2026-07-24) ──
+   The value cell + section normally clip (rounded corners, single-line clamp),
+   which would cut off a combobox dropdown or an input's focus ring. While
+   editing, release the clipping and drop the hover-lift so the address popup can
+   overflow the tile and stays anchored. */
+.vm-bento-page.editing .vm-bento-right .vd-section { overflow: visible; }
+.vm-bento-page.editing .vm-bento-right .vd-section:hover { transform: none; box-shadow: var(--shadow-sm); background: var(--card); }
+.vm-bento-page.editing .vm-bento-right .vd-val { overflow: visible; white-space: normal; text-overflow: clip; }
+.vm-bento-page.editing .vd-val .addr-combo { width: 100%; }
+.vm-bento-page.editing .vd-val .addr-input { font-size: 0.8rem; padding: 6px 9px; }
+/* The dropdown must float above neighbouring tiles. */
+.vm-bento-page.editing .addr-combo-list { z-index: 500; }
+/* Photo hero stays tap-to-edit; make the affordance obvious while editing. */
+.vm-bento-page.editing .vbp-edit-hint { opacity: 1; }
+
+/* Hero photo card */
+.vbp-card { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.vbp-photo {
+  position: relative; width: 100%; aspect-ratio: 1 / 1;
+  border-radius: 20px; overflow: hidden; margin-bottom: var(--sp-5);
+  background: var(--field-bg); border: 1px solid var(--hairline);
+}
+.vbp-photo img { width: 100%; height: 100%; object-fit: cover; object-position: center top; display: block; transition: transform .5s var(--ease); }
+.vbp-card.vbp-editable:hover .vbp-photo img { transform: scale(1.04); }
+.vbp-initials { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 3rem; font-weight: 800; color: var(--text-faint); }
+.vbp-editable { cursor: pointer; }
+.vbp-edit-hint {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 22px 8px 9px; font-size: 0.74rem; font-weight: 600; color: #fff;
+  background: linear-gradient(transparent, rgba(0,0,0,0.72));
+  opacity: 0; transition: opacity .15s; pointer-events: none;
+}
+.vbp-editable:hover .vbp-edit-hint { opacity: 1; }
+/* Both name lines get a FIXED height (up to 2 lines each, clamped) so the ID +
+   card height are identical for every worker — a missing Lao name, a short name,
+   or a long 2-line name all occupy the same reserved block, nothing shifts. */
+.vbp-name-en {
+  font-size: 1.3rem; font-weight: 800; letter-spacing: -0.015em; color: var(--text);
+  line-height: 1.2; height: 2.4em;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.vbp-name-lo {
+  font-size: 0.9rem; color: var(--text-muted); margin-top: 3px;
+  line-height: 1.25; height: 2.5em;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+/* Fixed slot keeps the ID chip's vertical position locked whether or not the
+   worker has a worker_id. */
+.vbp-id-slot { display: flex; align-items: center; justify-content: center; min-height: 30px; margin-top: var(--sp-4); }
+.vbp-id {
+  font-family: 'Inter', monospace; font-size: 0.8rem; font-weight: 700;
+  letter-spacing: 0.03em; color: var(--text);
+  background: var(--chip-bg); border: 1px solid var(--hairline);
+  padding: 5px 14px; border-radius: 999px;
+}
+
+/* Progress card — reuses .cmp-box; header comes from .vbp-prog-head, bar goes
+   full-width under the label + value (mockup style). */
+.vbp-progress { padding: var(--sp-5) var(--sp-6); }
+.vbp-prog-head { display: flex; align-items: center; gap: 8px; font-size: 0.72rem; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 16px; }
+.vbp-prog-head svg { width: 16px; height: 16px; color: var(--accent); }
+.vbp-progress .cmp-box { border: none; padding: 0; background: none; }
+.vbp-progress .cmp-box[data-done="1"] { border: none; background: none; }
+.vbp-progress .cmp-head { display: none; }
+.vbp-progress .cmp-row { flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 16px; }
+.vbp-progress .cmp-row:first-of-type { margin-top: 0; }
+.vbp-progress .cmp-lbl { order: 1; flex: 1 1 auto; width: auto; font-size: 0.82rem; color: var(--text-muted); }
+.vbp-progress .cmp-pct { order: 2; font-size: 0.86rem; width: auto; }
+.vbp-progress .cmp-bar { order: 3; flex: 1 1 100%; height: 8px; margin-top: 5px; background: var(--field-bg); }
+
+/* Responsive */
+@media (max-width: 900px) {
+  .vm-bento-page { grid-template-columns: 1fr; }
+  .vm-bento-left { flex-direction: row; align-items: stretch; }
+  .vm-bento-left > .bento-card { flex: 1 1 0; min-width: 0; }
+}
+@media (max-width: 640px) {
+  .vm-bento-page { padding: var(--sp-4) var(--sp-3) var(--sp-8); gap: var(--sp-4); }
+  .vm-bento-left { flex-direction: column; }
+  .vm-bento-right > .vd-sections { grid-template-columns: 1fr; }
+}
+
+/* ════════════════════════════════════════════════════
+   Present mode (card zoom) — Present-only overrides (.kd-present).
+   The list/export KD card is untouched.
+   ════════════════════════════════════════════════════ */
+/* KEEP THE 16:10 LOCK IN PRESENT. Present used to stretch the sheet to
+   100vw × 100vh to kill the letterbox bars, but the card is a fixed-proportion
+   form: every band (top strip, gold header, summary) is sized in cqw — i.e. off
+   the WIDTH — while only .kd-photo absorbs the leftover height. Stretch the card
+   to the screen's aspect and that leftover shrinks, so .kd-photo (object-fit:
+   cover) re-crops the portrait much tighter than the same card in the detail
+   view / preview: heads and edges got sliced off, and the crop even changed from
+   screen to screen. Fitting the locked sheet instead (letterbox bars are fine,
+   they take the overlay background) makes the photo frame in Present pixel-for-
+   pixel the same one as everywhere else. */
+#cardzoom-overlay .cardzoom-stage { padding: 0; }
+#cardzoom-overlay .cardzoom-stage .kd-fit,
+#cardzoom-overlay:fullscreen .cardzoom-stage .kd-fit {
+  /* Slide-show fit: the largest 16:10 box the screen can hold, centred by the
+     stage. The surface inside is 1920×1200 as always — only --kd-scale grows
+     (1366×768 → 0.64, 1920×1200 → 1.0, 3840×2160 → 1.8). Letterbox bars are the
+     overlay background, exactly like PowerPoint on a 16:9 projector. */
+  width: min(100vw, calc(100vh * 1.6)); max-width: none;
+  border-radius: 0; box-shadow: none;
+}
+/* The top strip STAYS in Present (gender ♂/♀ + blood A B O AB) — it is part of
+   the locked geometry, and removing it silently gave the photo box extra height,
+   i.e. a different crop again. Only the code is blanked out, because Present
+   already shows the worker's ID in the gold band; `visibility` keeps its space
+   so the row's height is identical to the preview card's. */
+.kd-present .kd-code { visibility: hidden; }
+.kd-present .kd-head span:first-child { letter-spacing: 0.06em; font-variant-numeric: tabular-nums; }
+/* Legible data: pure-white values, tabular figures, and a touch of tracking so
+   digits + letters stop crowding. Labels lighten but stay secondary. */
+.kd-present .kd-v {
+  color: #fff; font-weight: 700;
+  font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1;
+  letter-spacing: 0.03em;
+}
+.kd-present .kd-l   { color: #c7c7cc; }
+.kd-present .kd-l i { color: #98989d; }
+
+/* ════════════════════════════════════════════════════
+   Detail view — unified pill MENU BAR (Back · tabs · actions · ⋯ More)
+   Replaces the old .vm-topbar + separate .vm-tabs row.
+   ════════════════════════════════════════════════════ */
+.vm-menubar {
+  flex-shrink: 0; position: relative; z-index: 20;
+  /* 3-track grid so the tabs sit at the TRUE bar centre regardless of how wide
+     the Back / actions groups are (margin:auto only centres in leftover space). */
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center; gap: 12px;
+  margin: 12px; padding: 8px;
+  border-radius: 999px;
+  /* ── Glass ──
+   * The one piece of sheet chrome in the app with a genuine backdrop.
+   * `.detail-drawer` is deliberately transparent (see its own note), so this
+   * pill floats directly over the blurred page rather than over an opaque
+   * panel — measured, not assumed: the drawer computes to rgba(0,0,0,0) and the
+   * scrim behind it carries blur(40px).
+   *
+   * The opaque sheets (`.form-modal`, `.settings-modal`, …) deliberately do NOT
+   * get this. A glass sheet sits on the already-blurred scrim, which measured a
+   * plate shift of 4/255 in light and 12/255 in dark — indistinguishable, for
+   * the price of a compositor layer every time a dialog opens. They take the
+   * material's lit edge instead. */
+  background: var(--glass-tint-thick);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+          backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .vm-menubar { background: var(--bg-card); border-color: var(--hairline); box-shadow: var(--shadow-sm); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .vm-menubar {
+    background: var(--bg-card); border-color: var(--hairline); box-shadow: var(--shadow-sm);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+}
+body.exporting .vm-menubar {
+  background: var(--bg-card) !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+}
+/* Back */
+.mb-back {
+  justify-self: start;
+  display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;
+  padding: 9px 16px 9px 13px; border: none; border-radius: 999px;
+  background: transparent; color: var(--text-muted); cursor: pointer;
+  font-family: inherit; font-size: 0.85rem; font-weight: 600;
+  transition: background .15s, color .15s;
+}
+.mb-back:hover { background: var(--hover); color: var(--text); }
+.mb-back svg { width: 17px; height: 17px; }
+/* Segmented tabs (centered) */
+.vm-menubar .vm-tabs {
+  justify-self: center; margin: 0; display: inline-flex; gap: 2px; padding: 4px;
+  background: var(--field-bg); border: 1px solid var(--hairline);
+  border-radius: 999px;
+}
+.vm-menubar .vm-tab {
+  display: inline-flex; align-items: center; gap: 7px;
+  border: none; background: transparent; color: var(--text-muted);
+  padding: 8px 18px; border-radius: 999px; margin: 0;
+  font-family: inherit; font-size: 0.83rem; font-weight: 600; cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.vm-menubar .vm-tab svg { width: 15px; height: 15px; }
+.vm-menubar .vm-tab:hover { color: var(--text); background: transparent; }
+.vm-menubar .vm-tab.active { background: var(--bg-card); color: var(--text); box-shadow: var(--shadow-xs); border: none; }
+[data-theme="dark"] .vm-menubar .vm-tab.active { background: rgba(255,255,255,0.14); color: #fff; }
+/* Right actions */
+.vm-menubar .vm-topbar-actions { justify-self: end; display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.mb-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 16px; border: none; border-radius: 999px; cursor: pointer;
+  font-family: inherit; font-size: 0.83rem; font-weight: 600;
+  background: var(--field-bg); color: var(--text);
+  transition: background .15s, filter .15s;
+}
+.mb-btn:hover { background: var(--hover); }
+.mb-btn .vm-ico { width: 15px; height: 15px; }
+.mb-btn-primary { background: var(--green); color: #fff; }
+.mb-btn-primary:hover { background: var(--green); filter: brightness(1.08); }
+.mb-icon { padding: 9px; }
+/* More dropdown */
+.mb-more { position: relative; }
+.mb-menu {
+  position: absolute; right: 0; top: calc(100% + 10px);
+  min-width: 210px; padding: 6px;
+  background: var(--bg-elev); border: 1px solid var(--hairline);
+  border-radius: 14px; box-shadow: var(--shadow-lg);
+  display: none; z-index: 60;
+}
+.mb-menu.open { display: block; animation: mbMenuIn .14s var(--ease-out); }
+@keyframes mbMenuIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.mb-menu-item {
+  width: 100%; display: flex; align-items: center; gap: 11px;
+  padding: 10px 11px; border: none; background: transparent; cursor: pointer;
+  border-radius: 9px; text-align: left;
+  font-family: inherit; font-size: 0.85rem; font-weight: 500; color: var(--text);
+  transition: background .12s;
+}
+.mb-menu-item:hover:not(:disabled) { background: var(--hover); }
+.mb-menu-item:disabled { opacity: 0.38; cursor: default; }
+.mb-menu-item .vm-ico { width: 17px; height: 17px; flex-shrink: 0; color: var(--text-muted); }
+.mb-menu-item.on .vm-ico { color: var(--green); fill: var(--green); }
+.mb-menu-count { margin-left: auto; font-size: 0.77rem; font-weight: 600; color: var(--text-faint); }
+.mb-menu-sep { height: 1px; background: var(--hairline); margin: 5px 6px; }
+
+/* Compact: drop the text labels on small screens, keep the icons */
+@media (max-width: 720px) {
+  .vm-menubar { gap: 6px; margin: 8px; }
+  .vm-menubar .vm-tab span { display: none; }
+  .vm-menubar .vm-tab { padding: 9px 13px; }
+}
+@media (max-width: 560px) {
+  .mb-back span, .mb-btn span { display: none; }
+  .mb-back { padding: 9px; }
+  .mb-btn { padding: 9px; }
+}
+
+/* ── Present mode: dead still ──────────────────────────────────────
+   Every animation and transition inside Present is off. The card used to replay
+   a spring pop-in on each worker swap, which read as the card re-centring and
+   re-scaling — motion-sickness territory. Flips are now an instant repaint. */
+#cardzoom-overlay,
+#cardzoom-overlay * { animation: none !important; transition: none !important; }
+/* No scrollbars: the card is sized to fit, so a stray overflow must never flash
+   a scrollbar across the presentation. */
+#cardzoom-overlay .cardzoom-stage { overflow: hidden; }
+/* There is no close button any more (ESC exits). The cursor still fades out
+   after ~2s of stillness so nothing at all sits over the card. */
+#cardzoom-overlay.cz-idle { cursor: none; }
+
+/* ── Press feedback (tap acknowledgement) ─────────────────────────
+   Most controls only had a :hover state, which does not exist on a phone: you
+   tapped and nothing moved, so there was no way to tell whether the tap had
+   registered. Every clickable surface now answers a press.
+
+   Two tiers on purpose:
+     • small controls (buttons, icon buttons, menu rows, tabs) press IN — a
+       short scale-down plus a touch of dimming, released on lift;
+     • large surfaces (cards, table rows, list items) only dim — scaling a
+       whole card or row reads as a glitch, not as a button.
+
+   [data-pressed] mirrors :active. iOS Safari refuses :active on anything that
+   is not a <button>/<a>, so app.js marks the pressed element itself and both
+   selectors are styled identically. */
+button, [role="button"], [onclick], .btn, label.btn, summary,
+.bn-item, .pm-item, .sb-nav-item, .set-nav-item, .set-action, .vm-tab,
+.view-btn, .dz-seg-btn, .kebab, .theme-opt, .export-opt, .exp-btn {
+  /* kill the grey flash Android/iOS paint over taps, and the 300ms delay */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* 1) Small controls — press in.
+   Kept at LOW specificity on purpose (plain `button`, no :not() guard) so the
+   row rule below can override it; a disabled button never gets :active, and
+   app.js never marks one [data-pressed], so nothing is lost. */
+button:active, button[data-pressed],
+.btn:active, .btn[data-pressed],
+label.btn:active, label.btn[data-pressed],
+summary:active, summary[data-pressed],
+.kebab:active, .kebab[data-pressed],
+.pm-item:active, .pm-item[data-pressed],
+.bn-item:active, .bn-item[data-pressed],
+.sb-nav-item:active, .sb-nav-item[data-pressed],
+.set-nav-item:active, .set-nav-item[data-pressed],
+.set-action:active, .set-action[data-pressed],
+.vm-tab:active, .vm-tab[data-pressed],
+.view-btn:active, .view-btn[data-pressed],
+.dz-seg-btn:active, .dz-seg-btn[data-pressed],
+.theme-opt:active, .theme-opt[data-pressed],
+.export-opt:active, .export-opt[data-pressed],
+.exp-btn:active, .exp-btn[data-pressed],
+.scan-ctrl-btn:active, .scan-ctrl-btn[data-pressed],
+.lang-dd-btn:active, .lang-dd-btn[data-pressed] {
+  transform: scale(0.955);
+  filter: brightness(0.93);
+  transition: transform 0.05s var(--ease-out), filter 0.05s var(--ease-out);
+}
+
+/* Full-width rows should not shrink sideways — they just sink a little. */
+.pm-item:active, .pm-item[data-pressed],
+.sb-nav-item:active, .sb-nav-item[data-pressed],
+.sb-user:active, .sb-user[data-pressed],
+.set-nav-item:active, .set-nav-item[data-pressed],
+.set-action:active, .set-action[data-pressed],
+.bn-item:active, .bn-item[data-pressed] {
+  transform: scale(0.985);
+}
+
+/* 2) Large surfaces — dim only */
+.worker-card:active, .worker-card[data-pressed],
+.tree-group-row:active, .tree-group-row[data-pressed],
+.tree-worker-item:active, .tree-worker-item[data-pressed],
+.dz-team-item:active, .dz-team-item[data-pressed],
+.dz-project-item:active, .dz-project-item[data-pressed],
+.hist-item:active, .hist-item[data-pressed],
+.set-item:active, .set-item[data-pressed],
+tbody tr[onclick]:active, tbody tr[onclick][data-pressed],
+th[onclick]:active, th[onclick][data-pressed] {
+  filter: brightness(0.95);
+  transition: filter 0.05s var(--ease-out);
+}
+[data-theme="dark"] .worker-card:active, [data-theme="dark"] .worker-card[data-pressed],
+[data-theme="dark"] .tree-group-row:active, [data-theme="dark"] .tree-group-row[data-pressed],
+[data-theme="dark"] .tree-worker-item:active, [data-theme="dark"] .tree-worker-item[data-pressed],
+[data-theme="dark"] .dz-team-item:active, [data-theme="dark"] .dz-team-item[data-pressed],
+[data-theme="dark"] .dz-project-item:active, [data-theme="dark"] .dz-project-item[data-pressed],
+[data-theme="dark"] .hist-item:active, [data-theme="dark"] .hist-item[data-pressed],
+[data-theme="dark"] .set-item:active, [data-theme="dark"] .set-item[data-pressed],
+[data-theme="dark"] tbody tr[onclick]:active, [data-theme="dark"] tbody tr[onclick][data-pressed],
+[data-theme="dark"] th[onclick]:active, [data-theme="dark"] th[onclick][data-pressed] {
+  /* dark UI: a press has to get brighter, not darker, to be visible */
+  filter: brightness(1.35);
+}
+
+/* Anything that reads raw finger movement must keep touch-action:none — the
+   blanket `manipulation` above must never reach a drag handle or a canvas, or
+   the page scrolls away under a finger that meant to drag. */
+.drag-handle, #ce-canvas, .pe-canvas, .cz-stage { touch-action: none; }
+
+/* Present mode and the photo editor drive their own pixels — keep hands off. */
+#cardzoom-overlay [data-pressed], #cardzoom-overlay :active,
+#ce-canvas:active, .pe-canvas:active { transform: none; filter: none; }
+
+/* Reduced motion: keep the acknowledgement, drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+  button:active, button[data-pressed], .btn:active, .btn[data-pressed],
+  [data-pressed], :active { transform: none !important; }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   BENTO CHOICE — the one way to pick something
+   ──────────────────────────────────────────────────────────────────
+   Every picker in the app used to look like a different product: language
+   was a dropdown, theme a segmented pill, view mode a toolbar toggle, form
+   fields native <select>s. The dropdown especially read as a stray
+   rectangle parked next to all the block/box UI.
+
+   From here every choice is the same object: a bento tile wearing the
+   worker-detail page's shell exactly — var(--card) on a --hairline border,
+   soft shadow, a lift on hover. The chosen tile gets an accent ring and a
+   tick, and that is the only state the eye has to learn.
+
+   Anatomy (every part optional except the tile):
+     .bento-choice > .bc-tile > .bc-glyph  ← big native character / icon
+                                .bc-name   ← label in its own language
+                                .bc-code   ← EN / TH / LO / KO
+                                .bc-check  ← accent tick, selected only
+   Variants: .bc-lang (language) · .bc-chip (short values: sizes, blood)
+             .bc-center (icon over label) · .bc-tight (inside popups)
+   ══════════════════════════════════════════════════════════════════ */
+.bento-choice {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--bc-min, 106px), 1fr));
+  gap: var(--sp-3);
+  width: 100%;
+  min-width: 0;
+}
+/* Fixed column counts, where auto-fit would reflow oddly. */
+.bento-choice[data-cols="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.bento-choice[data-cols="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.bento-choice[data-cols="4"] { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+.bc-tile {
+  position: relative;
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 3px; min-width: 0;
+  padding: 12px 13px;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--hairline);
+  border-radius: 18px;                 /* the bento radius, at tile scale */
+  box-shadow: var(--shadow-sm);
+  font-family: inherit; text-align: left; cursor: pointer;
+  transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease),
+              box-shadow var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+}
+.bc-tile:hover { background: var(--card-hover); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+.bc-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Selected — accent ring + tick. The ring is inset so doubling the border
+   weight cannot shift the layout by a pixel the way a 2px border would. */
+.bc-tile.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent), var(--shadow-sm);
+  background: var(--green-soft);
+}
+.bc-tile.selected:hover { background: var(--green-soft); box-shadow: inset 0 0 0 1px var(--accent), var(--shadow-md); }
+.bc-tile.selected .bc-glyph, .bc-tile.selected .bc-name { color: var(--accent); }
+
+.bc-glyph {
+  font-size: 1.45rem; line-height: 1.15; font-weight: 600;
+  color: var(--text); letter-spacing: -0.01em;
+}
+.bc-glyph svg { width: 20px; height: 20px; display: block; }
+.bc-name {
+  font-size: 0.85rem; font-weight: 600; color: var(--text);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bc-code {
+  font-size: 0.64rem; font-weight: 700; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--text-faint);
+}
+.bc-check {
+  position: absolute; top: 9px; right: 9px;
+  width: 14px; height: 14px; color: var(--accent);
+  opacity: 0; transform: scale(0.7);
+  transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease-spring);
+}
+.bc-tile.selected .bc-check { opacity: 1; transform: scale(1); }
+
+/* Language tiles: glyph + native name + code. Two across in a popup, four
+   once there is width. */
+.bento-choice.bc-lang { --bc-min: 104px; }
+.bento-choice.bc-lang .bc-glyph { font-size: 1.6rem; }
+
+/* Icon over a centred label — theme, view mode. */
+.bc-tile.bc-center { align-items: center; text-align: center; gap: 6px; padding: 13px 10px; }
+.bc-tile.bc-center .bc-name { font-size: 0.78rem; }
+
+/* Chips: short values (S/M/L, A+, O-) where a name and a code would be noise.
+   56px keeps the 13 blood groups to four columns on a phone, not five rows. */
+.bento-choice.bc-chip { --bc-min: 56px; gap: var(--sp-2); }
+.bento-choice.bc-chip .bc-tile {
+  align-items: center; justify-content: center; text-align: center;
+  padding: 9px 8px; border-radius: 13px; min-height: 40px;
+}
+.bento-choice.bc-chip .bc-name { font-size: 0.82rem; }
+.bento-choice.bc-chip .bc-check { top: 4px; right: 4px; width: 11px; height: 11px; }
+
+/* Inside a popup or flyout there is no room for a hover lift. */
+.bento-choice.bc-tight { gap: var(--sp-2); }
+.bento-choice.bc-tight .bc-tile { padding: 10px 11px; border-radius: 14px; box-shadow: none; }
+.bento-choice.bc-tight .bc-tile:hover { transform: none; box-shadow: none; background: var(--card-hover); }
+.bento-choice.bc-tight .bc-tile.selected { box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* A tile is card-like: it sinks under a press, it does not shrink like a
+   small button (see the press-feedback block above). */
+.bc-tile:active, .bc-tile[data-pressed] { transform: scale(0.985); filter: none; }
+
+/* ── Native <select>, where a tile grid is the wrong tool ──
+   Long or runtime-filled lists (cities, groups, employers, doc categories)
+   stay a real <select> — but wearing the tiles' shell, so it stops looking
+   like a browser widget parked in a bento layout. */
+select.bento-field {
+  -webkit-appearance: none; appearance: none;
+  padding: 11px 34px 11px 13px;
+  background-color: var(--card);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  background-size: 15px 15px;
+  border: 1px solid var(--hairline);
+  /* A touch tighter than a tile: at field height 18px would read as a pill. */
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+  font-size: 0.85rem; color: var(--text); width: 100%;
+  transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease),
+              background-color var(--t-fast) var(--ease);
+}
+select.bento-field:hover { background-color: var(--card-hover); box-shadow: var(--shadow-md); }
+select.bento-field:focus { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent), var(--shadow-sm); }
+[data-theme="dark"] select.bento-field {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2398989D' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+}
+
+/* An upgraded <select> stays in the DOM as the value holder, hidden but
+   reachable — so every existing read/write (form fill, save, filters,
+   exports) keeps working with no changes at all. */
+.bc-source {
+  position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* Phones: two tiles per row is the readable floor. */
+@media (max-width: 560px) {
+  .bento-choice { --bc-min: 92px; gap: var(--sp-2); }
+  .bento-choice.bc-lang { --bc-min: 96px; }
+  .bento-choice[data-cols="4"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bc-tile { padding: 11px 12px; border-radius: 16px; }
+}
+
+/* ── Bento choice: inline group ──
+   Sits in a toolbar rather than filling its container (view mode, chart
+   tools). Icon-only tiles, so they stay toolbar-sized. */
+.bento-choice.bc-inline {
+  display: inline-grid; width: auto;
+  grid-auto-flow: column; grid-template-columns: none;
+  gap: var(--sp-2);
+}
+.bento-choice.bc-inline .bc-tile { padding: 9px 11px; border-radius: 13px; align-items: center; gap: 0; }
+.bento-choice.bc-inline .bc-glyph { font-size: 1rem; }
+.bento-choice.bc-inline .bc-glyph svg { width: 17px; height: 17px; }
+.bento-choice.bc-inline .bc-check { top: 3px; right: 3px; width: 10px; height: 10px; }
+
+/* Theme tiles are icon+label and share a row with two siblings — the glyph can
+   be a touch smaller than a language letter. */
+.theme-options .bc-glyph svg { width: 19px; height: 19px; }
+
+/* A stacked settings row gives its tiles the full width of the card. */
+.set-row.stack .set-row-control { width: 100%; }
+.set-row.stack .bento-choice { width: 100%; }
+
+/* Form fields: the label already says what the group is, so tiles sit tight
+   under it and never stretch taller than a text input would. */
+.form-group .bento-choice { margin-top: 1px; }
+.form-group .bc-tile { padding: 9px 11px; border-radius: 14px; }
+.form-group .bento-choice.bc-chip .bc-tile { padding: 8px 6px; border-radius: 12px; min-height: 36px; }
+.form-group .bc-name { font-size: 0.8rem; }
+
+/* Toolbar filters keep their intrinsic width (the toolbar is a flex row, not a
+   form column) but wear the same shell as everything else. */
+.toolbar select.bento-field { width: auto; padding-top: 9px; padding-bottom: 9px; }
+.dz-chart-tools select.bento-field { width: auto; padding-top: 8px; padding-bottom: 8px; font-size: 0.8rem; }
+
+/* The export format tiles were already tile-shaped, but wore --field-bg and a
+   1.5px border — close to, yet not the same as, .bc-tile. Align the surface so
+   the two read as one component (their own --exp-accent and .sel class stay:
+   the export flow keys off both). */
+.exp-bento .export-opt {
+  background: var(--card);
+  border-width: 1px;
+  box-shadow: var(--shadow-sm);
+}
+.exp-bento .export-opt:hover { background: var(--card-hover); box-shadow: var(--shadow-md); }
+.exp-bento .export-opt.sel {
+  box-shadow: inset 0 0 0 1px var(--exp-accent), var(--shadow-sm);
+}

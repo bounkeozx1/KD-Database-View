@@ -12,10 +12,16 @@
   --sb-border:   rgba(0,0,0,0.08);
   --sb-text:     #1a1f1a;
   --sb-muted:    #6b7280;
-  --sb-faint:    #9aa3a0;
+  /* Was #9aa3a0, which measured 2.45:1 against the sidebar — below the 4.5:1
+     WCAG AA needs for normal text, and the section headings ("PINNED",
+     "PROJECTS") are normal-sized. Pre-dates the glass: the material moved it by
+     0.02. Darkened to the lightest value that clears AA, so the hierarchy
+     against --sb-muted survives. Measured, not guessed: 4.52:1. */
+  --sb-faint:    #6b7471;
   --sb-green:    #2d6a4f;
 }
 [data-theme="dark"] .sidebar {
+  --sb-glass:    rgba(23,23,23,0.66);
   --sb-bg:       #171717;
   --sb-bg2:      #1e1e1e;
   --sb-hover:    rgba(255,255,255,0.07);
@@ -23,23 +29,41 @@
   --sb-border:   rgba(255,255,255,0.08);
   --sb-text:     #e5e7eb;
   --sb-muted:    #9ca3af;
-  --sb-faint:    #6b7280;
+  --sb-faint:    #747b89;   /* was #6b7280 → 3.96:1; now 4.51:1. Same reason as light. */
   --sb-green:    #3dba7a;
 }
 
+/* ── Liquid Glass ──
+ * The sidebar keeps its own `--sb-*` palette (it predates the shared tokens and
+ * a Manager's muscle memory should not shift), but the SURFACE now comes from
+ * the shared material in main.css. `--sb-glass` is the one new variable: the
+ * same colour `--sb-bg` names, at the material's opacity.
+ *
+ * There is genuinely something behind it to bend. `.main-content` is pushed
+ * aside by `margin-left`, so page content never travels under the sidebar — but
+ * the ambient aurora on `body::before` is fixed behind the whole app, and a
+ * fixed sidebar sits over it. Without that layer this would be a flat tint;
+ * with it, it is glass. */
 .sidebar {
+  --sb-glass: rgba(248,249,248,0.72);
   position: fixed;
   top: var(--header-h);
   left: 0;
   bottom: 0;
   width: var(--sidebar-w);
-  background: var(--sb-bg);
+  background: var(--sb-glass);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+          backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   color: var(--sb-text);
   display: flex;
   flex-direction: column;
   z-index: 150;
   border-right: 1px solid var(--sb-border);
-  transition: width 0.22s cubic-bezier(.4,0,.2,1), transform 0.25s cubic-bezier(.4,0,.2,1);
+  /* `background` joins the existing list rather than getting its own rule:
+     `transition` is a single property, so a second declaration elsewhere would
+     silently replace the collapse and slide animations. */
+  transition: width 0.22s cubic-bezier(.4,0,.2,1), transform 0.25s cubic-bezier(.4,0,.2,1),
+              background var(--t-med) var(--ease);
   user-select: none;
   overflow: hidden;
 }
@@ -72,6 +96,12 @@
   display: flex; align-items: center; justify-content: center;
   font-weight: 800; font-size: 0.92rem; flex-shrink: 0;
   box-shadow: 0 4px 12px -4px rgba(45,106,79,0.6);
+  overflow: hidden;   /* an uploaded logo of any aspect ratio must stay inside the box */
+}
+/* Uploaded company logo (injected as <img>) — fit the fixed brand box instead of
+   rendering at its natural size and shoving the sidebar layout around. */
+.sb-logo img, #th-logo-icon img {
+  width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit;
 }
 .sb-brand-text { display: flex; flex-direction: column; line-height: 1.15; overflow: hidden; }
 .sb-brand-name { font-size: 0.88rem; font-weight: 800; color: var(--sb-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -142,11 +172,30 @@
 .sb-more { position: relative; }
 /* Fixed-position popup so it is never clipped by .sidebar-scroll's overflow.
    left/top are set by toggleMoreMenu() relative to the button. */
+/* Glass, and theme-aware. The background was hard-coded #1e1e1e for both
+   themes, so this popup stayed charcoal on a light page — the same fault the
+   floating menu button had. It is positioned by JS and can extend past the
+   sidebar over the page, so it has a real backdrop either way. */
 .sb-submenu {
   display: none; position: fixed; left: 0; top: 0;
-  min-width: 200px; background: #1e1e1e;
-  border: 1px solid var(--sb-border); border-radius: 12px;
+  min-width: 200px; background: var(--glass-tint-invert);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+          backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border-invert); border-radius: 12px;
   box-shadow: 0 14px 36px -10px rgba(0,0,0,0.6); padding: 6px; z-index: 620;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sb-submenu { background: #1e1e1e; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .sb-submenu {
+    background: #1e1e1e;
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+}
+body.exporting .sb-submenu {
+  background: #1e1e1e !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
 }
 .sb-more.open .sb-submenu { display: block; }
 .sb-submenu button {
@@ -310,24 +359,35 @@
    enough because the profile menu's transform captures fixed children and
    .sidebar's overflow:hidden would clip them. z-index sits above the menu. */
 .pm-lang-wrap { position: relative; }
+/* Glass. It is moved into <body> when opened (a transformed/overflowing
+   ancestor would otherwise clip it), so it floats over the page with a real
+   backdrop — and like the sidebar's other popups it was hard-coded #1e1e1e for
+   both themes. */
 .pm-lang-list {
   display: none; position: fixed; left: 0; top: 0; z-index: 1000;
-  min-width: 190px; background: #1e1e1e;
-  border: 1px solid var(--sb-border); border-radius: 12px;
+  min-width: 190px; background: var(--glass-tint-invert);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+          backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border-invert); border-radius: 12px;
   box-shadow: 0 14px 36px -10px rgba(0,0,0,0.6); padding: 6px;
 }
-.pm-lang-list.open { display: block; }
-.pm-lang-list button {
-  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
-  background: transparent; border: none; border-radius: 8px; cursor: pointer;
-  padding: 9px 11px; font-family: inherit; font-size: 0.86rem; font-weight: 500; color: var(--sb-text);
-  transition: background 0.12s, color 0.12s;
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .pm-lang-list { background: #1e1e1e; }
 }
-.pm-lang-list button span { flex: 1; }
-.pm-lang-list button:hover { background: var(--sb-hover); }
-.pm-lang-list button.on { font-weight: 700; }
-.pm-lang-check { width: 15px; height: 15px; flex: none; color: #3dba7a; opacity: 0; }
-.pm-lang-list button.on .pm-lang-check { opacity: 1; }
+@media (prefers-reduced-transparency: reduce) {
+  .pm-lang-list {
+    background: #1e1e1e;
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+}
+body.exporting .pm-lang-list {
+  background: #1e1e1e !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+}
+.pm-lang-list.open { display: block; }
+/* The old list-row styles lived here (.pm-lang-list button / .pm-lang-check).
+   They were removed with the list markup: at (0,1,1) they outranked .bc-tile
+   and stripped the tiles' own background back to transparent. */
 
 /* ── Collapsed state (icon rail) ── */
 /* ── Collapsed icon rail — desktop only ── */
@@ -352,11 +412,59 @@
 
 /* ── Mobile overlay (rail-collapse does not apply here) ── */
 @media (max-width: 768px) {
-  .sidebar, .sidebar.collapsed { width: var(--sidebar-w); transform: translateX(calc(-1 * var(--sidebar-w))); }
+  /* The drawer must sit ABOVE the bottom nav (z-index 200) — with the old 150
+     the bottom bar covered the drawer's last 60px, which is exactly where the
+     profile chip lives, so Settings / language / sign-out could not be tapped
+     at all: the tap landed on the bottom nav behind it. The backdrop goes just
+     under the drawer so the bottom bar dims like everything else. */
+  .sidebar, .sidebar.collapsed { width: var(--sidebar-w); transform: translateX(calc(-1 * var(--sidebar-w))); z-index: 210; }
   .sidebar.open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0,0,0,0.5); }
   .main-content, .sidebar.collapsed ~ .main-content { margin-left: 0 !important; }
-  .sidebar-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 140; }
+  .sidebar-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 205; }
   .sidebar.open ~ .sidebar-backdrop { display: block; }
   .mobile-menu-btn { display: flex !important; }
 }
 .mobile-menu-btn { display: none; background: none; border: none; color: var(--sb-text); font-size: 1.3rem; cursor: pointer; padding: 4px 8px; }
+
+/* Language flyout, now a bento tile grid.
+   togglePmLang() re-parents this panel to <body>, i.e. OUTSIDE .sidebar — so
+   the --sb-* tokens do not reach it and its own colours had to be hardcoded
+   (#1e1e1e), which left it dark even in light theme: a black popup hanging off
+   a light sidebar. It follows the PAGE tokens now, exactly like every other
+   bento surface, so the tiles inside it need no overrides at all. */
+.pm-lang-list {
+  min-width: 244px; padding: 10px;
+  background: var(--card);
+  border-color: var(--hairline);
+  border-radius: 18px;
+  box-shadow: var(--shadow-lg);
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * When the sidebar stops being glass
+ * ══════════════════════════════════════════════════════════════════
+ * The same three refusals the rest of the app honours, restated here because
+ * this stylesheet owns the surface. `--sb-bg` is the opaque colour the sidebar
+ * has always used, so every fallback lands exactly where the design started.
+ */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sidebar { background: var(--sb-bg); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .sidebar {
+    background: var(--sb-bg);
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+}
+@media print {
+  .sidebar {
+    background: var(--sb-bg) !important;
+    -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+  }
+}
+/* A capture in progress: html2canvas cannot render the material, so it must not
+   be asked to. See _rasterise() in app.js. */
+body.exporting .sidebar {
+  background: var(--sb-bg) !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+}

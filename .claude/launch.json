@@ -9,6 +9,14 @@
       "autoPort": false
     },
     {
+      "//": "Isolated instance for UI verification: own port, throwaway DB in data/_verify, so it never disturbs the live server on :3000 or the real kd.db.",
+      "name": "KD Database (verify, scratch DB)",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--no-warnings", "-e",
+        "process.env.PORT='3100'; process.env.KD_DATA_DIR=require('path').join(process.cwd(),'data','_verify'); require('./shell/server.js');"],
+      "port": 3100
+    },
+    {
       "name": "KD Database (static, no DB)",
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "3000"],

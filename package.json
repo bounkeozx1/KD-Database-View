@@ -4,13 +4,38 @@
   "private": true,
   "description": "KD Employment worker management — offline, SQLite-backed (zero dependencies).",
   "type": "commonjs",
-  "engines": { "node": ">=22.5" },
+  "engines": {
+    "node": ">=22.5"
+  },
   "scripts": {
     "start": "node --no-warnings shell/server.js",
     "init-db": "node --no-warnings infra/scripts/init-db.js",
     "backup": "node --no-warnings infra/scripts/backup.js",
     "restore": "node --no-warnings infra/scripts/restore.js",
     "reconcile": "node --no-warnings infra/scripts/reconcile.js",
-    "selftest": "node --no-warnings infra/scripts/selftest.js"
+    "selftest": "node --no-warnings infra/scripts/selftest.js",
+    "reset-admin": "node --no-warnings infra/scripts/reset-admin.js",
+    "set-role": "node --no-warnings infra/scripts/set-role.js",
+    "migrate-auth": "node --no-warnings infra/scripts/migrate-auth-p0.js",
+    "test-auth": "node --no-warnings infra/scripts/test-auth.js",
+    "test-session": "node --no-warnings infra/scripts/test-session.js",
+    "test-security": "node --no-warnings infra/scripts/test-security.js",
+    "test": "npm run test-hidden-css && npm run test-auth && npm run test-session && npm run test-security && npm run test-mfa && npm run test-rbac && npm run test-p4 && npm run test-p45 && npm run test-p46 && npm run test-p51 && npm run test-shared && npm run test-glass && npm run test-export-package && npm run test-group-move && npm run test-perf && npm run test-header && npm run audit-coverage",
+    "test-hidden-css": "node --no-warnings infra/scripts/test-hidden-css.js",
+    "mfa-reset": "node --no-warnings infra/scripts/mfa-reset.js",
+    "test-mfa": "node --no-warnings infra/scripts/test-mfa.js",
+    "test-rbac": "node --no-warnings infra/scripts/test-rbac.js",
+    "test-p4": "node --no-warnings infra/scripts/test-p4.js",
+    "audit-coverage": "node --no-warnings infra/scripts/audit-coverage.js",
+    "test-p45": "node --no-warnings infra/scripts/test-p45.js",
+    "test-p46": "node --no-warnings infra/scripts/test-p46.js",
+    "verify-audit": "node --no-warnings infra/scripts/verify-audit.js",
+    "test-p51": "node --no-warnings infra/scripts/test-p51.js",
+    "test-shared": "node --no-warnings infra/scripts/test-shared.js",
+    "test-glass": "node --no-warnings infra/scripts/test-glass.js",
+    "test-export-package": "node --no-warnings infra/scripts/test-export-package.js",
+    "test-group-move": "node --no-warnings infra/scripts/test-group-move.js",
+    "test-perf": "node --no-warnings infra/scripts/test-perf.js",
+    "test-header": "node --no-warnings infra/scripts/test-header.js"
   }
 }

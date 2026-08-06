@@ -78,7 +78,10 @@ kd-database/
 | แก้สีหรือ layout | `shell/styles/main.css` / `sidebar.css` |
 | แก้ OCR / passport scan | `domains/recruitment/passport-scan/passport-scan.js` |
 | แก้การนำเข้า PPTX | `domains/recruitment/intake-import/pptx-import.js` |
-| แก้ export (XLSX/PPTX/PDF/CSV/.kdb) | `shell/scripts/app.js` → `_doExportXlsx` / `_kdCardSlideXml`+`_buildPptx` / `_doKdCardPdfFile`+`_doWorkerDetailPdf` — ทุกฟอร์แมตเป็น native แก้ไขได้ (PPTX = text box + ตารางจริง, PDF = ฝังฟอนต์ไทย/ลาว), geometry การ์ดใช้ `_KD_GEO` ร่วมกัน |
+| แก้ export (XLSX/PPTX/PDF/CSV/.kdb) | `shell/scripts/app.js` → `_doExportXlsx` / `_kdCardSlideXml`+`_buildPptx` / `_doKdCardPdfFile`+`_doWorkerDetailPdf` — ทุกฟอร์แมตเป็น native แก้ไขได้ (PPTX = text box + ตารางจริง, PDF = ฝังฟอนต์ไทย/ลาว), geometry การ์ดใช้ `_KD_GEO` ร่วมกัน · ทุกไฟล์ออกทาง `_emitExport()` ที่เดียว |
+| แก้ Export Package (โฟลเดอร์ต่อคน + รูป + เอกสารทุกเวอร์ชัน) | `infra/export-package.js` (สร้าง zip ฝั่ง server) · `shell/server.js` → `/api/export/package/*` · `shell/scripts/app.js` → `_doExportPackage` — ดู `docs/p6-export-package.md` |
+| แก้การเลือกคนทีละหลายคน (checkbox + แถบ Export/ย้าย/ถังขยะ) | `shell/scripts/app.js` → `_pick` / `_pickBox` / `renderPickBar` — คนละอย่างกับดาว `selected_uids` |
+| ⚠ แก้กฎที่ **เบราว์เซอร์กับเซิร์ฟเวอร์ต้องตรงกัน** | `infra/age.js` (อายุ) · `infra/csv.js` (quote + BOM + กัน formula injection) · `infra/safe-name.js` (ชื่อไฟล์) · `infra/doc-cats.js` (หมวดเอกสารตั้งต้น) — ไฟล์เดียวกัน เบราว์เซอร์โหลดเป็น `<script>`, Node ใช้ `require()` · **ห้ามก็อปไปเขียนซ้ำ** `npm run test-shared` จะ fail |
 | เพิ่มไลบรารี offline | `vendor/` + แก้ path ใน JS ที่ใช้ |
 | แก้ backup / restore | `infra/admin.js` |
 | แก้ npm script | `package.json` |
@@ -138,7 +141,9 @@ Browser: user เลือกรูป / สแกน OCR
 ## Schema ฐานข้อมูล (infra/db.js)
 
 ```
-users          id · username · password · role · name
+users          id · username · password(scrypt) · role(admin|viewer) · name
+sessions       token(PK) · username · created_at · last_seen · expires_at
+               (ออกตอน login สำเร็จ; 12 ชม. หรือ 30 วันถ้าติ๊ก "keep me logged in")
 employers      code · name
 cities         id · country(kr/la) · code · name
 groups         id · name · departure · route · pinned · archived · sort_order
@@ -156,9 +161,16 @@ FK CASCADE: groups→employees→passports, groups→employees→documents
 
 ## API Endpoints (shell/server.js)
 
+**สิทธิ์ (ทุก endpoint):** เปิดสาธารณะเฉพาะ `/api/health` กับ `/api/login` —
+ที่เหลือต้องมี session cookie ที่ได้จากการ login จริงเท่านั้น
+(ไม่มี → 401) และทุก **write** (POST/PATCH/DELETE) ต้องเป็น `role=admin`
+(ไม่ใช่ → 403). ไฟล์ใน `/uploads/…` ก็ต้อง login เช่นกัน
+
 ```
-GET    /api/bootstrap               โหลดข้อมูลทั้งหมด (groups + workers + cities + users)
-POST   /api/login                   { username, password } → { ok, user }
+GET    /api/bootstrap               โหลดข้อมูลทั้งหมด + me (ผู้ใช้ที่ login อยู่)
+POST   /api/login                   { username, password, remember } → { ok, user } + Set-Cookie
+POST   /api/logout                  ลบ session ปัจจุบัน
+GET    /api/me                      → { ok, user } (role ล่าสุดจากฐานข้อมูล)
 POST   /api/import                  migrate localStorage → SQLite (first-run)
 
 POST   /api/groups                  สร้าง group ใหม่
@@ -207,11 +219,16 @@ DB.getCities()                    // { kr: [], la: [] }
 DB.addCity(country, { name, code })
 DB.deleteCity(country, code)
 
-// Auth
-await DB.login(username, password)  // return user object | null
-DB.logout()
-DB.getCurrentUser()               // อ่าน sessionStorage
-DB.getUsers()
+// Auth — สิทธิ์ทั้งหมดมาจากการ login (username + password) เท่านั้น
+await DB.login(username, password, remember)  // ตั้ง session cookie (HttpOnly) ฝั่ง server
+                                              // return user | null, throw code
+                                              // 'too-many-attempts' เมื่อโดนล็อก
+await DB.logout()                 // ลบ session ทั้งฝั่ง server + cookie
+DB.getCurrentUser()               // { username, role, name } ตามที่ "server" บอก (จาก /bootstrap)
+await DB.refreshCurrentUser()     // ถาม /api/me ใหม่ (เช่น role เพิ่งถูกเปลี่ยน)
+DB.isAdmin()
+DB.onAuthLost(cb)                 // session หมดอายุ/ถูกเพิกถอนกลางคัน
+DB.getUsers()                     // admin เท่านั้นที่เห็นทั้งหมด (viewer เห็นแค่ตัวเอง)
 
 // Admin
 await DB.backup()
@@ -275,3 +292,38 @@ npm run reconcile -- --json                output เป็น JSON (machine-rea
 | Uploads path | `data/uploads/{employee-photos,passports,id-cards,documents}/` |
 | Backups path | `data/backups/` |
 | Reports path | `data/reports/` |
+
+---
+
+## Bento Choice — ตัวเลือก (choice) ทั้งแอปใช้อันเดียวกัน
+
+ทุกที่ที่ผู้ใช้ "เลือก" ต้องเป็น **tile เดียวกัน** (ยืมเปลือกจากหน้ารายละเอียดแรงงาน:
+`var(--card)` + `--hairline` + `--shadow-sm` + ยกตัวตอน hover) ตัวที่เลือกอยู่ =
+**ขอบ accent + วงในสี accent + เครื่องหมายถูกมุมขวา** — ห้ามคิดสถานะใหม่ขึ้นมาอีก
+
+```html
+<div class="bento-choice bc-lang" data-cols="4">      <!-- bc-chip / bc-center / bc-tight / bc-inline -->
+  <button class="bc-tile selected">
+    <span class="bc-glyph">ກ</span>                   <!-- ตัวอักษร หรือ SVG -->
+    <span class="bc-name">ລາວ</span>
+    <span class="bc-code">LO</span>
+    <svg class="bc-check">…</svg>
+  </button>
+</div>
+```
+
+```js
+bcGroup(el, items, current, onPick)   // สร้าง tile จาก list  (items: {v,glyph,name,code})
+bcMark(el, current)                   // ย้ายตัวที่เลือก โดยไม่สร้างใหม่
+bentoizeSelect(id, {chip, cols})      // อัพเกรด <select> เดิม → tile
+bcSync(id) / bcSyncAll()              // วาดใหม่หลังโค้ดเปลี่ยน value/options หรือเปลี่ยนภาษา
+BC_LANGS                              // ภาษาทั้ง 4 — flyout / Settings / login ใช้ตัวนี้ร่วมกัน
+```
+
+**กฎเลือกรูปแบบ:** รายการสั้นและคงที่ (≤8 ตัว, เพศ/มือ/ไซส์/เกรด/เลือด/สิทธิ์) → tile;
+รายการยาวหรือเติมตอน runtime (เมือง, กลุ่ม, นายจ้าง, หมวดเอกสาร) → `<select class="bento-field">`
+คือ select จริงแต่ใส่เปลือก bento เดียวกัน
+
+⚠ `bentoizeSelect` **ไม่ลบ** `<select>` เดิม — ซ่อนไว้ (`.bc-source`) เป็นตัวเก็บค่า ดังนั้น
+`getElementById('f-sex').value`, การบันทึก, ตัวกรอง และ export ทำงานเหมือนเดิมทุกจุด
+ถ้าโค้ดตั้ง `.value` เองแบบไม่ยิง event ต้องเรียก `bcSyncAll()` ตามหลัง (เช่นท้าย `openWorkerForm`)
