@@ -319,6 +319,25 @@ function migrate() {
   if (!empCols.includes('photo_thumb'))      db.exec("ALTER TABLE employees ADD COLUMN photo_thumb TEXT DEFAULT ''");
   // Soft-delete ("Trash") — NULL = live. Set when a worker is moved to trash.
   if (!empCols.includes('deleted_at'))       db.exec('ALTER TABLE employees ADD COLUMN deleted_at TEXT');
+  /* Married couples, as an actual link instead of a label.
+   *
+   * `couple` was — and still is — a printed yes/no: it puts 부부 on the KD card
+   * and says nothing about WHO. That is fine for someone whose spouse is not in
+   * the system, so it stays; this column adds the other half of the answer.
+   *
+   * Strictly 1:1 and symmetric: if A points at B then B points at A, always.
+   * Nothing writes this column directly — repo.setSpouse() writes both sides in
+   * one statement each so the pair can never end up half-linked (which is why
+   * spouse_uid is deliberately NOT in EMP_COLS).
+   *
+   * No REFERENCES clause: a self-referencing FK added by ALTER TABLE cannot be
+   * enforced retroactively on rows that already exist, so it would read as a
+   * guarantee the database does not actually make. The link is maintained in
+   * repo.js instead, where deleting a worker clears their partner's half. */
+  if (!empCols.includes('spouse_uid'))       db.exec("ALTER TABLE employees ADD COLUMN spouse_uid TEXT DEFAULT ''");
+  // Unconditional: a database that got the column from an earlier build without
+  // the index would otherwise never gain one.
+  db.exec('CREATE INDEX IF NOT EXISTS idx_emp_spouse ON employees(spouse_uid)');
 
   db.exec(`CREATE TABLE IF NOT EXISTS activity_log (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,

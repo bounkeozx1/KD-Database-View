@@ -389,6 +389,17 @@ function _jsonToImport(obj) {
     obj.groups.forEach(g => (g.workers || []).forEach(w => workers.push(w)));
     if (obj.groups.length === 1) groupMeta = { name: obj.groups[0].name, departure: obj.groups[0].departure, route: obj.groups[0].route };
   } else if (obj && Array.isArray(obj.workers)) workers = obj.workers;
+  /* spouse_uid names another row, and rows in a JSON file were numbered by
+   * whatever server wrote it. Carry it privately and let the same phase-1b
+   * remap the .kdb path uses translate it once the new ids exist — sending it
+   * straight through would, on the server it was exported from, marry the fresh
+   * copies to the original people. (uid itself is left alone here: JSON restores
+   * have always kept theirs, and the remap resolves a kept uid to itself.) */
+  workers = workers.map(w => {
+    const c = Object.assign({}, w, { _src_uid: w.uid || '', _src_spouse: w.spouse_uid || '' });
+    delete c.spouse_uid;
+    return c;
+  });
   return { groupMeta, workers };
 }
 function _fileToDataUrlImport(file) {
@@ -431,7 +442,18 @@ async function _parseKdbBundle(arrayBuffer) {
   for (const rec of (manifest.workers || [])) {
     const w = { ...rec };
     delete w.photo_file; delete w.photo_orig_file; delete w.documents_manifest;
-    delete w.uid;   // let this server mint a fresh uid (avoid cross-server collisions)
+    /* The uid in the bundle belongs to the server that produced it. This one
+     * mints its own (importing the same bundle twice must not collide), which
+     * means every uid INSIDE a record — spouse_uid — refers to something that
+     * does not exist here. Both are carried on private fields and translated
+     * after the import has created the rows and knows old → new; sending the
+     * bundle's spouse_uid as-is would be worse than dropping it, since
+     * re-importing a bundle into the server it came from would marry the fresh
+     * copies to the original people. */
+    w._src_uid = rec.uid || '';
+    w._src_spouse = rec.spouse_uid || '';
+    delete w.uid;
+    delete w.spouse_uid;
     if (rec.photo_file)      w.photo      = await toDataUrl(rec.photo_file);
     if (rec.photo_orig_file) w.photo_orig = await toDataUrl(rec.photo_orig_file);
     if (Array.isArray(rec.documents_manifest) && rec.documents_manifest.length) {
@@ -653,6 +675,9 @@ async function doImport() {
     const doc = w._doc;
     const copy = { ...w };
     delete copy._type; delete copy._doc; delete copy.full;
+    // Kept out of the payload, kept for the couple remap after phase 1.
+    const srcUid = copy._src_uid || '', srcSpouse = copy._src_spouse || '';
+    delete copy._src_uid; delete copy._src_spouse;
     // Keep anyone who carries ANY identifying data — previously a worker with
     // only a Lao name or only a Worker ID was silently dropped (59→55 problem).
     const hasIdentity = copy.en_name || copy.lo_name || copy.worker_id ||
@@ -670,7 +695,7 @@ async function doImport() {
     if (doc && doc.data) (docs[doc.cat] = docs[doc.cat] || []).push({ name: doc.name, type: doc.type, data: doc.data });
     delete copy.documents;   // documents are uploaded separately in phase 2
 
-    toCreate.push({ copy, docs });
+    toCreate.push({ copy, docs, srcUid, srcSpouse });
     if (copy.passport_no) existingPassports.add(copy.passport_no);
     added++;
   }
@@ -700,6 +725,30 @@ async function doImport() {
         bi('ສ້າງພະນັກງານ ', 'สร้างพนักงาน ') + Math.min(i + BATCH, toCreate.length) + '/' + toCreate.length);
       await _paint();
     }
+
+    /* ── Phase 1b: put the couples back together ──
+     * Every row now has a uid on THIS server, so the bundle's old spouse_uid
+     * can finally be translated. Runs before the documents because it is a
+     * handful of tiny writes and a document upload that fails should not take
+     * the marriages down with it.
+     *
+     * A pair is named from both sides, so each is applied once — repo.setSpouse
+     * writes both halves anyway. */
+    const newUidOf = {};
+    toCreate.forEach(r => { if (r.srcUid && r.uid) newUidOf[r.srcUid] = r.uid; });
+    const donePair = new Set();
+    let pairs = 0;
+    toCreate.forEach(r => {
+      const partner = r.srcSpouse ? newUidOf[r.srcSpouse] : '';
+      if (!r.uid || !partner) return;                 // spouse was not in this bundle
+      const key = [r.uid, partner].sort().join('|');
+      if (donePair.has(key)) return;
+      donePair.add(key);
+      DB.updateWorker(groupId, r.uid,   { spouse_uid: partner, couple: 'yes' });
+      DB.updateWorker(groupId, partner, { spouse_uid: r.uid,   couple: 'yes' });
+      pairs++;
+    });
+    if (pairs) await DB.flush();
 
     // ── Phase 2: upload documents one file at a time, a few in parallel, each
     // with its own retries. Slow/failed files retry on their own; survivors

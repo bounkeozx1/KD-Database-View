@@ -55,6 +55,33 @@ button, input, select, textarea, optgroup { line-height: 1.2; }
      the page background (--bg #f4f6f4) — under AA for text this size. This is
      the lightest value that clears it: 4.52:1 on the page, 4.90:1 on a card. */
   --sub-text:  #6a717f;
+  /* Badge fill. NOT --red: that one is tuned to be read AS text on the page,
+     and the dark theme lightens it to #f87171 for exactly that reason — white
+     numerals on it measure 2.77:1. Here red is the BACKGROUND, so it has to go
+     the other way. 4.83:1 with white. */
+  --badge-red: #dc2626;
+  /* ── Soft status pills (C2) ──
+   * The soft red pill was `background:#fdeaea; color:var(--red)` — a fill
+   * hard-coded for the light theme under a foreground that DOES flip. In dark
+   * mode the pill stayed pale pink while --red lightened to #f87171, and the
+   * word "Critical" measured 2.39:1. It is the passport-expiry warning: the one
+   * label in the app that has to be readable.
+   *
+   * Split into a fill and a foreground so both themes can move. NOT --red /
+   * --text-muted: those are tuned to be read as text ON THE PAGE, and here they
+   * sit on a tinted pill, which is a different background.                    */
+  --badge-red-soft:    #fdeaea;   /* fill  */
+  --badge-red-soft-fg: #d32020;   /* 4.54:1 — the lightest red that clears AA on the fill */
+  --badge-gray-fg:     #636a78;   /* 4.75:1 on --chip-bg; --text-muted measured 4.22 */
+  /* Green as a FILL under white text. --green is the brand accent and is read
+     as TEXT in a dozen places, so it cannot be darkened for this. White on the
+     dark theme's #3a9e6f measured 3.33:1. */
+  --green-fill: #2d6a4f;          /* 6.39:1 with white */
+  /* Fill behind the selected tab in the capsule. A TINT OF THE ACCENT here, not
+     white: the light capsule already composites to 251,252,251, so a white pill
+     differed from the bar by 3/255 — invisible. Tinting darkens it instead,
+     which also lifts the green label to 4.95:1. */
+  --tab-sel: rgba(45,106,79,0.16);
   --chip-bg:   #eef0ee;
   --star-off:  #6b7471;   /* unselected star — 4.81:1 on the card */
   --sidebar-w: 260px;
@@ -119,6 +146,17 @@ button, input, select, textarea, optgroup { line-height: 1.2; }
   --text-muted:#98989D;   /* Apple secondary label */
   --text-faint:#636366;
   --sub-text:  #98989D;   /* already 7.31:1 on the dark page — no adjustment */
+  --badge-red: #d32f2f;   /* a shade brighter so the oval separates from the dark glass; 4.98:1 with white */
+  /* Soft pills, dark side. The fill is a TINT OF THE FOREGROUND over the card
+     rather than a fixed colour, so it stays a red pill on #1C1C1E instead of
+     the pale pink the light theme wants. Composites to #3f2a2b. */
+  --badge-red-soft:    rgba(248,113,113,0.16);
+  --badge-red-soft-fg: #f87171;   /* 4.81:1 on that fill */
+  --badge-gray-fg:     #a1a1a6;   /* 4.90:1 on --chip-bg; --text-muted measured 4.39 */
+  --green-fill:        #33845c;   /* 4.57:1 with white; --green (#3a9e6f) gave 3.33 */
+  /* Dark goes the platform way — a white lift — but only 0.08: at 0.14 the pill
+     raised the ground under the green label to 3.84:1, under AA. */
+  --tab-sel:   rgba(255,255,255,0.08);
   --chip-bg:   rgba(255,255,255,0.10);
   --star-off:  #8e8e93;
   /* Deeper shadows on dark surfaces */
@@ -162,6 +200,12 @@ button, input, select, textarea, optgroup { line-height: 1.2; }
   --glass-blur-thin:  14px;
   --glass-blur:       26px;
   --glass-blur-thick: 40px;
+  /* The scroll edge. Much softer than the panes: this one blurs CONTENT that is
+     about to pass under a control, not a surface, and the point is a transition
+     you do not notice — not a second pane of glass. */
+  --glass-blur-edge:  8px;
+  --edge-fade-top:    22px;   /* below the sticky toolbar */
+  --edge-fade-bottom: 104px;  /* over the floating dock: 58 capsule + 10 gap + fade */
   --glass-sat:        1.7;
 
   --glass-tint-thin:  rgba(255,255,255,0.50);
@@ -262,10 +306,10 @@ body::before {
  * `.sidebar` is excluded on purpose — it is a full-height vertical pane, and a
  * lit edge along its top would read as a seam under the browser chrome rather
  * than as the top face of a sheet. */
-.toolbar, .bottom-nav, .vm-menubar, .row-menu, .pm-lang-list, .sb-submenu {
+.toolbar, .bottom-nav, .tab-search, .vm-menubar, .row-menu, .pm-lang-list, .sb-submenu {
   position: relative;
 }
-.toolbar::after, .bottom-nav::after, .vm-menubar::after,
+.toolbar::after, .bottom-nav::after, .tab-search::after, .vm-menubar::after,
 .row-menu::after, .pm-lang-list::after, .sb-submenu::after {
   content: ""; position: absolute; left: 0; right: 0; top: 0; height: 1px;
   border-radius: inherit;
@@ -275,6 +319,39 @@ body::before {
 /* The bottom bar is lit from the edge that faces the content — its top is the
    side the list scrolls past. */
 .bottom-nav::after { top: 0; }
+
+/* ── Scroll edge effect (H2) ──────────────────────────────────────
+ * Apple's Layout guidance asks for this by name: "Instead of a background, use
+ * a scroll edge effect to provide a transition between content and the control
+ * area." Materials says what it does — "blurring and reducing the opacity of
+ * background content" so a control stays legible over whatever runs beneath it.
+ *
+ * Both bands are CONTENT-SIDE softening, not a third pane of glass. They carry
+ * no tint and no border: a mask fades the blur to nothing over ~20–35px, so the
+ * list dissolves as it approaches the control instead of being cut off by one.
+ *
+ * `pointer-events: none` on both — a band you cannot see must never be a band
+ * you can hit. And both are absolutely positioned, so the dock's one stays out
+ * of its flex row rather than becoming a third item in it. */
+.toolbar::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 100%;
+  height: var(--edge-fade-top);
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(var(--glass-blur-edge));
+          backdrop-filter: blur(var(--glass-blur-edge));
+  -webkit-mask-image: linear-gradient(to bottom, #000, transparent);
+          mask-image: linear-gradient(to bottom, #000, transparent);
+}
+.tab-dock::before {
+  content: ""; position: fixed; left: 0; right: 0; bottom: 0;
+  height: var(--edge-fade-bottom);
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(var(--glass-blur-edge));
+          backdrop-filter: blur(var(--glass-blur-edge));
+  /* Solid under the capsule, fading out above it. */
+  -webkit-mask-image: linear-gradient(to top, #000 66%, transparent);
+          mask-image: linear-gradient(to top, #000 66%, transparent);
+}
 
 /* ── Motion ──
  * The material settles rather than snapping when its tint changes (theme
@@ -287,20 +364,21 @@ body::before {
    width and slide, and `transition` is one property — redeclaring it here would
    silently drop those. Its background transition is added to that declaration
    in sidebar.css instead. */
-.toolbar, .bottom-nav, .vm-menubar, .row-menu, .pm-lang-list,
+.toolbar, .bottom-nav, .tab-search, .vm-menubar, .row-menu, .pm-lang-list,
 .sb-submenu, .toast, .mobile-fab-menu {
   transition: background var(--t-med) var(--ease);
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .toolbar::after, .bottom-nav::after, .vm-menubar::after,
+  .toolbar::after, .bottom-nav::after, .tab-search::after, .vm-menubar::after,
   .row-menu::after, .pm-lang-list::after, .sb-submenu::after { display: none; }
 }
 @media print {
-  .toolbar::after, .bottom-nav::after, .vm-menubar::after,
+  .toolbar::after, .bottom-nav::after, .tab-search::after, .vm-menubar::after,
   .row-menu::after, .pm-lang-list::after, .sb-submenu::after { display: none !important; }
 }
 body.exporting .toolbar::after, body.exporting .bottom-nav::after,
+body.exporting .tab-search::after,
 body.exporting .vm-menubar::after, body.exporting .row-menu::after,
 body.exporting .pm-lang-list::after, body.exporting .sb-submenu::after { display: none !important; }
 
@@ -345,6 +423,8 @@ body.exporting .progress-modal::after { display: none !important; }
   .glass, .glass-thin, .glass-thick { background: var(--bg-card); }
   .glass-edge::after { display: none; }
   body::before { display: none; }
+  /* The edge is blur and nothing else — with no blur it is an empty box. */
+  .toolbar::before, .tab-dock::before { display: none; }
 }
 
 /* 2. The reader asked the OS for less transparency. Apple honours this and so
@@ -356,6 +436,7 @@ body.exporting .progress-modal::after { display: none !important; }
   }
   .glass-edge::after { display: none; }
   body::before { display: none; }
+  .toolbar::before, .tab-dock::before { display: none; }
 }
 
 /* 3. Paper has no backdrop. */
@@ -366,6 +447,7 @@ body.exporting .progress-modal::after { display: none !important; }
   }
   .glass-edge::after { display: none !important; }
   body::before { display: none !important; }
+  .toolbar::before, .tab-dock::before { display: none !important; }
 }
 
 /* 4. THE IMPORTANT ONE. html2canvas does not implement backdrop-filter, so any
@@ -382,6 +464,11 @@ body.exporting .overlay {
 }
 body.exporting .glass-edge::after { display: none !important; }
 body.exporting::before { display: none !important; }
+/* The scroll edges too: html2canvas cannot render a backdrop-filter, and a band
+   it renders as a grey rectangle across the top or bottom of the capture is a
+   ruined file that nobody notices until it has been sent. */
+body.exporting .toolbar::before,
+body.exporting .tab-dock::before { display: none !important; }
 
 /* 5. Motion is decoration. (The project-wide reduced-motion rule near the top
  *    already strips animation; this keeps the material static too.) */
@@ -601,14 +688,14 @@ body:not(.authed) .overlay { display: none !important; }
 }
 .stat-ic-green { background: var(--green-soft); color: var(--green); }
 .stat-ic-gray  { background: var(--chip-bg); color: var(--text-muted); }
-.stat-ic-red   { background: #fdeaea; color: var(--red); }
+.stat-ic-red   { background: var(--badge-red-soft); color: var(--badge-red-soft-fg); }
 .stat-badge {
   font-size: 0.7rem; font-weight: 700; padding: 4px 9px; border-radius: 999px;
   white-space: nowrap;
 }
 .badge-green { background: var(--green-soft); color: var(--green); }
-.badge-gray  { background: var(--chip-bg); color: var(--text-muted); }
-.badge-red   { background: #fdeaea; color: var(--red); }
+.badge-gray  { background: var(--chip-bg); color: var(--badge-gray-fg); }
+.badge-red   { background: var(--badge-red-soft); color: var(--badge-red-soft-fg); }
 .stat-card .num { font-size: 1.9rem; font-weight: 800; color: var(--text); line-height: 1; }
 .stat-card .lbl { font-size: 0.78rem; color: var(--text-muted); margin-top: 6px; font-weight: 500; }
 
@@ -657,7 +744,9 @@ body.exporting .toolbar {
 }
 .search-icon {
   position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
-  color: #9aa3a0; font-size: 0.85rem; pointer-events: none;
+  /* Was a hard-coded #9aa3a0, which measured 2.43:1 on the light field and had
+     no dark value at all. --text-muted is theme-aware and clears AA both ways. */
+  color: var(--text-muted); font-size: 0.85rem; pointer-events: none;
 }
 .search-wrap input {
   width: 100%; padding: 9px 12px 9px 34px;
@@ -689,9 +778,9 @@ select:focus { border-color: var(--green); }
 /* The lit top edge goes on FILLED controls only. On a ghost or outline button
    there is no surface for the light to catch, and the highlight would read as a
    stray hairline. */
-.btn-primary { background: var(--green); color: white; box-shadow: var(--ctl-lit), var(--shadow-green); }
+.btn-primary { background: var(--green-fill); color: white; box-shadow: var(--ctl-lit), var(--shadow-green); }
 .btn-primary:hover { background: var(--blue-lt); box-shadow: var(--ctl-lit-strong), var(--shadow-lg); }
-.btn-add     { background: var(--green); color: white; box-shadow: var(--shadow-green); }
+.btn-add     { background: var(--green-fill); color: white; box-shadow: var(--shadow-green); }
 .btn-add:hover { background: var(--blue-lt); box-shadow: var(--shadow-lg); }
 .btn-export  { background: var(--bg-card); color: var(--text); box-shadow: var(--shadow-sm); }
 .btn-export:hover { background: var(--hover); box-shadow: var(--shadow-md); }
@@ -990,6 +1079,18 @@ tr.picked > td { background: var(--green-soft); }
 .pm-group-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pm-group-n { flex: none; font-size: 0.74rem; font-weight: 700; color: var(--text-muted); background: var(--chip-bg); padding: 2px 9px; border-radius: var(--r-pill); }
 .pm-empty { padding: 18px 4px; text-align: center; color: var(--text-muted); font-size: 0.84rem; }
+
+/* ── Spouse picker (P4) — the pickmove list, plus a search box and two tags ── */
+.sp-search { padding: 6px 20px 10px; }
+.sp-search .bento-field { width: 100%; }
+.sp-id  { font-weight: 600; color: var(--text-muted); font-size: 0.78rem; margin-left: 6px; }
+.sp-grp { display: block; font-weight: 500; color: var(--text-muted); font-size: 0.72rem; margin-top: 2px; }
+.sp-tag {
+  flex: none; font-size: 0.7rem; font-weight: 700; color: var(--text-muted);
+  background: var(--chip-bg); padding: 2px 9px; border-radius: var(--r-pill);
+}
+.sp-tag-cur { color: var(--accent); }
+.pm-group-cur { border-color: var(--accent); }
 
 @media (max-width: 640px) {
   .pick-bar { margin: 0 12px 10px; padding: 10px; }
@@ -2129,6 +2230,22 @@ input.set-input-error:focus {
 }
 .back-to-groups:hover { color: var(--green); }
 .back-to-groups svg { width: 15px; height: 15px; }
+/* ── Hit area (C1) ──
+ * Apple's minimum control size is 28×28 pt (Accessibility → "Minimum control
+ * size"); this button measured 81×19 — and it is the way back out of the
+ * busiest screen in the app.
+ *
+ * The target is grown with an absolutely-positioned ::after INSIDE the button
+ * rather than with padding, because padding here would push the <h1> beneath it
+ * down by 9px. This way the tap area changes and nothing else does: same glyph,
+ * same text position, same page. The pseudo-element belongs to the button, so a
+ * tap anywhere in it is a tap on the button. */
+.back-to-groups { position: relative; }
+.back-to-groups::after {
+  content: ""; position: absolute;
+  left: 0; right: 0; top: 50%; transform: translateY(-50%);
+  height: 30px;
+}
 
 /* ── Profile menu: photo-upload header ── */
 .pm-profile-head {
@@ -2905,44 +3022,157 @@ body[data-role="viewer"] .fab { display: none !important; }
  * The clearest case for the material in the whole app: the list scrolls
  * underneath it continuously, so there is always something moving behind the
  * pane. This is the surface Apple's own tab bar is. */
-.bottom-nav {
+/* ── The tab dock ──
+ * A floating capsule with search detached beside it, per the current HIG
+ * illustration. The dock is the positioner; the capsule and the search button
+ * are two separate glass surfaces inside it, which is what lets them sit apart
+ * with page content visible in the gap between them.
+ *
+ * Both are CHROME, so both are glass — that is the p8 rule, and a bar that
+ * floats over the list with the list running underneath it is the clearest
+ * case of a surface that needs something behind it to bend. */
+.tab-dock {
   display: none;
-  position: fixed; bottom: 0; left: 0; right: 0;
-  height: 60px;
+  position: fixed; left: 0; right: 0;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  z-index: 200;
+  justify-content: center; align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  pointer-events: none;          /* the gap between the two is page, not dock */
+}
+.tab-dock > * { pointer-events: auto; }
+
+.bottom-nav {
+  display: flex;
+  height: 58px;
+  /* Fills the width the search button leaves rather than shrinking to fit its
+     labels: sized to content, a 56px tab clipped "Groups" to "Grou…". Capped so
+     the capsule does not stretch across a tablet. */
+  flex: 1 1 auto; min-width: 0; max-width: 480px;
+  border-radius: 999px;
   background: var(--glass-tint);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
           backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  border-top: 1px solid var(--glass-border);
-  z-index: 200;
-  padding: 0 8px;
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-lg);
+  padding: 5px;
   align-items: stretch;
-  gap: 0;
+  gap: 2px;
+}
+/* Search is a way INTO every section rather than one of them, so it keeps its
+   own button — same material, its own shape. */
+.tab-search {
+  flex: none;
+  width: 58px; height: 58px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-family: inherit;
+  color: var(--text-muted);
+  background: var(--glass-tint);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+          backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-lg);
+  -webkit-tap-highlight-color: transparent;
+}
+.tab-search svg { width: 22px; height: 22px; }
+.tab-search:hover { color: var(--text); }
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  margin: -1px; padding: 0; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .bottom-nav { background: var(--bg-card); border-top-color: var(--line); }
+  .bottom-nav, .tab-search { background: var(--bg-card); border-color: var(--line); }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .bottom-nav {
-    background: var(--bg-card); border-top-color: var(--line);
+  .bottom-nav, .tab-search {
+    background: var(--bg-card); border-color: var(--line);
     -webkit-backdrop-filter: none; backdrop-filter: none;
   }
 }
-body.exporting .bottom-nav {
+body.exporting .bottom-nav, body.exporting .tab-search {
   background: var(--bg-card) !important;
   -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
 }
 .bn-item {
-  flex: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 3px;
+  flex: 1 1 0; min-width: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 2px;
   background: none; border: none; cursor: pointer;
-  padding: 6px 2px; color: var(--text-muted);
+  border-radius: 999px;
+  padding: 5px 12px; color: var(--text-muted);
   font-size: 0.64rem; font-weight: 600; font-family: inherit;
-  transition: color 0.15s;
+  transition: color 0.15s, background 0.18s var(--ease);
   -webkit-tap-highlight-color: transparent;
 }
 .bn-item svg { width: 22px; height: 22px; flex-shrink: 0; }
-.bn-item.active { color: var(--green); }
+/* A label that outgrows its tab is clipped, never wrapped: a two-line tab makes
+   the capsule taller than the other two and the whole bar shifts. The tab
+   strings are their own short words for this reason (tab_home, tab_groups,
+   tab_alerts) — the sidebar keeps the long ones. */
+.bn-lbl {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The selected tab wears its own pill inside the capsule — the platform's way
+   of showing which section you are in, and legible without relying on colour. */
+.bn-item.active { color: var(--green); background: var(--tab-sel); box-shadow: var(--ctl-lit); }
 .bn-item:active { color: var(--text); }
+
+/* ── Minimised state (iOS TabBarMinimizeBehavior) ──
+ * Scrolling down gets the bar out of the way of the thing being read; scrolling
+ * back to the top, or tapping a tab, brings it back. What shrinks is the
+ * chrome — the labels and the padding — never the tabs themselves: Apple's own
+ * minimised bar collapses to the current tab alone, but this app's list is long
+ * and switching section mid-scroll is common, so all three targets stay
+ * tappable. It recedes; it does not disappear.
+ *
+ * The transition is redeclared here rather than added to the shared glass rule
+ * because that rule covers eight surfaces, and only these two change size. */
+.bottom-nav, .tab-search {
+  transition: background var(--t-med) var(--ease),
+              height 0.24s var(--ease), width 0.24s var(--ease), opacity 0.24s var(--ease);
+}
+/* The capsule loses its own padding as it shrinks, so each tab still fills the
+   full 44px the platform asks of a touch target — measured at 32px before, and
+   a smaller target is not what "out of the way" is supposed to mean. */
+.tab-dock.minimized .bottom-nav { height: 46px; padding: 0 4px; }
+.tab-dock.minimized .tab-search { width: 46px; height: 46px; }
+.tab-dock.minimized .tab-search svg { width: 19px; height: 19px; }
+.tab-dock.minimized .bn-lbl {
+  height: 0; opacity: 0; overflow: hidden;
+  transition: height 0.24s var(--ease), opacity 0.16s var(--ease);
+}
+.bn-lbl { height: 1.2em; opacity: 1; transition: height 0.24s var(--ease), opacity 0.2s var(--ease); }
+.tab-dock.minimized .bn-item { padding-top: 0; padding-bottom: 0; }
+/* The badge keeps its place against a smaller icon box. */
+.tab-dock.minimized .bn-badge { top: -6px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .bottom-nav, .tab-search, .bn-lbl,
+  .tab-dock.minimized .bn-lbl { transition: none; }
+}
+
+/* Line icon normally, filled icon while the tab is the current one — how the
+   platform marks the selected tab. Both are in the markup; only one is shown,
+   so nothing loads or reflows on selection. */
+.bn-ic { position: relative; display: flex; }
+.bn-ic-fill { display: none; }
+.bn-item.active .bn-ic-line { display: none; }
+.bn-item.active .bn-ic-fill { display: block; }
+
+/* Red oval, white number, over the icon's top-right — reserved for the one
+   thing on this screen that is time-critical: a passport about to expire. */
+.bn-badge {
+  position: absolute; top: -5px; left: 55%;
+  min-width: 17px; height: 17px; padding: 0 5px;
+  border-radius: 999px;
+  background: var(--badge-red); color: #fff;
+  font-size: 0.6rem; font-weight: 700; line-height: 17px; text-align: center;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
 
 /* ── Toast notification ── */
 .toast-stack {
@@ -3049,9 +3279,15 @@ body.exporting .toast {
 .vm-grade-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 
 /* ── Mobile responsive for new elements ── */
-@media (max-width: 768px) {
-  :root { --bottom-nav-h: 60px; }
-  .bottom-nav { display: flex; }
+/* 1024, not 768: the tab dock is the navigation on tablets too, so the whole
+   phone shell — drawer sidebar, floating hamburger, dock — has to arrive at the
+   same width. The two blocks still on 768 are about column width, not the shell:
+   the old stacked detail layout and the Settings list-then-section screen, which
+   a tablet is wide enough to show as two panes. */
+@media (max-width: 1024px) {
+  /* capsule 58 + 10 clearance below + 10 above the content it floats over */
+  :root { --bottom-nav-h: 78px; }
+  .tab-dock { display: flex; }
   .fab { display: flex; }
   .dash-charts { grid-template-columns: 1fr; padding: 10px 14px; }
   .page-head { padding: 14px 14px 0; }
@@ -3110,7 +3346,7 @@ body.exporting .mobile-fab-menu {
   background: var(--bg-card) !important;
   -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
 }
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .mobile-fab-menu { display: flex; }
   /* When the sidebar is open it already shows the brand/logo — hide the
      floating hamburger so it doesn't overlap the company logo. */
@@ -3246,6 +3482,27 @@ body.exporting .mobile-fab-menu {
    entered on this record — but --text-muted, not --text-faint: it is still meant
    to be read. */
 .vd-inherited { font-weight: 500; font-style: italic; color: var(--text-muted); }
+
+/* ── Couple tile (P4) ──
+   The actions sit in a value cell that is nowrap + ellipsis by design, so they
+   get their own inline flex box: it wraps on its own terms without letting the
+   surrounding rows start wrapping too. Controls, not glass — see p8. */
+.vd-link { color: var(--accent); font-weight: 700; cursor: pointer; text-decoration: none; }
+.vd-link:hover { text-decoration: underline; }
+.vd-ok   { color: var(--green); font-weight: 700; }
+.vd-acts { display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; white-space: normal; }
+.vd-mini {
+  cursor: pointer; font-family: inherit; font-size: 0.74rem; font-weight: 700;
+  padding: 4px 10px; border-radius: var(--r-pill);
+  border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
+  /* --ctl-lit is a box-shadow, not a colour: controls take the material's
+     LIGHT, never its blur (p8 — a translucent control on a translucent bar is
+     two layers of haze over the thing you are trying to hit). */
+  box-shadow: var(--ctl-lit);
+  transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+}
+.vd-mini:hover { background: var(--hover); border-color: var(--accent); }
+.vd-mini-ghost { color: var(--text-muted); }
 
 /* ── Bento layout for the worker detail (VIEW mode only) ──────────────
    Apple-minimal: the stacked section cards become a 2-column grid of tiles

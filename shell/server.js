@@ -38,6 +38,24 @@ const APP_VERSION = (() => {
   try { return require('../package.json').version || '0.0.0'; } catch (e) { return '0.0.0'; }
 })();
 
+/**
+ * The version stamped onto asset URLs. In production it is APP_VERSION — the
+ * whole point of immutable caching is that the URL only changes on a release.
+ *
+ * Under KD_DEV it gets a per-boot suffix, because in development that same
+ * strength is a trap: edit main.css, restart, and every browser that already
+ * holds `main.css?v=2.3.0` keeps its copy for a year while index.html — which
+ * is never cached — arrives new. New markup, old stylesheet, and nothing
+ * anywhere reports a problem. That is exactly how a floating tab bar came to
+ * be reported as glued to the bottom of the screen: the code was right, the
+ * stylesheet on the device was three versions old.
+ *
+ * `npm run dev` sets KD_DEV and restarts on every file change, so each restart
+ * mints a URL no browser has seen. Production is untouched.
+ */
+const DEV = process.env.KD_DEV === '1';
+const ASSET_VERSION = DEV ? APP_VERSION + '-dev' + Date.now().toString(36) : APP_VERSION;
+
 const MIME = {
   '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8',
   '.css':'text/css; charset=utf-8', '.json':'application/json; charset=utf-8',
@@ -830,8 +848,11 @@ function serveStatic(req, res, pathname) {
      * answer forever without ever going stale. */
     const versioned = /[?&]v=/.test(req.url || '');
     const etag = '"' + st.size.toString(16) + '-' + st.mtimeMs.toString(16) +
-                 (isUpload ? '' : '-' + APP_VERSION) + '"';
-    const cacheControl = (isUpload || versioned)
+                 (isUpload ? '' : '-' + ASSET_VERSION) + '"';
+    /* Never immutable in development: the file on disk is the truth there, and a
+     * year-long promise about a URL is the opposite of what an edit-reload loop
+     * needs. Uploads keep theirs — their names are content-addressed. */
+    const cacheControl = (isUpload || (versioned && !DEV))
       ? 'public, max-age=31536000, immutable'
       : 'no-cache';
 
@@ -852,7 +873,7 @@ function serveStatic(req, res, pathname) {
     if (type.startsWith('text/html')) {
       fs.readFile(full, 'utf8', (e, html) => {
         if (e) return send(res, 500, 'Read failed', 'text/plain');
-        const body = Buffer.from(html.split('__KD_V__').join(APP_VERSION), 'utf8');
+        const body = Buffer.from(html.split('__KD_V__').join(ASSET_VERSION), 'utf8');
         head['Vary'] = 'Accept-Encoding';
         if (/\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
           const gz = zlib.gzipSync(body, { level: 6 });
@@ -1588,6 +1609,19 @@ async function handleApi(req, res, pathname) {
         const permKey = me.requiredPermission || 'employee.update';
         const v = authorizeRecord(me, permKey, repo.getEmployeeOwner(seg[1]));
         if (!v.allowed) return denyScope(req, res, me, permKey, v);
+        /* Marrying two records writes BOTH of them — spouse_uid and couple land
+         * on the partner as well. Without this second check, a user scoped to
+         * their OWN records could reach any record in the system by naming it as
+         * a spouse: one authorised write, two rows changed. Both the partner
+         * being taken on and the one being let go are checked, because either
+         * way somebody else's record is edited. */
+        if (body && 'spouse_uid' in body) {
+          const affected = [String(body.spouse_uid || ''), repo.getSpouseOf(seg[1])].filter(Boolean);
+          for (const other of affected) {
+            const v2 = authorizeRecord(me, permKey, repo.getEmployeeOwner(other));
+            if (!v2.allowed) return denyScope(req, res, me, permKey, v2);
+          }
+        }
         repo.updateEmployee(seg[1], body); return json(res, 200, { ok: true });
       }
       // DELETE moves the worker to the trash (soft-delete) — restorable.

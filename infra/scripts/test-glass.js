@@ -245,5 +245,140 @@ const CSS_FILES = ['shell/styles/main.css', 'shell/styles/sidebar.css',
      'A presence test before the lazy loader aborts every export.');
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * The phone tab bar — Apple HIG › Tab bars
+ * ══════════════════════════════════════════════════════════════════
+ * The bar is already covered above as a glass surface. What is checked here is
+ * what it CONTAINS, because the rules it broke are ones a browser shows you
+ * nothing about:
+ *
+ *   • a tab that opened a dialog instead of navigating (Settings), so one bar
+ *     held two different promises about what tapping does;
+ *   • the selected tab never being cleared, so two tabs read as current at once
+ *     — invisible while the only cue was a tinted label, glaring once the
+ *     selected tab is marked with a filled icon;
+ *   • the expiring-passport count warning on desktop and nowhere else.
+ * ══════════════════════════════════════════════════════════════════ */
+{
+  const html = read('shell/pages/index.html') || '';
+  const app  = read('shell/scripts/app.js') || '';
+  const css  = stripComments(read('shell/styles/main.css') || '');
+  const bar  = (html.match(/<nav class="bottom-nav"[\s\S]*?<\/nav>/) || [''])[0];
+
+  ok('the tab bar is in the markup', !!bar);
+
+  /* Every tab NAVIGATES. A handler that opens a dialog is an action, and
+     actions belong in a toolbar — HIG's first rule for tab bars. */
+  const handlers = (bar.match(/onclick="([^"]*)"/g) || []).map(s => s.replace(/onclick="|"/g, ''));
+  ok('every tab navigates (' + handlers.length + ' tabs)',
+     handlers.length > 0 && handlers.every(h => /^navTo\(/.test(h)),
+     handlers.filter(h => !/^navTo\(/.test(h)).join(', ') + ' — opens something instead of going somewhere');
+  ok('no tab opens a dialog', !/openSettings\(|openOverlay\(/.test(bar));
+
+  /* Removing the Settings tab is only safe while the profile menu still has it
+     — that is the whole of a phone's remaining route to Settings. */
+  ok('Settings is still reachable from the profile menu', /pm-item[^>]*onclick="openSettings\(\)/.test(html),
+     'phones would have no way into Settings at all');
+
+  /* Selected state: a filled icon, and only one at a time. */
+  const tabs = (bar.match(/<button class="bn-item/g) || []).length;
+  ok('each tab carries a line icon and a filled one',
+     (bar.match(/bn-ic-line/g) || []).length === tabs &&
+     (bar.match(/bn-ic-fill/g) || []).length === tabs,
+     tabs + ' tabs');
+  ok('the filled icon is shown only while selected',
+     /\.bn-ic-fill\s*\{\s*display:\s*none/.test(css) &&
+     /\.bn-item\.active\s+\.bn-ic-fill\s*\{\s*display:\s*block/.test(css));
+  ok('selecting a tab clears the others', /querySelectorAll\('\.bn-item'\)[\s\S]{0,80}remove\('active'\)/.test(app),
+     'two tabs would stay lit — the bug that hid behind a tinted label');
+  ok('the bar follows navigation from either shell', /_syncTabBar\(/.test(app) &&
+     (app.match(/_syncTabBar\(/g) || []).length >= 3,
+     'sidebar navigation would leave the tab bar pointing at the wrong view');
+
+  /* The badge. */
+  ok('the alerts tab has a badge', /id="bn-alerts-badge"/.test(bar));
+  ok('and something keeps its count current', /bn-alerts-badge/.test(app));
+  ok('the badge does not reuse --red',
+     /\.bn-badge[^}]*background:\s*var\(--badge-red\)/.test(css),
+     '--red is lightened for dark theme because it is read AS text; white on it measures 2.77:1');
+  ok('--badge-red is defined for both themes',
+     (css.match(/--badge-red:/g) || []).length >= 2);
+
+  /* The capsule + detached search button. Both are chrome, so both are glass;
+     the gap between them shows page, which is the only reason the shape reads
+     as two floating objects rather than one bar with a hole in it. */
+  ok('the dock holds the capsule and search side by side',
+     /<div class="tab-dock"[\s\S]*<nav class="bottom-nav"[\s\S]*<\/nav>[\s\S]*class="tab-search"[\s\S]*<\/div>/.test(html));
+  ok('search is a button beside the tabs, not a fourth tab',
+     !/bn-item[^>]*tab-search/.test(html) && /class="tab-search"/.test(bar) === false);
+  ok('the search button is glass too', /\.tab-search\s*\{[^}]*backdrop-filter/.test(css));
+  ok('the dock lets the gap between them stay page',
+     /\.tab-dock\s*\{[^}]*pointer-events:\s*none/.test(css) &&
+     /\.tab-dock\s*>\s*\*\s*\{[^}]*pointer-events:\s*auto/.test(css));
+  ok('the selected tab wears its own pill', /\.bn-item\.active\s*\{[^}]*background:\s*var\(--tab-sel\)/.test(css));
+  ok('--tab-sel is defined for both themes', (css.match(/--tab-sel:/g) || []).length >= 2);
+  ok('tab labels are the short strings, not the sidebar ones',
+     /data-i18n="tab_home"/.test(bar) && /data-i18n="tab_groups"/.test(bar) &&
+     /data-i18n="tab_alerts"/.test(bar) && !/data-i18n="passport_alert"/.test(bar),
+     '"Passport Alert" does not fit a pill in any language');
+  ok('a label too long is clipped, never wrapped',
+     /\.bn-lbl\s*\{[^}]*white-space:\s*nowrap/.test(css),
+     'a two-line tab makes the capsule taller than the rest of the bar');
+
+  /* The dock is the navigation on tablets too, so the whole phone shell has to
+     arrive at the same width — a dock at 1024 with a fixed sidebar still
+     showing would be two navigations at once. */
+  const sb = stripComments(read('shell/styles/sidebar.css') || '');
+  ok('the dock appears up to 1024px', /@media \(max-width: 1024px\)[^}]*\{[^@]*\.tab-dock\s*\{\s*display:\s*flex/.test(css));
+  ok('and the sidebar becomes a drawer at the same width', /@media \(max-width: 1024px\)/.test(sb));
+  ok('nothing still switches the shell at 769px', !/min-width:\s*769px/.test(sb),
+     'the sidebar would go back to fixed while the dock is still on screen');
+
+  /* Minimise-on-scroll (iOS TabBarMinimizeBehavior). Both ways out of the
+     minimised state are defined by the platform, so both are pinned here. */
+  ok('scrolling down minimises the dock', /_TAB_MIN_AT/.test(app) && /classList\.add\('minimized'\)/.test(app));
+  ok('scrolling back to the top expands it', /y <= 8[\s\S]{0,80}remove\('minimized'\)/.test(app));
+  ok('and so does tapping the bar', /closest\('#tab-dock'\)[\s\S]{0,40}_tabDockExpand/.test(app));
+  ok('choosing a section expands it too', /_syncTabBar[\s\S]{0,220}_tabDockExpand\(\)/.test(app));
+  ok('the scroll listener is passive and deferred',
+     /addEventListener\('scroll', _tabDockOnScroll, \{ passive: true \}\)/.test(app) &&
+     /requestAnimationFrame/.test(app),
+     'this fires on every scroll over 369 rows');
+  /* A minimised tab must still be a legal touch target: at 44px capsule height
+     the buttons measured 32px, under the 44 the platform asks for. */
+  ok('a minimised tab is still 44px tall',
+     /\.tab-dock\.minimized \.bottom-nav\s*\{[^}]*height:\s*46px[^}]*padding:\s*0/.test(css),
+     'the capsule has to give up its own padding, and 2px of it is border');
+  ok('the material still settles rather than snapping',
+     /\.bottom-nav, \.tab-search \{\s*transition: background/.test(css) &&
+     /height 0\.24s/.test(css));
+  ok('reduced motion turns the resize off',
+     /prefers-reduced-motion[^}]*\{[\s\S]{0,200}\.bottom-nav, \.tab-search/.test(css));
+}
+
+/* ══════════════════════════════════════════════════════════════════
+ * Assets vs the version they are cached under
+ * ══════════════════════════════════════════════════════════════════
+ * Immutable caching means the version in package.json is load-bearing: ship a
+ * CSS change without bumping it and returning browsers keep the old stylesheet
+ * while index.html arrives new. See infra/scripts/asset-stamp.js — that is not
+ * hypothetical, it is how the tab bar came to draw two icons per tab.
+ * ══════════════════════════════════════════════════════════════════ */
+{
+  const stamp = require('./asset-stamp').check();
+  ok('the shipped assets are stamped with a version', stamp.state !== 'unstamped',
+     'run: npm run stamp-assets');
+  ok('assets changed since ' + (stamp.stamped ? stamp.stamped.version : '?') + ' → the version was bumped',
+     stamp.state !== 'stale',
+     'shell assets changed but package.json is still ' + stamp.version +
+     ' — every browser that already has them will keep the old ones. Bump the version, then: npm run stamp-assets');
+  if (stamp.state === 'needs-stamp') {
+    ok('the stamp is up to date', false,
+       'version moved to ' + stamp.version + ' — record it with: npm run stamp-assets');
+  } else {
+    ok('the stamp is up to date', stamp.state === 'ok' || stamp.state === 'unstamped');
+  }
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

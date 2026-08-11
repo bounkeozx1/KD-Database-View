@@ -231,6 +231,16 @@ body.exporting .sb-submenu {
   transition: all 0.12s;
 }
 .sb-section-add:hover { background: var(--sb-green); color: #fff; }
+/* Hit area (C1): 20×20 is below Apple's 28×28 pt minimum. Grown with a pseudo
+   rather than by resizing the button — resizing would enlarge the green hover
+   pill to 28px inside a 32px row, which is a visual change nobody asked for.
+   The glyph, the pill and the row all stay exactly as they were. */
+.sb-section-add { position: relative; }
+.sb-section-add::after {
+  content: ""; position: absolute;
+  left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 30px; height: 30px;
+}
 .sb-section-chevron { color: var(--sb-faint); transition: transform 0.18s; flex-shrink: 0; }
 .sb-section.collapsed .sb-section-chevron { transform: rotate(-90deg); }
 .sb-section.collapsed .sidebar-tree { display: none; }
@@ -279,7 +289,17 @@ body.exporting .sb-submenu {
 .tree-group-row:hover .tree-kebab,
 .tree-group-row.active .tree-kebab { opacity: 1; }
 .tree-kebab:hover { background: rgba(255,255,255,0.1); color: var(--sb-text); }
-@media (max-width: 768px) { .tree-kebab { opacity: 1; } }
+/* Hit area (C1): 26×26, two pixels under the 28×28 pt minimum. The row it sits
+   in is 42px tall with a 26px content box, so making the button 28 would make
+   every group row 44 — a 2px shift multiplied by however many groups there are.
+   The pseudo leaves the row alone. */
+.tree-kebab { position: relative; }
+.tree-kebab::after {
+  content: ""; position: absolute;
+  left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 30px; height: 30px;
+}
+@media (max-width: 1024px) { .tree-kebab { opacity: 1; } }
 .tree-worker-item {
   display: flex; align-items: center; gap: 7px;
   padding: 6px 10px 6px 8px; cursor: pointer; border-radius: 7px;
@@ -391,7 +411,7 @@ body.exporting .pm-lang-list {
 
 /* ── Collapsed state (icon rail) ── */
 /* ── Collapsed icon rail — desktop only ── */
-@media (min-width: 769px) {
+@media (min-width: 1025px) {
   .sidebar.collapsed .sb-brandbar { justify-content: center; padding: 12px 0 8px; }
   .sidebar.collapsed .sidebar-brand { display: none; }
   .sidebar.collapsed .sb-collapse-btn { width: 40px; height: 40px; }
@@ -411,7 +431,9 @@ body.exporting .pm-lang-list {
 }
 
 /* ── Mobile overlay (rail-collapse does not apply here) ── */
-@media (max-width: 768px) {
+/* 1024 to match main.css: at tablet width the tab dock is the navigation, so
+   the sidebar becomes the same slide-in drawer it is on a phone. */
+@media (max-width: 1024px) {
   /* The drawer must sit ABOVE the bottom nav (z-index 200) — with the old 150
      the bottom bar covered the drawer's last 60px, which is exactly where the
      profile chip lives, so Settings / language / sign-out could not be tapped

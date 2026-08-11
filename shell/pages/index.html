@@ -48,24 +48,57 @@
 <button class="fab admin-only" id="fab-add" onclick="openCreate()" title="ສ້າງ · Create">+</button>
 
 <!-- Bottom Navigation (mobile only) -->
+<!-- ── Tab bar (phones + tablets) ──
+     Three tabs, and every one of them GOES somewhere. Settings used to be the
+     fourth and opened a dialog instead: two different behaviours in one bar,
+     which is the thing Apple's tab-bar guidance rules out first ("use a tab bar
+     to support navigation, not to provide actions"). It lives in the profile
+     menu now — the same place it lives on desktop — reachable through the ☰
+     drawer.
+
+     Each tab carries two icons: a line version, and a filled one shown while
+     the tab is selected. Filled is what the platform uses to mark the current
+     tab, and it survives being read at 22px far better than a 2px outline.
+
+     The bar is a floating capsule with search detached beside it, as in the
+     current HIG illustration. Search is its own round button rather than a
+     fourth tab because it is not a section of the app — it is a way into all
+     of them, which is exactly why the guidance seats it at the trailing end
+     rather than in the row. -->
+<div class="tab-dock" id="tab-dock">
 <nav class="bottom-nav" id="bottom-nav">
   <button class="bn-item active" id="bn-dashboard" onclick="navTo('dashboard',this)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-    <span data-i18n="nav_dashboard">Dashboard</span>
+    <span class="bn-ic">
+      <svg class="bn-ic-line" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <svg class="bn-ic-fill" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="7.6" height="7.6" rx="1.8"/><rect x="13.4" y="3" width="7.6" height="7.6" rx="1.8"/><rect x="3" y="13.4" width="7.6" height="7.6" rx="1.8"/><rect x="13.4" y="13.4" width="7.6" height="7.6" rx="1.8"/></svg>
+    </span>
+    <span class="bn-lbl" data-i18n="tab_home">Home</span>
   </button>
   <button class="bn-item" id="bn-workers" onclick="navTo('workers',this)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-    <span data-i18n="all_groups">Workers</span>
+    <span class="bn-ic">
+      <svg class="bn-ic-line" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      <svg class="bn-ic-fill" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="7" r="4.2"/><path d="M1 21v-1.5C1 16.9 3.1 15 5.6 15h6.8c2.5 0 4.6 1.9 4.6 4.5V21z"/><circle cx="18.2" cy="7.6" r="3"/><path d="M18.4 13.2c2.7 0 4.6 1.6 4.6 3.7V21h-4.2v-1.5c0-2.3-.9-4.3-2.4-5.7.6-.4 1.3-.6 2-.6z"/></svg>
+    </span>
+    <span class="bn-lbl" data-i18n="tab_groups">Groups</span>
   </button>
   <button class="bn-item" id="bn-alerts" onclick="navTo('alerts',this)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-    <span data-i18n="passport_alert">Alerts</span>
-  </button>
-  <button class="bn-item" id="bn-settings" onclick="openSettings()">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9"/></svg>
-    <span data-i18n="settings">Settings</span>
+    <span class="bn-ic">
+      <svg class="bn-ic-line" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <!-- evenodd knocks the exclamation OUT of the solid triangle, so the mark
+           stays visible without painting it in a colour the glass would betray. -->
+      <svg class="bn-ic-fill" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM11 8.6h2V14h-2zm0 7.4h2v2h-2z"/></svg>
+      <!-- Badge: the sidebar has warned about expiring passports since P4; on a
+           phone the same count was simply invisible. Red oval, number only. -->
+      <span class="bn-badge" id="bn-alerts-badge" style="display:none">0</span>
+    </span>
+    <span class="bn-lbl" data-i18n="tab_alerts">Alerts</span>
   </button>
 </nav>
+  <button class="tab-search" id="tab-search" onclick="openTabSearch()" data-i18n-title="tab_search" title="Search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg>
+    <span class="sr-only" data-i18n="tab_search">Search</span>
+  </button>
+</div>
 
 <!-- Toast stack -->
 <div class="toast-stack" id="toast-stack"></div>
@@ -1882,6 +1915,34 @@
     <div class="pickmove-body" id="pickmove-list"></div>
     <div class="exp-foot">
       <button class="exp-btn exp-btn-ghost" onclick="closeOverlay('pickmove-overlay')" data-i18n="fm_cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── SPOUSE PICKER (P4 — pair two records as a couple) ── -->
+<div class="overlay" id="spouse-overlay">
+  <div class="form-modal pickmove-modal exp-bento" onclick="event.stopPropagation()">
+    <div class="exp-head">
+      <div class="exp-head-l">
+        <span class="exp-head-ic">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21.2l7.8-7.7 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg>
+        </span>
+        <div>
+          <h2 data-lo="ຈັບຄູ່ຜົວເມຍ" data-en="Pair as a couple" data-th="จับคู่สามีภรรยา" data-ko="부부로 연결">Pair as a couple</h2>
+          <p class="exp-subject" id="spouse-sub"></p>
+        </div>
+      </div>
+      <button class="exp-close" onclick="closeOverlay('spouse-overlay')" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+      </button>
+    </div>
+    <div class="sp-search">
+      <input class="bento-field" id="spouse-search" oninput="renderSpouseList()" autocomplete="off"
+             data-ph-lo="ຄົ້ນຫາຊື່ ຫຼື ລະຫັດ" data-ph-en="Search name or ID" data-ph-th="ค้นหาชื่อหรือรหัส" data-ph-ko="이름 또는 ID 검색">
+    </div>
+    <div class="pickmove-body" id="spouse-list"></div>
+    <div class="exp-foot">
+      <button class="exp-btn exp-btn-ghost" onclick="closeOverlay('spouse-overlay')" data-i18n="fm_cancel">Cancel</button>
     </div>
   </div>
 </div>

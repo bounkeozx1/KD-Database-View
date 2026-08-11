@@ -112,6 +112,44 @@ function get(p, { gzip = true, etag = null } = {}) {
   ok('jszip is not loaded eagerly', !/vendor\/jszip/.test(page));
   ok('html2canvas is not loaded eagerly', !/vendor\/html2canvas/.test(page));
 
+  /* ── Development mode ──
+   * Immutable caching is what makes the production numbers above possible, and
+   * it is exactly what makes a development loop lie: edit main.css, restart,
+   * and the browser keeps the copy it already has for a year while index.html
+   * arrives new. That combination — new markup, old stylesheet — was reported
+   * as a floating tab bar being glued to the bottom of the screen.
+   *
+   * Booted as a child process because KD_DEV is read once, at load. */
+  const { spawnSync } = require('node:child_process');
+  const devPort = PORT + 1;
+  const devOut = spawnSync(process.execPath, ['--no-warnings', '-e', `
+    process.env.KD_DEV='1'; process.env.PORT='${devPort}';
+    process.env.KD_DATA_DIR=${JSON.stringify(path.join(TMP, 'dev'))};
+    require(${JSON.stringify(path.join(__dirname, '..', '..', 'shell', 'server.js'))});
+    setTimeout(() => {
+      const http = require('http');
+      http.get({ host:'127.0.0.1', port:${devPort}, path:'/shell/pages/index.html' }, r => {
+        let b=''; r.on('data',c=>b+=c); r.on('end',()=>{
+          const v=(b.match(/var v = '([^']*)'/)||[])[1]||'';
+          http.get({ host:'127.0.0.1', port:${devPort}, path:'/shell/styles/main.css?v='+v }, r2 => {
+            console.log(JSON.stringify({ v, cc: r2.headers['cache-control'] }));
+            process.exit(0);
+          });
+        });
+      });
+    }, 700);
+  `], { encoding: 'utf8', timeout: 20000 });
+  const devLine = (devOut.stdout || '').trim().split('\n').filter(l => l.startsWith('{')).pop();
+  const dev = devLine ? JSON.parse(devLine) : null;
+
+  ok('the dev server answers', !!dev, (devOut.stderr || '').slice(-200));
+  if (dev) {
+    ok('dev asset URLs carry a per-boot suffix', /-dev[a-z0-9]+$/.test(dev.v), dev.v);
+    ok('and are NOT immutable', !/immutable/.test(dev.cc || ''), String(dev.cc));
+    ok('production is untouched — still immutable', /immutable/.test(versioned.headers['cache-control'] || ''),
+       String(versioned.headers['cache-control']));
+  }
+
   console.log('\n' + pass + ' passed, ' + fail + ' failed');
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (e) {}
   process.exit(fail ? 1 : 0);

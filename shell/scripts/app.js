@@ -1024,6 +1024,93 @@ function moveGroup(id, dir) {
 }
 
 // ── Sidebar nav (views) ───────────────────────────────────────────
+/**
+ * Point the phone tab bar at the view actually on screen.
+ *
+ * navTo only ever cleared `.active` from `.sb-nav-item`, so the tab that was
+ * tapped kept its highlight forever and a second tab lit up beside it — two
+ * "current" tabs at once. It went unnoticed while the only difference was a
+ * tinted label; with a filled icon marking the selection it would be the first
+ * thing anyone saw.
+ *
+ * Driven by the view name rather than the element, so the bar follows along
+ * even when the navigation came from the sidebar drawer. A view with no tab of
+ * its own (Selected, a global search) leaves the bar with nothing selected —
+ * which is honest, where showing some other tab as current would not be.
+ */
+function _syncTabBar(view) {
+  document.querySelectorAll('.bn-item').forEach(b => b.classList.remove('active'));
+  document.getElementById('bn-' + view)?.classList.add('active');
+  _tabDockExpand();          // choosing a section always brings the bar back
+}
+
+/* ── Minimise the tab dock while reading (iOS TabBarMinimizeBehavior) ──
+ * Scroll down and the capsule shrinks out of the way; scroll back to the top,
+ * or tap a tab, and it returns. Both exits are the ones the platform defines.
+ *
+ * The listener is passive and does its work in a frame callback: this fires on
+ * every scroll event over a list of 369 real rows, and anything that reads
+ * layout synchronously here would be felt.  */
+const _TAB_MIN_AT = 56;      // px scrolled before the bar gets out of the way
+let _tabDockY = 0, _tabDockTick = false;
+
+function _tabDockExpand() { document.getElementById('tab-dock')?.classList.remove('minimized'); }
+
+function _tabDockOnScroll() {
+  if (_tabDockTick) return;
+  _tabDockTick = true;
+  requestAnimationFrame(() => {
+    _tabDockTick = false;
+    const dock = document.getElementById('tab-dock');
+    if (!dock) return;
+    const y = window.scrollY || document.documentElement.scrollTop || 0;
+    const down = y > _tabDockY;
+    _tabDockY = y;
+    // Back at the top always expands, whichever way the last few pixels went.
+    if (y <= 8) dock.classList.remove('minimized');
+    else if (down && y > _TAB_MIN_AT) dock.classList.add('minimized');
+    else if (!down) dock.classList.remove('minimized');
+  });
+}
+window.addEventListener('scroll', _tabDockOnScroll, { passive: true });
+
+/* The flag above is cleared inside the frame callback and nowhere else, which
+ * is fine right up until the frame never arrives. Scroll once, switch apps
+ * before the browser paints, and the callback is dropped with `_tabDockTick`
+ * still true — every later scroll then returns on its first line and the dock
+ * is dead until the page is reloaded.
+ *
+ * Reproduced by holding a frame and discarding it: after one lost frame, three
+ * further scrolls booked no frames at all and the bar never moved again.
+ *
+ * A backgrounded tab is exactly when frames stop, so coming back to the
+ * foreground is where the flag gets its second way out. */
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) _tabDockTick = false;
+});
+
+// Tapping the bar itself counts as "I want it back", including the search button.
+document.addEventListener('click', e => {
+  if (e.target.closest && e.target.closest('#tab-dock')) _tabDockExpand();
+}, true);
+
+/**
+ * The search button beside the tab capsule.
+ *
+ * Search is not a section, so it does not get a tab — HIG seats it at the
+ * trailing end for exactly that reason. What it opens is the search this app
+ * already has: the drawer's field, which looks across every group rather than
+ * filtering whichever list happens to be on screen. Opening the drawer to get
+ * at it is the honest version of "we have one search"; a second search box
+ * that covered only part of the data would be worse than a drawer slide.
+ */
+function openTabSearch() {
+  const sb = document.getElementById('sidebar');
+  if (sb && !sb.classList.contains('open')) toggleMobileMenu();
+  const input = document.getElementById('sidebar-search-input');
+  if (input) setTimeout(() => { input.focus(); input.select(); }, 220);
+}
+
 function navTo(view, el) {
   // Projects: just expand the sidebar's group list, no main-view change
   if (view === 'projects') {
@@ -1034,6 +1121,7 @@ function navTo(view, el) {
 
   document.querySelectorAll('.sb-nav-item').forEach(b => b.classList.remove('active'));
   if (el) el.classList.add('active');
+  _syncTabBar(view);
   _overviewMode = '';
 
   const clearSearch = () => {
@@ -2029,6 +2117,10 @@ function renderDashboard() {
   if (wb) { wb.textContent = workers; wb.style.display = workers > 0 ? '' : 'none'; }
   const ab = el('sb-alerts-badge');
   if (ab) { ab.textContent = alertCount; ab.style.display = alertCount > 0 ? '' : 'none'; }
+  // Same count on the phone tab bar — it used to warn on desktop only, which is
+  // backwards: the phone is where this app is actually read.
+  const bnb = el('bn-alerts-badge');
+  if (bnb) { bnb.textContent = alertCount; bnb.style.display = alertCount > 0 ? '' : 'none'; }
 
   _dzBarChart(groups);
   _dzReminders(allWorkers);
@@ -2720,6 +2812,191 @@ function openGroup(groupId) {
 // All workers across every group (used when no single group is active)
 function _allWorkersFlat() { return DB.getGroups().flatMap(g => g.workers || []); }
 
+// ── COUPLES ───────────────────────────────────────────────────────
+// `couple` is a printed yes/no — it puts 부부 on the KD card and says nothing
+// about who. `spouse_uid` says who, and the two are kept in step by the server
+// (repo.setSpouse writes both halves of the pair in one go).
+
+/** The partner's worker object, or null — including when they are in the trash,
+ *  since the bootstrap only carries live records and the link outlives them. */
+function spouseOf(w) {
+  if (!w || !w.spouse_uid) return null;
+  return _allWorkersFlat().find(x => x.uid === w.spouse_uid) || null;
+}
+
+/** Which group holds this worker (needed because DB.updateWorker keys by group). */
+function _groupIdOf(uid) {
+  const g = DB.getGroups().find(x => (x.workers || []).some(w => w.uid === uid));
+  return g ? g.id : activeGroupId;
+}
+
+/**
+ * Pair `uid` with `spouseUid`, or unpair with ''. Admin-only.
+ *
+ * The server rewrites up to three records for one pairing — the two being
+ * married and anybody either of them is leaving — so the same set is patched
+ * here, in the same order, to keep the local cache honest. The extra PATCHes
+ * are deliberate rather than wasteful: repo.setSpouse is idempotent, and
+ * re-fetching the whole bootstrap instead would race the durable write queue
+ * that has not necessarily flushed the first patch yet.
+ */
+function setCouple(uid, spouseUid) {
+  if (!isAdmin()) return;
+  const all  = _allWorkersFlat();
+  const me   = all.find(x => x.uid === uid);
+  if (!me) return;
+  const want = String(spouseUid || '');
+  if (want === uid) return;
+  const other = want ? all.find(x => x.uid === want) : null;
+  if (want && !other) return;
+
+  const release = u => { if (u) DB.updateWorker(_groupIdOf(u), u, { spouse_uid: '', couple: 'no' }); };
+  if (me.spouse_uid && me.spouse_uid !== want) release(me.spouse_uid);
+  if (other && other.spouse_uid && other.spouse_uid !== uid) release(other.spouse_uid);
+
+  if (want) {
+    DB.updateWorker(_groupIdOf(uid),  uid,  { spouse_uid: want, couple: 'yes' });
+    DB.updateWorker(_groupIdOf(want), want, { spouse_uid: uid,  couple: 'yes' });
+  } else {
+    DB.updateWorker(_groupIdOf(uid), uid, { spouse_uid: '', couple: 'no' });
+  }
+}
+
+let _spousePickFor = '';
+
+/* showConfirm always dresses itself as a destructive "Delete", which every
+ * couple action would misdescribe: pairing, unpairing and sharing a photo all
+ * change a link, and none of them destroys a record. Call right after
+ * showConfirm — it is what pickMove does for the same reason. */
+function _confirmNeutral(label) {
+  const ok = document.getElementById('cm-confirm-btn');
+  if (ok) { ok.className = 'btn btn-primary'; ok.textContent = label; }
+}
+
+/** Choose who this worker is married to. Everyone live is a candidate. */
+function openSpousePicker(uid) {
+  if (!isAdmin()) return;
+  _spousePickFor = uid;
+  const w = _allWorkersFlat().find(x => x.uid === uid);
+  const sub = document.getElementById('spouse-sub');
+  if (sub) sub.textContent = w ? (w.en_name || w.worker_id || '') : '';
+  const q = document.getElementById('spouse-search');
+  if (q) q.value = '';
+  renderSpouseList();
+  openOverlay('spouse-overlay');
+  if (q) setTimeout(() => q.focus(), 60);
+}
+
+function renderSpouseList() {
+  const list = document.getElementById('spouse-list');
+  if (!list) return;
+  const me = _allWorkersFlat().find(x => x.uid === _spousePickFor);
+  const q  = (document.getElementById('spouse-search') || {}).value || '';
+  const needle = q.trim().toLowerCase();
+  const myGroup = _groupIdOf(_spousePickFor);
+
+  const cands = _allWorkersFlat()
+    .filter(x => x.uid !== _spousePickFor)
+    .filter(x => !needle || [x.en_name, x.lo_name, x.worker_id, x.passport_no]
+      .join(' ').toLowerCase().includes(needle))
+    // Same group first: a couple almost always travels together, so the people
+    // being looked for are nearly always a few rows away.
+    .sort((a, b) => (_groupIdOf(b.uid) === myGroup) - (_groupIdOf(a.uid) === myGroup))
+    .slice(0, 60);
+
+  list.innerHTML = cands.length ? cands.map(x => {
+    const gid  = _groupIdOf(x.uid);
+    const grp  = gid === myGroup ? '' : ((DB.getGroup(gid) || {}).name || '');
+    const cur  = me && me.spouse_uid === x.uid;
+    // Naming somebody who is already married ends THEIR pairing — say so before
+    // the click, not after.
+    const taken = x.spouse_uid && x.spouse_uid !== _spousePickFor;
+    return '<button class="pm-group' + (cur ? ' pm-group-cur' : '') + '" onclick="doSetSpouse(\'' + esc(x.uid) + '\')">' +
+      '<span class="pm-group-name">' + esc(x.en_name || x.uid) +
+        (x.worker_id ? ' <span class="sp-id">' + esc(x.worker_id) + '</span>' : '') +
+        (grp ? '<span class="sp-grp">' + esc(grp) + '</span>' : '') +
+      '</span>' +
+      (cur   ? '<span class="sp-tag sp-tag-cur">&#10003;</span>'
+             : taken ? '<span class="sp-tag">' + esc(bi('ມີຄູ່ແລ້ວ', 'already paired', 'มีคู่แล้ว', '이미 연결됨')) + '</span>' : '') +
+    '</button>';
+  }).join('')
+    : '<p class="pm-empty">' + esc(bi('ບໍ່ພົບ', 'No one found', 'ไม่พบ', '찾을 수 없음')) + '</p>';
+}
+
+function doSetSpouse(spouseUid) {
+  const uid = _spousePickFor;
+  const all = _allWorkersFlat();
+  const me  = all.find(x => x.uid === uid);
+  const sp  = all.find(x => x.uid === spouseUid);
+  if (!me || !sp) return;
+  closeOverlay('spouse-overlay');
+
+  const apply = () => {
+    setCouple(uid, spouseUid);
+    refreshAll();
+    if (_currentViewUid === uid) openView(uid);
+    toast(bi('ຈັບຄູ່ແລ້ວ', 'Paired', 'จับคู่แล้ว', '연결됨') + ': ' +
+          (me.en_name || uid) + ' + ' + (sp.en_name || spouseUid), 'ok');
+  };
+
+  // Pairing somebody who already has a partner silently divorces that partner.
+  // That is a third record changing, so it is confirmed rather than assumed.
+  const taken = sp.spouse_uid && sp.spouse_uid !== uid;
+  const other = taken ? all.find(x => x.uid === sp.spouse_uid) : null;
+  if (taken) {
+    showConfirm(
+      bi('ຄົນນີ້ມີຄູ່ແລ້ວ', 'Already paired', 'คนนี้มีคู่แล้ว', '이미 연결된 사람'),
+      bi('ຈະຍົກເລີກຄູ່ເກົ່າ', 'This will unpair them from', 'จะยกเลิกคู่เดิมกับ', '기존 연결이 해제됩니다') +
+        ' ' + ((other && other.en_name) || sp.spouse_uid) + '.',
+      apply);
+    _confirmNeutral(bi('ຈັບຄູ່', 'Pair', 'จับคู่', '연결'));
+  } else apply();
+}
+
+function unpairSpouse(uid) {
+  if (!isAdmin()) return;
+  const me = _allWorkersFlat().find(x => x.uid === uid);
+  if (!me || !me.spouse_uid) return;
+  const sp = spouseOf(me);
+  showConfirm(
+    bi('ຍົກເລີກຄູ່', 'Unpair', 'ยกเลิกคู่', '연결 해제'),
+    (me.en_name || uid) + ' + ' + ((sp && sp.en_name) || me.spouse_uid),
+    () => {
+      setCouple(uid, '');
+      refreshAll();
+      if (_currentViewUid === uid) openView(uid);
+      toast(bi('ຍົກເລີກແລ້ວ', 'Unpaired', 'ยกเลิกแล้ว', '해제됨'), 'ok');
+    });
+  _confirmNeutral(bi('ຍົກເລີກ', 'Unpair', 'ยกเลิก', '해제'));
+}
+
+/**
+ * Take the partner's photograph for this record too — one file, both records.
+ *
+ * It copies the PATH, not the bytes: the two records end up pointing at the
+ * same stored file, which is the whole point (answer 4) and is only safe
+ * because the server counts references before unlinking a photo. Deleting
+ * either record afterwards leaves the file with whoever is left.
+ */
+function useSpousePhoto(uid) {
+  if (!isAdmin()) return;
+  const me = _allWorkersFlat().find(x => x.uid === uid);
+  const sp = spouseOf(me);
+  if (!sp || !sp.photo) return;
+  showConfirm(
+    bi('ໃຊ້ຮູບຂອງຄູ່', "Use partner's photo", 'ใช้รูปของคู่', '배우자 사진 사용'),
+    bi('ຮູບເກົ່າຈະຖືກແທນທີ່', "This record's current photo is replaced.", 'รูปเดิมจะถูกแทนที่', '현재 사진이 교체됩니다'),
+    () => {
+      DB.updateWorker(_groupIdOf(uid), uid, {
+        photo: sp.photo, photo_orig: sp.photo_orig || '', photo_thumb: sp.photo_thumb || '',
+      });
+      refreshAll();
+      if (_currentViewUid === uid) openView(uid);
+      toast(bi('ໃຊ້ຮູບດຽວກັນແລ້ວ', 'Photo shared', 'ใช้รูปเดียวกันแล้ว', '사진 공유됨'), 'ok');
+    });
+  _confirmNeutral(bi('ໃຊ້ຮູບນີ້', 'Use it', 'ใช้รูปนี้', '사용'));
+}
+
 // Make sure activeGroupId points at the group that owns `uid` (for global
 // search / overview where no single group is selected yet).
 function _ensureGroupFor(uid) {
@@ -2815,6 +3092,7 @@ function openOverviewGroup(mode, id) {
   applyFilters();             // narrow to the matching members
   document.querySelectorAll('.sb-nav-item').forEach(b => b.classList.remove('active'));
   document.getElementById(mode === 'alerts' ? 'nav-alerts' : 'nav-selected')?.classList.add('active');
+  _syncTabBar(mode === 'alerts' ? 'alerts' : 'selected');
   const g    = DB.getGroup(id);
   const icon = mode === 'alerts' ? '⚠ ' : '★ ';
   const t1   = document.getElementById('page-title-group'); if (t1) t1.textContent = icon + (g ? (g.name || '') : '');
@@ -3567,6 +3845,64 @@ function _evAddr(w, col) {
   '</div>';
 }
 
+/**
+ * The couple tile. Rendered from `spouse_uid`, never from the `couple` flag —
+ * the flag only says that somebody is married, which is all the KD card needs
+ * and all it ever knew.
+ *
+ * Nothing here is a `data-ef` field: the pair has two sides and is written by
+ * the server through repo.setSpouse, so it must not ride along in the generic
+ * "collect every data-ef and PATCH it" save. The buttons act immediately.
+ */
+function _coupleSection(w, sec, row) {
+  const icon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21.2l7.8-7.7 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg>';
+  const sp   = spouseOf(w);
+  const may  = isAdmin() && !detailEditMode;
+
+  let partner;
+  if (sp) {
+    partner = '<a class="vd-link" onclick="event.stopPropagation();openView(\'' + esc(sp.uid) + '\')">' +
+                esc(sp.en_name || sp.worker_id || sp.uid) + '</a>';
+  } else if (w.spouse_uid) {
+    // Linked to somebody the bootstrap did not carry — they are in the trash.
+    // Saying so beats an empty cell that looks like the link was lost.
+    partner = '<span class="vd-inherited">' + esc(bi('ຢູ່ໃນຖັງຂີ້ເຫຍື້ອ', 'in the trash', 'อยู่ในถังขยะ', '휴지통에 있음')) + '</span>';
+  } else {
+    partner = '--';
+  }
+
+  const btn = (fn, label, cls) =>
+    '<button class="vd-mini' + (cls ? ' ' + cls : '') + '" onclick="event.stopPropagation();' + fn + '">' + esc(label) + '</button>';
+  const acts = [];
+  if (may) {
+    acts.push(btn('openSpousePicker(\'' + esc(w.uid) + '\')',
+      sp ? bi('ປ່ຽນ', 'Change', 'เปลี่ยน', '변경') : bi('ຈັບຄູ່', 'Pair', 'จับคู่', '연결')));
+    if (w.spouse_uid) acts.push(btn('unpairSpouse(\'' + esc(w.uid) + '\')',
+      bi('ຍົກເລີກ', 'Unpair', 'ยกเลิก', '해제'), 'vd-mini-ghost'));
+  }
+
+  let rows = row(bi('ຄູ່', 'Partner', 'คู่', '배우자'), 'Spouse', partner);
+  if (acts.length) rows += row(bi('ຈັດການ', 'Manage', 'จัดการ', '관리'), '&nbsp;',
+    '<span class="vd-acts">' + acts.join('') + '</span>');
+
+  /* Answer 4: a couple MAY share one photograph — they are photographed
+   * together — but it is never forced, so this is an action, not a rule. The
+   * shared file is safe to delete either record afterwards: repo._releasePhoto
+   * only unlinks a photo once nobody is left pointing at it. */
+  if (sp) {
+    const shared = !!w.photo && w.photo === sp.photo;
+    rows += row(bi('ຮູບຮ່ວມກັນ', 'Shared photo', 'ใช้รูปร่วมกัน', '사진 공유'), 'Photo',
+      shared
+        ? '<span class="vd-ok">&#10003; ' + esc(bi('ໃຊ້ຮູບດຽວກັນ', 'same photo', 'รูปเดียวกัน', '같은 사진')) + '</span>'
+        : (may && sp.photo
+            ? '<span class="vd-acts">' + btn('useSpousePhoto(\'' + esc(w.uid) + '\')',
+                bi('ໃຊ້ຮູບຂອງຄູ່', "Use partner's", 'ใช้รูปของคู่', '배우자 사진 사용')) + '</span>'
+            : '--'));
+  }
+
+  return sec(icon, bi('ຄູ່ຜົວເມຍ', 'Couple', 'คู่สามีภรรยา', '부부'), 'Pair', rows);
+}
+
 // Builds the Info-pane HTML (two columns). Same fixed set of rows always renders
 // so the popup never changes size with the amount of data.
 function _renderDetailBody(w, g) {
@@ -3663,6 +3999,8 @@ function _renderDetailBody(w, g) {
         row(t('vc_tel'),  'ໂທຫຼັກ',   _ev(w,'tel',     esc(w.tel||'--'),     'text')) +
         row('Emergency', 'ໂທສຸກເສີນ', _ev(w,'emg_tel', esc(w.emg_tel||'--'), 'text'))
       ) +
+
+      _coupleSection(w, sec, row) +
 
     '</div>';
 

@@ -312,6 +312,32 @@ const cookieOf = (res) => {
   ok('admin (scope=all) CAN edit any record',
      (await st('admin', 'PATCH', '/api/employees/' + mine, { en_name: 'Admin edit' })) === 200);
 
+  /* Pairing (P4) is the one edit that writes a record the request did not name:
+   * spouse_uid and couple land on the PARTNER too. Without a second scope check
+   * it would be a way through the wall above — one authorised write, somebody
+   * else's record changed. */
+  const pair = await request('PATCH', '/api/employees/' + mine, { spouse_uid: theirs }, as('data_entry'));
+  ok('data_entry CANNOT marry its own record to one it may not edit', pair.status === 403, pair.raw);
+  ok('the partner was NOT touched',
+     (db.prepare('SELECT spouse_uid FROM employees WHERE uid=?').get(theirs).spouse_uid || '') === '');
+  ok('and neither was the record it was allowed to edit',
+     (db.prepare('SELECT spouse_uid FROM employees WHERE uid=?').get(mine).spouse_uid || '') === '');
+
+  const mine2 = (await request('POST', '/api/groups/' + gid + '/employees', { en_name: 'Mine B' }, as('data_entry'))).body.uid;
+  ok('data_entry CAN marry two records it owns',
+     (await st('data_entry', 'PATCH', '/api/employees/' + mine, { spouse_uid: mine2 })) === 200);
+  ok('both halves were written',
+     db.prepare('SELECT spouse_uid FROM employees WHERE uid=?').get(mine).spouse_uid === mine2 &&
+     db.prepare('SELECT spouse_uid FROM employees WHERE uid=?').get(mine2).spouse_uid === mine);
+  ok('admin CAN pair across owners', (await st('admin', 'PATCH', '/api/employees/' + mine, { spouse_uid: theirs })) === 200);
+  /* Unpairing edits the partner as well, so it is scoped the same way — and
+   * `mine` is now married to a record data_entry may not touch. */
+  const unpair = await request('PATCH', '/api/employees/' + mine, { spouse_uid: '' }, as('data_entry'));
+  ok('data_entry CANNOT unpair from a record it may not edit', unpair.status === 403, unpair.raw);
+  ok('the pair survived the refusal',
+     db.prepare('SELECT spouse_uid FROM employees WHERE uid=?').get(mine).spouse_uid === theirs);
+  ok('admin CAN unpair them', (await st('admin', 'PATCH', '/api/employees/' + mine, { spouse_uid: '' })) === 200);
+
   section('HTTP — Manager');
   ok('manager CAN read every record',   (await st('manager', 'GET', '/api/bootstrap')) === 200);
   ok('manager CANNOT create users',     (await st('manager', 'POST', '/api/users', { username: 'm1', password: PASS, role: 'viewer' })) === 403);

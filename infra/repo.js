@@ -245,7 +245,8 @@ function employeeToWorker(row, passportMap, docsMap) {
     dob: row.dob || '', province: row.province || '', district: row.district || '', village: row.village || '',
     nationality: row.nationality || '', sex: row.sex || '',
     blood: row.blood || '', hand: row.hand || '', weight: row.weight || '', height: row.height || '',
-    size: row.size || '', couple: row.couple || '', tel: row.tel || '', emg_tel: row.emg_tel || '',
+    size: row.size || '', couple: row.couple || '', spouse_uid: row.spouse_uid || '',
+    tel: row.tel || '', emg_tel: row.emg_tel || '',
     kr_city: row.kr_city || '', la_city: row.la_city || '',
     grade: row.grade || '', visa_status: row.visa_status || '',
     education: row.education || '', work_experience: row.work_experience || '', languages: row.languages || '',
@@ -363,17 +364,107 @@ function updateGroup(id, patch) {
   if (other.length) logGroupActivity(id, 'updated', other.join(', '), by);
 }
 function deleteGroup(id) {
-  // remove stored files for this group's employees first
+  // Collect the file paths, drop the rows, THEN release the files. Doing it in
+  // that order is what makes a shared couple photo come out right: while both
+  // rows still existed, each one would see the other still referencing the file
+  // and neither would ever delete it — the group would go and the file would be
+  // orphaned on disk forever. Once the rows are gone, a surviving reference can
+  // only be a worker in some other group, and that one keeps the file.
+  const photos = [], docFiles = [];
   d().prepare('SELECT uid, photo_path, photo_orig, photo_thumb FROM employees WHERE group_id=?').all(id).forEach(e => {
-    if (e.photo_path) deleteStored(e.photo_path);
-    if (e.photo_orig) deleteStored(e.photo_orig);
-    if (e.photo_thumb) deleteStored(e.photo_thumb);
-    d().prepare('SELECT file_path FROM documents WHERE employee_uid=?').all(e.uid).forEach(x => deleteStored(x.file_path));
+    [e.photo_path, e.photo_orig, e.photo_thumb].forEach(p => { if (p) photos.push(p); });
+    d().prepare('SELECT file_path FROM documents WHERE employee_uid=?').all(e.uid).forEach(x => docFiles.push(x.file_path));
   });
   d().prepare('DELETE FROM groups WHERE id=?').run(id); // cascades to employees/passports/documents
+  photos.forEach(_releasePhoto);
+  // Documents are never shared between employees — see _writeDocuments.
+  docFiles.forEach(deleteStored);
 }
 
 /* ── Employees ── */
+
+/**
+ * Delete a stored photo ONLY if no other employee still points at it.
+ *
+ * Married couples are allowed to share one photo (they are photographed
+ * together, and the same file is filed under both). That makes the naive
+ * `deleteStored(oldPath)` on every photo change or deletion actively
+ * destructive: removing one half of a couple unlinks the file out from under
+ * the other, and the survivor's record is left pointing at a 404. The photo has
+ * to stay with whoever is still using it.
+ *
+ * Counting references rather than checking `spouse_uid` is deliberate — a
+ * shared path can also come from an import or a restored backup, and those
+ * copies deserve the same protection.
+ *
+ * MUST be called AFTER the row that is dropping the reference has already been
+ * updated or deleted, because the count includes every row there is — the
+ * worker's own included. That is not an accident: one worker can point at the
+ * same file from both photo_path and photo_orig, and excluding their row would
+ * delete a file they are still using.
+ *
+ * @param {string} p  the stored path, e.g. "/uploads/employee-photos/x.jpg"
+ */
+function _releasePhoto(p) {
+  if (!p || !isStoredPath(p)) return;
+  const still = d().prepare(
+    'SELECT COUNT(*) AS n FROM employees WHERE photo_path = ? OR photo_orig = ? OR photo_thumb = ?'
+  ).get(p, p, p);
+  if (!still || !still.n) deleteStored(p);
+}
+
+/**
+ * Link two employees as a married couple, or clear the link with `spouseUid`
+ * null/''. Strictly 1:1: whoever either of them was previously paired with is
+ * released first, so nobody is ever left pointing at a partner who has moved on.
+ *
+ * Both halves are written here and nowhere else — `spouse_uid` is not in
+ * EMP_COLS, so an ordinary PATCH cannot write one side and leave the other
+ * stale. `couple` (the yes/no that prints 부부 on the KD card) is kept in step:
+ * pairing sets it on both, unpairing clears it. The reverse does not hold —
+ * couple='yes' on its own stays legal, for somebody whose spouse is not in the
+ * system at all.
+ *
+ * @returns {string} '' on success, otherwise a short machine-readable reason.
+ */
+function setSpouse(uid, spouseUid, by) {
+  const me = d().prepare('SELECT uid, en_name, spouse_uid FROM employees WHERE uid=?').get(uid);
+  if (!me) return 'no-such-employee';
+  const want = String(spouseUid || '');
+
+  if (want) {
+    if (want === uid) return 'cannot-pair-with-self';
+    const other = d().prepare('SELECT uid, en_name, spouse_uid, deleted_at FROM employees WHERE uid=?').get(want);
+    if (!other) return 'no-such-spouse';
+    if (other.deleted_at) return 'spouse-in-trash';
+  }
+
+  const clear = d().prepare("UPDATE employees SET spouse_uid='', couple='no' WHERE uid=?");
+  const link  = d().prepare("UPDATE employees SET spouse_uid=?, couple='yes' WHERE uid=?");
+  const name  = u => { const r = d().prepare('SELECT en_name FROM employees WHERE uid=?').get(u); return (r && r.en_name) || u; };
+
+  // Release both existing partners BEFORE linking, or a re-pair would leave the
+  // discarded partner still pointing back at somebody who no longer points at
+  // them — the exact half-linked state this function exists to prevent.
+  if (me.spouse_uid && me.spouse_uid !== want) clear.run(me.spouse_uid);
+  if (want) {
+    const other = d().prepare('SELECT spouse_uid FROM employees WHERE uid=?').get(want);
+    if (other && other.spouse_uid && other.spouse_uid !== uid) clear.run(other.spouse_uid);
+  }
+
+  if (want) {
+    link.run(want, uid);
+    link.run(uid, want);
+    logActivity(uid,  'paired', name(want), by || null);
+    logActivity(want, 'paired', name(uid),  by || null);
+  } else {
+    if (me.spouse_uid) logActivity(me.spouse_uid, 'unpaired', name(uid), by || null);
+    clear.run(uid);
+    logActivity(uid, 'unpaired', me.spouse_uid ? name(me.spouse_uid) : null, by || null);
+  }
+  return '';
+}
+
 function _writePassport(employeeUid, w) {
   const no = w.passport_no || '', iss = w.passport_issue || '', exp = w.passport_expiry || '';
   if (!no && !iss && !exp) return;
@@ -391,6 +482,19 @@ function _writePassport(employeeUid, w) {
  * the moment a second file was added. We now delete only files the payload no
  * longer references, leave kept files (and their rows) untouched, and persist
  * only the genuinely new uploads. No referenced file is ever deleted.
+ *
+ * ── Documents are NEVER shared between employees ──
+ * Photos may be (a married couple is photographed together); documents may not,
+ * not even between spouses — a passport belongs to exactly one person, and two
+ * records pointing at one passport scan is a filing error waiting to be
+ * exported to an employer. The rule holds structurally rather than by checking
+ * for it: step 3 saves only fresh `data:` URLs, each under a new UUID, so this
+ * function has no path that can attach an existing file to a second employee.
+ * A payload that hands over somebody else's stored path is ignored, not linked.
+ *
+ * That is also what makes the unconditional deleteStored in step 2 safe, and
+ * why it does NOT go through _releasePhoto: with no sharing possible, a
+ * document file this employee has dropped is a file nobody else can be using.
  */
 function _writeDocuments(employeeUid, documents) {
   if (!documents || typeof documents !== 'object') return;
@@ -452,6 +556,11 @@ function addEmployee(groupId, w) {
   const cols = ['uid','group_id','photo_path','photo_orig','photo_thumb','created_by', ...EMP_COLS];
   const vals = [id, groupId, photo, photoOrig, photoThumb, w._by || null, ...EMP_COLS.map(c => w[c] || '')];
   d().prepare('INSERT INTO employees (' + cols.join(',') + ') VALUES (' + cols.map(() => '?').join(',') + ')').run(...vals);
+  /* Restoring a .kdb bundle or a backup inserts the two halves of a couple one
+   * after the other, so the first call finds no partner yet and does nothing.
+   * The second one links both sides — which is why no separate pass over the
+   * import is needed, and why the order the rows arrive in does not matter. */
+  if (w.spouse_uid) setSpouse(id, w.spouse_uid, w._by || null);
   _writePassport(id, w);
   if (w.documents) _writeDocuments(id, w.documents);
   logActivity(id, 'created', w.en_name || id, w._by || null);
@@ -511,22 +620,34 @@ function updateEmployee(id, patch) {
     logGroupActivity(moveFrom, 'worker_moved_out', label, who);
     logGroupActivity(moveTo,   'worker_moved_in',  label, who);
   }
-  if (photoChanged && oldPhoto && oldPhoto !== newPhoto && isStoredPath(oldPhoto)) deleteStored(oldPhoto);
-  if (origChanged && oldOrig && oldOrig !== newOrig && isStoredPath(oldOrig)) deleteStored(oldOrig);
-  if (thumbChanged && oldThumb && oldThumb !== newThumb && isStoredPath(oldThumb)) deleteStored(oldThumb);
+  /* Pairing is not an ordinary column write: it has two sides. Routed through
+   * setSpouse so the partner's half is written too — see the note on the
+   * spouse_uid column, and note it is absent from EMP_COLS for this reason. */
+  if ('spouse_uid' in patch) setSpouse(id, patch.spouse_uid, patch._by || null);
+  // _releasePhoto, not deleteStored: the row has already been updated above, so
+  // anything still pointing at the old file is a spouse sharing it.
+  if (photoChanged && oldPhoto && oldPhoto !== newPhoto) _releasePhoto(oldPhoto);
+  if (origChanged && oldOrig && oldOrig !== newOrig) _releasePhoto(oldOrig);
+  if (thumbChanged && oldThumb && oldThumb !== newThumb) _releasePhoto(oldThumb);
   if ('passport_no' in patch || 'passport_issue' in patch || 'passport_expiry' in patch) _writePassport(id, patch);
   if ('documents' in patch) _writeDocuments(id, patch.documents);
   // group_id is excluded: the move above already wrote its own, clearer entry.
-  const changed = Object.keys(patch).filter(k => !['photo','photo_orig','photo_thumb','documents','_by','group_id'].includes(k)).join(', ');
+  // spouse_uid is excluded: setSpouse already logged 'paired'/'unpaired' on both
+  // records, with the partner's name rather than a column name.
+  const changed = Object.keys(patch).filter(k => !['photo','photo_orig','photo_thumb','documents','_by','group_id','spouse_uid'].includes(k)).join(', ');
   if (changed) logActivity(id, 'updated', changed, patch._by || null);
 }
 function deleteEmployee(id) {
-  const e = d().prepare('SELECT photo_path, photo_orig, photo_thumb, en_name FROM employees WHERE uid=?').get(id);
-  if (e && e.photo_path) deleteStored(e.photo_path);
-  if (e && e.photo_orig) deleteStored(e.photo_orig);
-  if (e && e.photo_thumb) deleteStored(e.photo_thumb);
-  d().prepare('SELECT file_path FROM documents WHERE employee_uid=?').all(id).forEach(x => deleteStored(x.file_path));
+  const e = d().prepare('SELECT photo_path, photo_orig, photo_thumb, en_name, spouse_uid FROM employees WHERE uid=?').get(id);
+  const docFiles = d().prepare('SELECT file_path FROM documents WHERE employee_uid=?').all(id).map(x => x.file_path);
+  // Release the partner first, or they are left married to a row that no longer
+  // exists — the detail view would show a spouse who cannot be opened.
+  if (e && e.spouse_uid) d().prepare("UPDATE employees SET spouse_uid='', couple='no' WHERE uid=?").run(e.spouse_uid);
   d().prepare('DELETE FROM employees WHERE uid=?').run(id);
+  // After the row is gone: a photo still referenced belongs to somebody else
+  // (a spouse sharing it) and must survive. Documents are never shared.
+  if (e) [e.photo_path, e.photo_orig, e.photo_thumb].forEach(_releasePhoto);
+  docFiles.forEach(deleteStored);
 }
 
 /* ── Trash (soft-delete bin) ──────────────────────────────────────────
@@ -1318,6 +1439,12 @@ function getTeamGroupIds(username) {
 function getEmployeeOwner(uid) {
   const r = d().prepare('SELECT created_by, group_id FROM employees WHERE uid=?').get(uid);
   return r ? { ownerId: r.created_by, teamId: r.group_id } : null;
+}
+/** Who this employee is currently married to, '' if nobody. For the API's
+ *  record-scope check: unpairing edits the partner's row too. */
+function getSpouseOf(uid) {
+  const r = d().prepare('SELECT spouse_uid FROM employees WHERE uid=?').get(uid);
+  return (r && r.spouse_uid) || '';
 }
 function getGroupOwner(id) {
   const r = d().prepare('SELECT created_by, id FROM groups WHERE id=?').get(id);
@@ -2527,7 +2654,7 @@ function deleteRole(key, opts) {
 module.exports = {
   getBootstrap, countEmployees,
   createGroup, updateGroup, deleteGroup,
-  addEmployee, updateEmployee, deleteEmployee,
+  addEmployee, updateEmployee, deleteEmployee, setSpouse,
   softDeleteEmployee, softDeleteGroup, restoreEmployee, restoreGroup, listTrash, emptyTrash,
   addCity, deleteCity, addUser, deleteUser, updateUser, login, importAll,
   changeOwnPassword,
@@ -2537,7 +2664,7 @@ module.exports = {
   ensureCsrfToken, verifyCsrfToken,
   // RBAC
   getPermissions, getRole, listRoles, listPermissions, getPermissionMatrix,
-  getTeamGroupIds, getEmployeeOwner, getGroupOwner, setUserRole,
+  getTeamGroupIds, getEmployeeOwner, getGroupOwner, getSpouseOf, setUserRole,
   // P3 — MFA
   mfaPolicyFor, MFA_POLICY, getMfaStatus,
   beginTotpEnrolment, confirmTotpEnrolment, verifyTotp, disableMfa,
