@@ -3358,18 +3358,22 @@ function renderTable() {
       (isPicked(w.uid) ? ' class="picked"' : '') +
       ' onclick="openView(\'' + w.uid + '\')">' +
       (pickCol ? '<td class="pick-cell" onclick="event.stopPropagation()">' + _pickBox(w.uid, i + 1) + '</td>' : '') +
-      '<td>' + idHtml + '</td>' +
-      '<td><div class="name-cell">' + personPhoto(w,'avatar-sm') + '<span style="font-weight:700">' + esc(w.en_name) + '</span>' + gradeBadge(w.grade) + '</div></td>' +
-      '<td class="col-lo">' + esc(w.lo_name) + '</td>' +
-      '<td>' + empBadge(w.employer_code) + '</td>' +
-      '<td>' + esc(w.group_supervisor) + '</td>' +
-      '<td>' + esc(w.dob) + '</td>' +
-      '<td>' + (age || '--') + '</td>' +
-      '<td><span class="blood-chip">' + esc(w.blood || '--') + '</span></td>' +
-      '<td style="font-family:monospace;font-size:0.8rem">' + esc(w.passport_no) + '</td>' +
-      '<td class="' + ec + '">' + esc(w.passport_expiry) + '</td>' +
-      '<td>' + esc(w.size) + '</td>' +
-      '<td>' +
+      /* data-col mirrors the <th> of the same name. It is what lets a column be
+         hidden at a narrow width with one CSS rule covering both the header and
+         every cell — without it, hiding a column means counting :nth-child and
+         recounting the moment the pick column appears. */
+      '<td data-col="worker_id">' + idHtml + '</td>' +
+      '<td data-col="en_name"><div class="name-cell">' + personPhoto(w,'avatar-sm') + '<span style="font-weight:700">' + esc(w.en_name) + '</span>' + gradeBadge(w.grade) + '</div></td>' +
+      '<td data-col="lo_name" class="col-lo">' + esc(w.lo_name) + '</td>' +
+      '<td data-col="employer_code">' + empBadge(w.employer_code) + '</td>' +
+      '<td data-col="group_supervisor">' + esc(w.group_supervisor) + '</td>' +
+      '<td data-col="dob">' + esc(w.dob) + '</td>' +
+      '<td data-col="age">' + (age || '--') + '</td>' +
+      '<td data-col="blood"><span class="blood-chip">' + esc(w.blood || '--') + '</span></td>' +
+      '<td data-col="passport_no" style="font-family:monospace;font-size:0.8rem">' + esc(w.passport_no) + '</td>' +
+      '<td data-col="passport_expiry" class="' + ec + '">' + esc(w.passport_expiry) + '</td>' +
+      '<td data-col="size">' + esc(w.size) + '</td>' +
+      '<td data-col="actions">' +
         _selStar(w.uid) +
         '<button class="kebab" onclick="openRowMenu(\'' + w.uid + '\',event)" title="' + esc(t('col_actions')) + '">' +
           '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>' +

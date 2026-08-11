@@ -885,6 +885,46 @@ select:focus { border-color: var(--green); }
 
 /* ── Table ── */
 .table-wrap { padding: 0; overflow-x: auto; }
+
+/* ══ Progressive columns (M2) ══════════════════════════════════════
+ * Thirteen columns come to 1375px of natural width. The panel that holds them
+ * is 946px at a 1280px viewport, so 429px of the table has always been off the
+ * right-hand edge — including the expiry date, which is the one column the
+ * whole passport-alert feature exists to surface.
+ *
+ * No column is deleted. They drop out in a fixed order as the window narrows,
+ * and the order is not a taste judgement — each one that goes is either
+ * DERIVABLE from a column that stays, or already has its own filter in the
+ * toolbar above:
+ *
+ *   dob          Age sits next to it and is computed from it
+ *   size         a physical detail, not identity
+ *   lo_name      the same person's name in a second script
+ *   blood        filterable — "All Blood Types" in the toolbar
+ *   employer     filterable — "All Employers"
+ *   supervisor   filterable — "All Supervisors"
+ *
+ * What never drops: Worker ID, name, passport number, expiry, and the actions.
+ * That is the identity of the record plus the thing that expires.
+ *
+ * Every hidden column is still in the DOM's data — the CSV, XLSX and .kdb
+ * exports read from the records, not from this table, so nothing here changes
+ * what leaves the app. Reversing any single line restores that column. */
+/* 1700, not 1500: measured, the thirteen columns need a 1466px panel and the
+   sidebar plus padding takes ~334px off the viewport. Below ~1700 the table
+   was already scrolling — the first tier has to start where that begins. */
+@media (max-width: 1700px) {
+  th[data-col="dob"],  td[data-col="dob"],
+  th[data-col="size"], td[data-col="size"] { display: none; }
+}
+@media (max-width: 1300px) {
+  th[data-col="lo_name"],       td[data-col="lo_name"],
+  th[data-col="blood"],         td[data-col="blood"],
+  th[data-col="employer_code"], td[data-col="employer_code"] { display: none; }
+}
+@media (max-width: 1100px) {
+  th[data-col="group_supervisor"], td[data-col="group_supervisor"] { display: none; }
+}
 table {
   width: 100%; border-collapse: collapse;
   background: var(--bg-card);
