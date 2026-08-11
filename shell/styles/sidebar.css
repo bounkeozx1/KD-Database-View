@@ -445,6 +445,38 @@ body.exporting .pm-lang-list {
   .sidebar-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 205; }
   .sidebar.open ~ .sidebar-backdrop { display: block; }
   .mobile-menu-btn { display: flex !important; }
+
+  /* ── Touch targets in the drawer (H1) ──
+   * Apple, Accessibility → "Strive to meet the recommended minimum control size
+   * for each platform":
+   *
+   *     Platform      Default    Minimum
+   *     iOS, iPadOS   44x44 pt   28x28 pt
+   *     macOS         28x28 pt   20x20 pt
+   *
+   * Two numbers, and the platform column is why this sits inside the media
+   * query. Below 1024px the sidebar is a drawer opened by thumb, so 44 is the
+   * figure to reach. Above it the sidebar is a pointer target on what is
+   * effectively macOS, where 28 IS the default — growing those rows would make
+   * the desktop look clumsy to satisfy a rule written for fingers.
+   *
+   * Full-width rows grow for real: 44pt is what a list row is meant to be, and
+   * a taller row in a drawer reads as correct rather than inflated. Icon
+   * buttons keep their size and grow a hit area instead (the ::after already
+   * added in Step 4.2), because a 44px pill where a 20px one used to be is a
+   * visual change nobody asked for. */
+  .sb-nav-item { min-height: 44px; }
+  .sb-user     { min-height: 44px; }
+  .sb-search   { height: 44px; }
+
+  .sb-collapse-btn { position: relative; }
+  .sb-collapse-btn::after {
+    content: ""; position: absolute;
+    left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 44px; height: 44px;
+  }
+  .sb-section-add::after,
+  .tree-kebab::after { width: 44px; height: 44px; }
 }
 .mobile-menu-btn { display: none; background: none; border: none; color: var(--sb-text); font-size: 1.3rem; cursor: pointer; padding: 4px 8px; }
 

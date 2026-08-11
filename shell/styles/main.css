@@ -3293,6 +3293,46 @@ body.exporting .toast {
   .page-head { padding: 14px 14px 0; }
   .stats-row { padding: 10px 14px; }
   .data-panel { margin: 10px 14px 80px; }
+
+  /* ══ Touch targets (H1) ══════════════════════════════════════════
+   * Apple, Accessibility → "Strive to meet the recommended minimum control
+   * size for each platform":
+   *
+   *     Platform      Default    Minimum
+   *     iOS, iPadOS   44x44 pt   28x28 pt
+   *     macOS         28x28 pt   20x20 pt
+   *
+   * The platform column is the whole reason this lives in a media query. This
+   * is the layout a thumb drives, so 44 is the number. Above 1024px the same
+   * app is a pointer target on what is effectively macOS, where 28 is already
+   * the DEFAULT — enlarging a desktop kebab to 44 would be obeying a rule
+   * written for fingers with a mouse in your hand.
+   *
+   * Two techniques, chosen per control rather than applied uniformly:
+   *
+   *   Fields and full-width rows GROW. 44pt is what a form field and a list
+   *   row are supposed to be; taller reads as correct, not inflated.
+   *
+   *   Icon buttons keep their size and grow a HIT AREA (::after). The table
+   *   row is 60px tall, so a 44px pick-box would fit — but it would also be a
+   *   44px checkbox, and the density of this list is the product. The visual
+   *   stays 28; the target becomes 44.
+   *
+   * "Consider spacing between controls as important as size" — measured after
+   * this landed: the expanded areas do not reach each other. */
+  .pick-box, .sel-star, .kebab { position: relative; }
+  .pick-box::after, .sel-star::after, .kebab::after {
+    content: ""; position: absolute;
+    left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 44px; height: 44px;
+  }
+  .back-to-groups::after { height: 44px; }
+
+  /* The toolbar's own controls: search, the three filters, and the button
+     beside them. The toolbar has no fixed height, so it absorbs this. */
+  .search-wrap input,
+  .toolbar .bento-field { min-height: 44px; }
+  .page-actions .btn { min-height: 44px; }
 }
 @media (max-width: 640px) {
   .dash-charts { padding: 8px 10px; gap: 10px; }
@@ -3352,6 +3392,11 @@ body.exporting .mobile-fab-menu {
      floating hamburger so it doesn't overlap the company logo. */
   body:has(.sidebar.open) .mobile-fab-menu { display: none; }
   .main-content { padding-top: 60px; }
+  /* 44pt (H1). Declared HERE rather than with the other touch targets further
+     up: the base rule that sets 40px comes after that block in source order,
+     and with equal specificity the later one wins. A media query adds no
+     specificity — it only limits when the rule applies. */
+  .mobile-fab-menu { width: 44px; height: 44px; }
 }
 
 /* ── Group landing page (folder overview) ── */
