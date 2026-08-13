@@ -1919,6 +1919,59 @@
   </div>
 </div>
 
+<!-- ── IMPORT REPORT ──
+     Where an import says what it actually did. It opens by itself when the
+     result is INCOMPLETE, because a warning nobody goes looking for is a
+     warning nobody reads. -->
+<div class="overlay" id="importreport-overlay">
+  <div class="form-modal exp-bento ir-modal" onclick="event.stopPropagation()">
+    <div class="exp-head">
+      <div class="exp-head-l">
+        <span class="exp-head-ic" id="ir-icon"></span>
+        <div>
+          <h2 id="ir-title">Import</h2>
+          <p class="exp-subject" id="ir-sub"></p>
+        </div>
+      </div>
+      <button class="exp-close" onclick="closeOverlay('importreport-overlay')" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+      </button>
+    </div>
+    <div class="ir-body" id="ir-body"></div>
+    <div class="exp-foot">
+      <button class="exp-btn exp-btn-ghost" onclick="openImportLog()"
+              data-lo="ປະຫວັດການນຳເຂົ້າ" data-en="Import history" data-th="ประวัตินำเข้า" data-ko="가져오기 기록">Import history</button>
+      <button class="exp-btn" id="ir-retry" onclick="retryFailedUploads()" style="display:none"
+              data-lo="ລອງໃໝ່" data-en="Retry failed uploads" data-th="ลองอัปโหลดใหม่" data-ko="실패 항목 재시도">Retry failed uploads</button>
+      <button class="exp-btn exp-btn-ghost" onclick="closeOverlay('importreport-overlay')"
+              data-lo="ປິດ" data-en="Close" data-th="ปิด" data-ko="닫기">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── UNKNOWN REVIEW ──
+     One picture at a time, with the three answers that close it. -->
+<div class="overlay" id="imgreview-overlay">
+  <div class="form-modal exp-bento ir-modal" onclick="event.stopPropagation()">
+    <div class="exp-head">
+      <div class="exp-head-l">
+        <span class="exp-head-ic">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </span>
+        <div>
+          <h2 data-lo="ກວດຮູບທີ່ຍັງບໍ່ຮູ້" data-en="Review unidentified pictures" data-th="ตรวจรูปที่ยังระบุไม่ได้" data-ko="미확인 사진 검토">Review unidentified pictures</h2>
+          <p class="exp-subject" id="rv-sub"></p>
+        </div>
+      </div>
+      <button class="exp-close" onclick="closeOverlay('imgreview-overlay')" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/></svg>
+      </button>
+    </div>
+    <div class="rv-body" id="rv-body"></div>
+    <div class="exp-foot rv-foot" id="rv-foot"></div>
+  </div>
+</div>
+
 <!-- ── SPOUSE PICKER (P4 — pair two records as a couple) ── -->
 <div class="overlay" id="spouse-overlay">
   <div class="form-modal pickmove-modal exp-bento" onclick="event.stopPropagation()">
@@ -2126,7 +2179,11 @@
          toast, showConfirm) and registers the render functions the Settings
          panes reference by name. */
       '../scripts/admin-center.js',
+      /* Before pptx-import.js, which calls into it: the picture census that
+         makes "every image in the deck is accounted for" a checkable claim. */
+      '../../domains/recruitment/intake-import/pptx-images.js',
       '../../domains/recruitment/intake-import/pptx-import.js',
+      '../../domains/recruitment/intake-import/import-report.js',
       '../../domains/recruitment/passport-scan/passport-scan.js'
     ];
     for (var i = 0; i < files.length; i++) {

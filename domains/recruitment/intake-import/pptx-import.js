@@ -224,28 +224,42 @@ async function parsePptxWorkers(arrayBuffer) {
     const relsStr = relFile ? await relFile.async('text') : '';
     const pics = _slidePics(xmlStr, relsStr);
     pics.forEach(p => { mediaUse[p.media] = (mediaUse[p.media] || 0) + 1; });
-    slides.push({ xmlStr, pics });
+    slides.push({ xmlStr, relsStr, pics });
   }
 
-  /* The one thing that has to be read from the image files themselves: their
-   * pixel size, which is what tells a person from a phone screenshot.
+  /* ── The census ──
+   * Detection and classification are separate passes, and nothing is dropped
+   * between them: every picture in the deck ends up with an id and exactly one
+   * label, so "detected === accounted" is a fact the import can check rather
+   * than a hope. See pptx-images.js for why that matters.
    *
-   * Each file is decompressed, measured from its header and dropped again, one
-   * at a time — so the peak cost is a single image (~200 KB), not the 22 MB a
-   * deck's worth would be if they were all held at once. Every distinct file
-   * is measured only once however many slides use it. */
-  const dimsByMedia = {};
-  for (const media of Object.keys(mediaUse)) {
-    try {
-      const f = zip.files[media];
-      if (!f) continue;
-      dimsByMedia[media] = imageDims(await f.async('uint8array'));
-    } catch (e) { /* unreadable image: fall back to the on-slide box */ }
+   * The pixel size of each distinct file is read here — one at a time, from
+   * the header, and dropped again — because it is what tells a person from a
+   * phone screenshot, and it is the only part that needs the bytes. */
+  const IMG = (typeof KDPptxImages !== 'undefined') ? KDPptxImages : null;
+  let manifest = null;
+  if (IMG) {
+    const slideRecs = slides.map((s, i) => ({ index: i + 1, xml: s.xmlStr, rels: s.relsStr }));
+    const usages = IMG.detectUsages(slideRecs);
+
+    const useCount = {};
+    usages.forEach(u => { if (u.media) useCount[u.media] = (useCount[u.media] || 0) + 1; });
+    const dimsByMedia = {};
+    for (const media of Object.keys(useCount)) {
+      try {
+        const f = zip.files[media];
+        dimsByMedia[media] = f ? imageDims(await f.async('uint8array')) : null;
+      } catch (e) { dimsByMedia[media] = null; }   // unreadable → UNKNOWN, not dropped
+    }
+    usages.forEach(u => {
+      const d = dimsByMedia[u.media];
+      if (d && d.w && d.h) { u.fileW = d.w; u.fileH = d.h; u.fileRatio = d.w / d.h; }
+    });
+
+    IMG.classifyUsages(usages, { slideCount: slides.length, mediaUse: useCount });
+    manifest = IMG.buildManifest(usages, Object.keys(zip.files).filter(n => /^ppt\/media\/./.test(n)));
+    manifest.problems = IMG.verifyManifest(manifest);
   }
-  slides.forEach(s => s.pics.forEach(p => {
-    const d = dimsByMedia[p.media];
-    if (d && d.w && d.h) { p.iw = d.w; p.ih = d.h; p.iratio = d.w / d.h; }
-  }));
 
   for (let si = 0; si < slides.length; si++) {
     const parsed = _parseSlide(slides[si].xmlStr, si);
@@ -256,16 +270,25 @@ async function parsePptxWorkers(arrayBuffer) {
       /* Paths only, not bytes. Decoding 150 JPEGs to base64 here would hold
          ~30 MB of string in memory before a single worker had been created,
          and the on-site import has three hours for 150 people. The bytes are
-         read in the upload phase, a few at a time, alongside the documents. */
-      const c = classifySlidePics(slides[si].pics, mediaUse, slides.length);
-      parsed._pics = { photo: c.photo, facebook: c.facebook };
-      parsed._slideNo = si + 1;
+         read in the upload phase, a few at a time, alongside the documents.
+
+         The pictures come from the manifest — the same census the accounting
+         is done against — so a photograph cannot be attached to a worker
+         without also being counted, nor counted without being attachable. */
+      const slideNo = si + 1;
+      const mine = manifest
+        ? manifest.usages.filter(u => u.slide === slideNo)
+        : [];
+      const primary = cls => { const u = mine.find(x => x.class === cls && x.primary); return u ? u.media : null; };
+      parsed._pics = { photo: primary('PERSON'), facebook: primary('FACEBOOK') };
+      parsed._usageIds = mine.map(u => u.id);
+      parsed._slideNo = slideNo;
       workers.push(parsed);
     }
   }
 
   // The zip stays open: the upload phase reads the media out of it.
-  return { groupMeta, workers, _zip: zip };
+  return { groupMeta, workers, _zip: zip, _manifest: manifest };
 }
 
 /* ── Slide parser ────────────────────────────────────────────────── */
@@ -537,6 +560,13 @@ function _normalizeDate(s) {
    ════════════════════════════════════════════════════ */
 
 let _importData = null;  // { groupMeta, workers }  (workers may carry _doc for PDF/image)
+/* The last import's accounting report — read by the summary screen and kept
+   for the log. Null until an import has run in this session. */
+let _lastImportReport = null;
+let _importFileName = "";
+function getLastImportReport() { return _lastImportReport; }
+/* The report screen reads media out of the deck that is still open. */
+function getImportZip() { return (_importData && _importData._zip) || null; }
 
 function openImport() {
   if (!isAdmin()) return;
@@ -709,6 +739,7 @@ async function handleImportFile(input) {
   previewEl.innerHTML = '';
   document.getElementById('import-btn-go').disabled = true;
   const name = (file.name || '').toLowerCase();
+  _importFileName = file.name || '';
 
   try {
     if (name.endsWith('.kdb') || name.endsWith('.zip')) {
@@ -882,17 +913,18 @@ async function _importUploadDoc(uid, groupId, cat, file, attempts) {
 // as each settles so the progress bar can advance.
 async function _importPool(items, conc, task, onDone) {
   let idx = 0, ok = 0, fail = 0;
+  const failed = [];   // the jobs themselves, so they can be retried by name
   async function runner() {
     while (idx < items.length) {
       const it = items[idx++];
-      if (await task(it)) ok++; else fail++;
+      if (await task(it)) ok++; else { fail++; failed.push(it); }
       if (onDone) await onDone(ok + fail, ok, fail);
     }
   }
   const rs = [];
   for (let i = 0; i < Math.min(conc, items.length); i++) rs.push(runner());
   await Promise.all(rs);
-  return { ok, fail };
+  return { ok, fail, failed };
 }
 
 async function doImport() {
@@ -967,7 +999,7 @@ async function doImport() {
 
   const totalDocs  = toCreate.reduce((n, r) => n + Object.values(r.docs).reduce((m, a) => m + a.length, 0), 0);
   const totalUnits = (toCreate.length + totalDocs) || 1;
-  let done = 0, docFail = 0;
+  let done = 0, docFail = 0, failedJobs = [];
 
   // Block the UI + warn against closing the tab until everything is uploaded
   // (a media-heavy import can't be resumed after a reload — the base64 lives
@@ -1054,6 +1086,7 @@ async function doImport() {
           if (n % 4 === 0) await _paint();
         });
       docFail = res.fail;
+      failedJobs = res.failed || [];
     }
 
     /* ── Phase 3: pull the authoritative server state back ──
@@ -1082,12 +1115,63 @@ async function doImport() {
   const noPhoto = toCreate.filter(r => r.uid && !(r.pics && r.pics.photo));
   const withPhoto = toCreate.length - noPhoto.length;
 
+  /* ── COMPLETE or INCOMPLETE — never "success" by default ──
+   *
+   * An import is complete only when every picture the deck contains was
+   * accounted for AND every upload it attempted landed. Either gap makes the
+   * result INCOMPLETE and says so, because the alternative — a green tick over
+   * a deck that left photographs behind — is how the old importer let 150
+   * images go missing without anyone noticing for weeks. */
+  const man = _importData && _importData._manifest;
+  const accountingOk = !man || (man.complete && (man.problems || []).length === 0);
+  const uploadsOk = docFail === 0;
+  const complete = accountingOk && uploadsOk;
+  _lastImportReport = {
+    at: new Date().toISOString(),
+    group: groupId,
+    groupName: (DB.getGroup(groupId) || {}).name || groupId,
+    file: _importFileName,
+    added, skipped, docFail,
+    manifest: man ? {
+      detected: man.detected, accounted: man.accounted, counts: man.counts,
+      orphans: man.orphans.length, problems: man.problems || [],
+    } : null,
+    noPhotoSlides: noPhoto.map(r => r.slideNo).filter(Boolean).sort((a, b) => a - b),
+    complete,
+    // Kept live (not logged) so Retry has the actual jobs, and Review has the
+    // usages plus the open zip they are read from.
+    _failed: failedJobs,
+    _unknown: man ? man.usages.filter(u => u.class === 'UNKNOWN') : [],
+  };
+
+
   if (typeof toast === 'function') {
-    let msg = '✔ Import เสร็จ — เพิ่ม ' + added + ' รายการ';
+    const head = complete ? '✔ Import เสร็จ' : '⚠ Import ไม่ครบ (INCOMPLETE)';
+    let msg = head + ' — เพิ่ม ' + added + ' รายการ';
     if (withPhoto) msg += ', รูป ' + withPhoto;
     if (skipped) msg += ', ข้าม ' + skipped;
     if (docFail) msg += ', อัปโหลดพลาด ' + docFail;
-    toast(msg, docFail ? 'warn' : 'ok');
+    toast(msg, complete ? 'ok' : 'warn');
+
+    if (man) {
+      const line = 'Detected ' + man.detected + ' · ' +
+        Object.keys(man.counts).map(k => k + ' ' + man.counts[k]).join(' · ') +
+        ' · Accounted ' + man.accounted + '/' + man.detected +
+        (man.complete ? ' ✅' : ' ❌');
+      toast(line, man.complete ? 'ok' : 'warn');
+      console.log('[import] ' + line);
+      if ((man.problems || []).length) console.warn('[import] accounting problems:', man.problems);
+      if (man.orphans.length) console.warn('[import] ' + man.orphans.length + ' file(s) in the deck no slide uses');
+    }
+
+    /* The report is written to the history either way, and put on screen by
+       itself when something needs a decision. A clean import does not
+       interrupt anyone — the button in the import dialog is there for it. */
+    if (typeof _saveImportLog === 'function') _saveImportLog(_lastImportReport);
+    const needsAttention = !complete || (_lastImportReport._unknown || []).length;
+    if (needsAttention && typeof openImportReport === 'function') {
+      setTimeout(openImportReport, 400);
+    }
 
     if (noPhoto.length) {
       const slides = noPhoto.map(r => r.slideNo).filter(Boolean).sort((a, b) => a - b);

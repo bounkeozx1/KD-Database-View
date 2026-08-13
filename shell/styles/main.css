@@ -1120,6 +1120,59 @@ tr.picked > td { background: var(--green-soft); }
 .pm-group-n { flex: none; font-size: 0.74rem; font-weight: 700; color: var(--text-muted); background: var(--chip-bg); padding: 2px 9px; border-radius: var(--r-pill); }
 .pm-empty { padding: 18px 4px; text-align: center; color: var(--text-muted); font-size: 0.84rem; }
 
+/* ══ Import report + picture review ═══════════════════════════════
+   Content, not chrome: opaque panels, no glass. The verdict is carried by
+   shape and by a word (COMPLETE / INCOMPLETE), with colour only reinforcing
+   it — the whole point of the screen is that it cannot be misread. */
+.ir-modal { max-width: 560px; }
+.ir-body, .rv-body { padding: 6px 20px 10px; max-height: 62vh; overflow-y: auto; }
+.ir-block {
+  background: var(--bg-card); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 13px 15px; margin-bottom: 10px;
+}
+.ir-block-bad  { border-color: var(--red); }
+.ir-block-warn { border-color: var(--amber, #C2410C); }
+.ir-head { font-size: 0.82rem; font-weight: 700; margin-bottom: 8px; }
+.ir-row  { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.86rem; padding: 3px 0; }
+.ir-row span { color: var(--text-muted); }
+.ir-row b { font-variant-numeric: tabular-nums; }
+.ir-note { font-size: 0.78rem; color: var(--text-muted); line-height: 1.5; margin-top: 6px; }
+.ir-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ir-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em;
+  padding: 4px 10px; border-radius: var(--r-pill);
+  background: var(--chip-bg); color: var(--text-muted);
+}
+.ir-chip b { color: var(--text); font-variant-numeric: tabular-nums; }
+.ir-chip.ir-warn { background: rgba(194,65,12,0.14); color: var(--amber, #C2410C); }
+.ir-total {
+  margin-top: 10px; font-size: 0.84rem; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.ir-ok  { color: var(--green); }
+.ir-bad { color: var(--red); }
+.ir-inline { margin-top: 10px; }
+.ir-log { border-bottom: 1px solid var(--hairline); padding: 10px 2px; }
+.ir-log:last-child { border-bottom: none; }
+.ir-log-top { display: flex; justify-content: space-between; gap: 10px; font-size: 0.84rem; }
+.ir-log-top span { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; flex: none; }
+
+.rv-body { text-align: center; }
+.rv-img {
+  max-width: 100%; max-height: 46vh; border-radius: var(--r-lg);
+  border: 1px solid var(--line); background: var(--field-bg);
+}
+.rv-noimg {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  min-height: 180px; border: 1px dashed var(--line); border-radius: var(--r-lg);
+  color: var(--text-muted); font-size: 0.86rem; padding: 20px;
+}
+.rv-noimg span { font-size: 0.74rem; color: var(--text-faint); }
+.rv-meta { font-family: monospace; font-size: 0.72rem; color: var(--text-muted); margin-top: 8px; word-break: break-all; }
+.rv-done { padding: 40px 0; font-size: 0.95rem; font-weight: 700; color: var(--green); }
+.rv-foot { justify-content: center; gap: 8px; flex-wrap: wrap; }
+
 /* ── Spouse picker (P4) — the pickmove list, plus a search box and two tags ── */
 .sp-search { padding: 6px 20px 10px; }
 .sp-search .bento-field { width: 100%; }
@@ -4999,6 +5052,36 @@ kbd {
 .vbp-photo img { width: 100%; height: 100%; object-fit: cover; object-position: center top; display: block; transition: transform .5s var(--ease); }
 .vbp-card.vbp-editable:hover .vbp-photo img { transform: scale(1.04); }
 .vbp-initials { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 3rem; font-weight: 800; color: var(--text-faint); }
+
+/* ── Facebook badge ──
+ * Positioned inside .vbp-photo, which is `position: relative` — so it is
+ * pinned to the corner of the PICTURE, not to a slot in the page. The detail
+ * layout collapses from two columns to one below 900px and the photo changes
+ * size at three breakpoints; through all of it the badge stays on the same
+ * corner of the same image, which is the whole requirement.
+ *
+ * Facebook blue is the brand's, not the app's, and appears nowhere else — the
+ * point of the badge is that it is recognised before it is read. */
+.vbp-fb {
+  position: absolute; right: 10px; bottom: 10px; z-index: 3;
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 34px; padding: 0 12px 0 10px;
+  border: none; border-radius: 999px; cursor: pointer;
+  font-family: inherit; font-size: 0.76rem; font-weight: 700;
+  background: #1877F2; color: #fff;
+  box-shadow: 0 2px 10px -2px rgba(0,0,0,0.45);
+  transition: transform .15s var(--ease), box-shadow .15s var(--ease);
+  -webkit-tap-highlight-color: transparent;
+}
+.vbp-fb svg { width: 17px; height: 17px; flex: none; }
+.vbp-fb:hover { transform: translateY(-1px); box-shadow: 0 6px 16px -4px rgba(0,0,0,0.5); }
+.vbp-fb:active { transform: none; }
+/* On a phone the photo is small enough that the word crowds it; the mark alone
+   still reads, and the button keeps its 34px target either way. */
+@media (max-width: 560px) {
+  .vbp-fb { padding: 0; width: 34px; justify-content: center; }
+  .vbp-fb-lbl { display: none; }
+}
 .vbp-editable { cursor: pointer; }
 .vbp-edit-hint {
   position: absolute; left: 0; right: 0; bottom: 0;

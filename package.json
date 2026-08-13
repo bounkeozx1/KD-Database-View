@@ -1,6 +1,6 @@
 {
   "name": "kd-database",
-  "version": "2.4.2",
+  "version": "2.6.1",
   "private": true,
   "description": "KD Employment worker management — offline, SQLite-backed (zero dependencies).",
   "type": "commonjs",
@@ -21,7 +21,7 @@
     "test-auth": "node --no-warnings infra/scripts/test-auth.js",
     "test-session": "node --no-warnings infra/scripts/test-session.js",
     "test-security": "node --no-warnings infra/scripts/test-security.js",
-    "test": "npm run test-hidden-css && npm run test-auth && npm run test-session && npm run test-security && npm run test-mfa && npm run test-rbac && npm run test-p4 && npm run test-p45 && npm run test-p46 && npm run test-p51 && npm run test-shared && npm run test-glass && npm run test-export-package && npm run test-group-move && npm run test-perf && npm run test-header && npm run test-couple && npm run test-pptx-pics && npm run audit-coverage",
+    "test": "npm run test-hidden-css && npm run test-auth && npm run test-session && npm run test-security && npm run test-mfa && npm run test-rbac && npm run test-p4 && npm run test-p45 && npm run test-p46 && npm run test-p51 && npm run test-shared && npm run test-glass && npm run test-export-package && npm run test-group-move && npm run test-perf && npm run test-header && npm run test-couple && npm run test-pptx-pics && npm run test-pptx-account && npm run audit-coverage",
     "test-hidden-css": "node --no-warnings infra/scripts/test-hidden-css.js",
     "mfa-reset": "node --no-warnings infra/scripts/mfa-reset.js",
     "test-mfa": "node --no-warnings infra/scripts/test-mfa.js",
@@ -41,6 +41,7 @@
     "test-couple": "node --no-warnings infra/scripts/test-couple.js",
     "stamp-assets": "node --no-warnings infra/scripts/asset-stamp.js --write",
     "check-assets": "node --no-warnings infra/scripts/asset-stamp.js",
-    "test-pptx-pics": "node --no-warnings infra/scripts/test-pptx-pics.js"
+    "test-pptx-pics": "node --no-warnings infra/scripts/test-pptx-pics.js",
+    "test-pptx-account": "node --no-warnings infra/scripts/test-pptx-account.js"
   }
 }
