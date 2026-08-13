@@ -9,6 +9,187 @@
  * Depends on JSZip (loaded from CDN in index.html).
  */
 
+/* ══════════════════════════════════════════════════════════════════
+ * Pictures
+ * ══════════════════════════════════════════════════════════════════
+ * A .pptx keeps its text in ppt/slides/slideN.xml and its images somewhere
+ * else entirely — ppt/media/ — joined by ppt/slides/_rels/slideN.xml.rels.
+ * This parser only ever opened the first of those three, so every photograph
+ * in every deck was read past and dropped. One real file: 97 slides, 150
+ * images, none of them imported.
+ *
+ * Measured across three real decks (DAMYANG, SACHEON, GANGHWA), a worker slide
+ * carries up to three pictures. What identifies them is the IMAGE FILE's own
+ * pixel ratio — not where it sits and not the shape of its box:
+ *
+ *   the worker        1200×1600 → 0.750   or  900×1600 → 0.563
+ *   a Facebook shot    738×1600 → 0.461   every one, in every deck
+ *   the company logo    384×384 → 1.000   and the same file on every slide
+ *
+ * Three things the numbers settled that guessing got wrong:
+ *
+ *   ORDER IS NOT STABLE. On slide 8 the worker comes first, on slide 9 the
+ *   Facebook shot does. Anything that picks "the first picture" is picking at
+ *   random about half the time.
+ *
+ *   THE BOX LIES. The same 1200×1600 photograph is dragged into a 0.43-shaped
+ *   box on one slide and a 0.82-shaped box on another. Two earlier versions of
+ *   this code believed the box: one left twelve slides with no photograph, the
+ *   other filed worker photographs as Facebook screenshots.
+ *
+ *   THE LOGO IS FOUND BY REPETITION, not by looking like a logo. One media
+ *   file used across most of the deck is furniture, whatever its shape. That
+ *   test survives a redesign of the slide; a hard-coded position does not.
+ */
+
+/**
+ * The pixel size of an image, read from its header — no decoding.
+ *
+ * This is the measurement that actually separates a person from a screenshot,
+ * and it took two wrong answers to find. The picture's box ON THE SLIDE is
+ * whatever shape somebody dragged it into: one 1200×1600 photograph appears as
+ * a 0.43 box on one slide and a 0.82 box on another. The FILE never changes:
+ *
+ *     worker photograph    1200×1600 → 0.750     900×1600 → 0.563
+ *     Facebook screenshot   738×1600 → 0.461   (every one, every deck)
+ *     logo                   384×384 → 1.000
+ *
+ * 0.461 against 0.563 is a fifth of the range apart with nothing in between,
+ * where the on-slide ratios of those same files overlap completely.
+ */
+function imageDims(bytes) {
+  if (!bytes || bytes.length < 24) return null;
+  // PNG: IHDR width/height at a fixed offset.
+  if (bytes[0] === 0x89 && bytes[1] === 0x50) {
+    const rd = o => (bytes[o] << 24 | bytes[o + 1] << 16 | bytes[o + 2] << 8 | bytes[o + 3]) >>> 0;
+    return { w: rd(16), h: rd(20) };
+  }
+  // JPEG: walk the segments to the start-of-frame, which carries the size.
+  if (bytes[0] === 0xFF && bytes[1] === 0xD8) {
+    let i = 2;
+    while (i < bytes.length - 9) {
+      if (bytes[i] !== 0xFF) { i++; continue; }
+      const m = bytes[i + 1];
+      if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) {
+        return { h: (bytes[i + 5] << 8) | bytes[i + 6], w: (bytes[i + 7] << 8) | bytes[i + 8] };
+      }
+      i += 2 + (((bytes[i + 2] << 8) | bytes[i + 3]) || 2);
+    }
+  }
+  return null;
+}
+
+/** Slide-relative rel id → media path, from ppt/slides/_rels/slideN.xml.rels. */
+function _relMap(relsXml) {
+  const map = {};
+  if (!relsXml) return map;
+  const re = /Id="(rId\d+)"[^>]*Target="([^"]+)"/g;
+  let m;
+  while ((m = re.exec(relsXml)) !== null) {
+    map[m[1]] = m[2].replace(/^\.\.\//, 'ppt/').replace(/^\//, '');
+  }
+  return map;
+}
+
+/**
+ * Every <p:pic> on a slide, as { media, w, h, ratio }.
+ *
+ * Read with a regex rather than the DOM parser used for the text: the geometry
+ * lives in two attributes inside a known element, and keeping it regex-only
+ * means this function runs in Node as well as the browser — which is what lets
+ * it be tested against the real decks instead of by eye.
+ */
+function _slidePics(slideXml, relsXml) {
+  const rels = _relMap(relsXml);
+  const out = [];
+  const blocks = slideXml.match(/<p:pic>[\s\S]*?<\/p:pic>/g) || [];
+  blocks.forEach(b => {
+    const rid = (b.match(/r:embed="(rId\d+)"/) || [])[1];
+    const ext = b.match(/<a:ext cx="(\d+)" cy="(\d+)"/);
+    if (!rid || !rels[rid] || !ext) return;
+    const w = +ext[1], h = +ext[2];
+    if (!w || !h) return;
+    out.push({ media: rels[rid], w, h, ratio: w / h });
+  });
+  return out;
+}
+
+/**
+ * Decide what each picture on a slide IS.
+ *
+ * @param pics      from _slidePics
+ * @param mediaUse  media path → how many slides use it (the logo detector)
+ * @param slideCount total slides, for the "most of the deck" threshold
+ * @returns { photo, facebook, skipped } — media paths, any of which may be null
+ */
+function classifySlidePics(pics, mediaUse, slideCount) {
+  const res = { photo: null, facebook: null, skipped: [] };
+  const cands = [];
+
+  pics.forEach(p => {
+    // Furniture: one file repeated across the deck. 40% is well above the
+    // measured logo (100% of slides) and well below any real photo (1 slide).
+    const uses = (mediaUse && mediaUse[p.media]) || 1;
+    if (slideCount >= 5 && uses >= Math.max(3, slideCount * 0.4)) {
+      res.skipped.push({ media: p.media, why: 'repeated on ' + uses + ' slides' });
+      return;
+    }
+    cands.push(p);
+  });
+
+  /* Judge the FILE, not the box it was dragged into.
+   *
+   * Two earlier attempts used the on-slide geometry and both were wrong,
+   * because that geometry is whatever the person building the deck stretched
+   * it to. The same 1200x1600 photograph is a 0.43 box on one slide and a 0.82
+   * box on another; trusting it put worker photographs into the Facebook slot
+   * and left twelve slides with no photograph at all.
+   *
+   *     worker photograph    0.750  or 0.563
+   *     Facebook screenshot  0.461  - every one, in every deck
+   *
+   * The split sits at 0.52, in the gap between them. `iratio` is the image
+   * file's own pixel ratio, filled in by the caller from the file header; when
+   * it could not be read the on-slide box stands in, which is worse but better
+   * than throwing the picture away.
+   */
+  const shape = p => (p.iratio || p.ratio);
+  const area  = p => p.w * p.h;
+
+  // Near-square is furniture - a logo, a badge, a flag - even in a deck where
+  // it appears once and the repetition rule never sees it.
+  const portrait = cands.filter(p => {
+    if (shape(p) > 1.15 || (p.iratio && Math.abs(p.iratio - 1) < 0.06)) {
+      res.skipped.push({ media: p.media, why: 'shape ' + shape(p).toFixed(2) + ' is not a portrait' });
+      return false;
+    }
+    return true;
+  });
+
+  const people = portrait.filter(p => shape(p) >= 0.52);
+  const phones = portrait.filter(p => shape(p) <  0.52);
+
+  /* A slide can carry two photographs of one worker - a couple, or two poses.
+     The one given the most room is the one the deck treats as the portrait. */
+  people.sort((a, b) => area(b) - area(a));
+  if (people.length) res.photo = people[0].media;
+
+  phones.sort((a, b) => area(b) - area(a));
+  if (phones.length) res.facebook = phones[0].media;
+
+  cands.forEach(p => {
+    if (p.media !== res.photo && p.media !== res.facebook) {
+      res.skipped.push({ media: p.media, why: 'aspect ' + p.ratio.toFixed(2) + ' matches nothing' });
+    }
+  });
+  return res;
+}
+
+/* Node (tests) and the browser both load this file. */
+if (typeof module === 'object' && module.exports) {
+  module.exports = { _relMap, _slidePics, classifySlidePics, imageDims };
+}
+
 /* ── Public API ──────────────────────────────────────────────────── */
 
 /**
@@ -30,18 +211,61 @@ async function parsePptxWorkers(arrayBuffer) {
   const groupMeta = {};
   const workers = [];
 
+  /* Read every slide once, keeping its XML and its picture geometry. The
+     pictures cannot be classified during this pass: telling the logo apart
+     from a photograph needs to know how often each media file is used across
+     the WHOLE deck, which is only knowable once every slide has been seen. */
+  const slides = [];
+  const mediaUse = {};
   for (let si = 0; si < slideFiles.length; si++) {
     const xmlStr = await zip.files[slideFiles[si]].async('text');
-    const parsed = _parseSlide(xmlStr, si);
+    const relName = slideFiles[si].replace('ppt/slides/', 'ppt/slides/_rels/') + '.rels';
+    const relFile = zip.files[relName];
+    const relsStr = relFile ? await relFile.async('text') : '';
+    const pics = _slidePics(xmlStr, relsStr);
+    pics.forEach(p => { mediaUse[p.media] = (mediaUse[p.media] || 0) + 1; });
+    slides.push({ xmlStr, pics });
+  }
+
+  /* The one thing that has to be read from the image files themselves: their
+   * pixel size, which is what tells a person from a phone screenshot.
+   *
+   * Each file is decompressed, measured from its header and dropped again, one
+   * at a time — so the peak cost is a single image (~200 KB), not the 22 MB a
+   * deck's worth would be if they were all held at once. Every distinct file
+   * is measured only once however many slides use it. */
+  const dimsByMedia = {};
+  for (const media of Object.keys(mediaUse)) {
+    try {
+      const f = zip.files[media];
+      if (!f) continue;
+      dimsByMedia[media] = imageDims(await f.async('uint8array'));
+    } catch (e) { /* unreadable image: fall back to the on-slide box */ }
+  }
+  slides.forEach(s => s.pics.forEach(p => {
+    const d = dimsByMedia[p.media];
+    if (d && d.w && d.h) { p.iw = d.w; p.ih = d.h; p.iratio = d.w / d.h; }
+  }));
+
+  for (let si = 0; si < slides.length; si++) {
+    const parsed = _parseSlide(slides[si].xmlStr, si);
     if (parsed === null) continue;
     if (parsed._type === 'group_header') {
       Object.assign(groupMeta, parsed);
     } else if (parsed._type === 'worker') {
+      /* Paths only, not bytes. Decoding 150 JPEGs to base64 here would hold
+         ~30 MB of string in memory before a single worker had been created,
+         and the on-site import has three hours for 150 people. The bytes are
+         read in the upload phase, a few at a time, alongside the documents. */
+      const c = classifySlidePics(slides[si].pics, mediaUse, slides.length);
+      parsed._pics = { photo: c.photo, facebook: c.facebook };
+      parsed._slideNo = si + 1;
       workers.push(parsed);
     }
   }
 
-  return { groupMeta, workers };
+  // The zip stays open: the upload phase reads the media out of it.
+  return { groupMeta, workers, _zip: zip };
 }
 
 /* ── Slide parser ────────────────────────────────────────────────── */
@@ -607,6 +831,43 @@ function _mergeImportedDocCats(incoming) {
 // single file (not every base64 image of a worker at once), it stays well under
 // the client's 20s abort even on a slow remote like Railway — that all-in-one
 // payload was exactly what used to time out, fail and stall the page.
+/**
+ * Read one image out of the still-open PPTX and attach it to a worker.
+ *
+ * Stored full size, deliberately: the app already derives photo_thumb for the
+ * list and card views, so downscaling here would throw away the only copy of
+ * the original for a saving the thumbnail already makes.
+ */
+async function _importUploadPic(job, groupId, zip, attempts) {
+  attempts = attempts || 6;
+  let dataUrl;
+  try {
+    const f = zip.files[job.media];
+    if (!f) return false;
+    const b64 = await f.async('base64');
+    const ext = (job.media.split('.').pop() || 'jpeg').toLowerCase();
+    const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+    dataUrl = 'data:' + mime + ';base64,' + b64;
+  } catch (e) { return false; }
+
+  for (let i = 1; ; i++) {
+    try {
+      /* patchWorkerNow, not updateWorker: the latter hands the write to the
+         durable queue and returns nothing, so this loop could not tell a
+         landed photo from a queued one and always reported success. 150 photos
+         then went up one at a time behind a single queue while the import
+         finished and re-read the server — which is how an import that had
+         found every photo still showed most workers without one. */
+      if (job.kind === 'photo') await DB.patchWorkerNow(groupId, job.uid, { photo: dataUrl });
+      else await DB.uploadDocument(job.uid, groupId, job.cat, dataUrl, job.name || '');
+      return true;
+    } catch (e) {
+      if (i >= attempts) return false;
+      await new Promise(r => setTimeout(r, Math.min(8000, 500 * Math.pow(2, i))));
+    }
+  }
+}
+
 async function _importUploadDoc(uid, groupId, cat, file, attempts) {
   attempts = attempts || 6;
   for (let i = 1; ; i++) {
@@ -678,6 +939,10 @@ async function doImport() {
     // Kept out of the payload, kept for the couple remap after phase 1.
     const srcUid = copy._src_uid || '', srcSpouse = copy._src_spouse || '';
     delete copy._src_uid; delete copy._src_spouse;
+    // Media paths from the PPTX: kept for the upload phase, never sent to the
+    // server (there is no such column, and the bytes are not read yet anyway).
+    const pics = copy._pics || null, slideNo = copy._slideNo || 0;
+    delete copy._pics; delete copy._slideNo;
     // Keep anyone who carries ANY identifying data — previously a worker with
     // only a Lao name or only a Worker ID was silently dropped (59→55 problem).
     const hasIdentity = copy.en_name || copy.lo_name || copy.worker_id ||
@@ -695,7 +960,7 @@ async function doImport() {
     if (doc && doc.data) (docs[doc.cat] = docs[doc.cat] || []).push({ name: doc.name, type: doc.type, data: doc.data });
     delete copy.documents;   // documents are uploaded separately in phase 2
 
-    toCreate.push({ copy, docs, srcUid, srcSpouse });
+    toCreate.push({ copy, docs, srcUid, srcSpouse, pics, slideNo });
     if (copy.passport_no) existingPassports.add(copy.passport_no);
     added++;
   }
@@ -756,9 +1021,33 @@ async function doImport() {
     const jobs = [];
     toCreate.forEach(r => Object.keys(r.docs).forEach(cat =>
       r.docs[cat].forEach(file => jobs.push({ uid: r.uid, cat, file }))));
+
+    /* Pictures out of the PPTX ride in the same pool as the documents.
+     *
+     * They are read from the zip HERE rather than at parse time on purpose:
+     * decoding 150 JPEGs to base64 up front is ~30 MB of string held before a
+     * single worker exists, and the on-site import has three hours for 150
+     * people. This way phase 1 stays the tiny-payload phase it was designed to
+     * be, and the heavy part runs four at a time with its own retries.
+     *
+     * The face becomes the profile photo; the Facebook screenshot becomes a
+     * document, because it is evidence about the person rather than a picture
+     * of them. */
+    const zip = _importData && _importData._zip;
+    if (zip) {
+      toCreate.forEach(r => {
+        const pics = r.pics || {};
+        if (pics.photo)    jobs.push({ uid: r.uid, kind: 'photo', media: pics.photo });
+        if (pics.facebook) jobs.push({ uid: r.uid, kind: 'doc', cat: 'facebook', media: pics.facebook,
+                                       name: 'facebook.jpg' });
+      });
+    }
+
     if (jobs.length) {
       const res = await _importPool(jobs, 4,
-        job => _importUploadDoc(job.uid, groupId, job.cat, job.file),
+        job => job.media
+          ? _importUploadPic(job, groupId, zip)
+          : _importUploadDoc(job.uid, groupId, job.cat, job.file),
         async (n) => {
           _progressSet((toCreate.length + n) / totalUnits * 100,
             bi('ອັບໂຫລດເອກະສານ ', 'อัปโหลดเอกสาร ') + n + '/' + jobs.length);
@@ -767,7 +1056,13 @@ async function doImport() {
       docFail = res.fail;
     }
 
-    // ── Phase 3: pull the authoritative server state back (now with documents).
+    /* ── Phase 3: pull the authoritative server state back ──
+     * Drain the write queue FIRST. DB.init() replaces the local cache with the
+     * server's answer, so anything still queued is not in that answer and
+     * disappears from the screen until the next reload. Everything this
+     * function queues is small (the couple links); the photos and documents
+     * were awaited on their way up. */
+    try { await DB.flush(); } catch (e) {}
     _progressSet(99, bi('ກຳລັງໂຫລດຄືນ...', 'กำลังโหลดใหม่...'));
     try { await DB.init(); } catch (e) {}
   } finally {
@@ -778,11 +1073,33 @@ async function doImport() {
   activeGroupId = groupId;
   refreshAll();
   if (statusEl) statusEl.textContent = '';
+  /* Who came in without a face, and where they were in the deck.
+   *
+   * A missing photo is not an error — the slide simply had none — but it is
+   * the one thing nobody notices until the cards are printed, and by then the
+   * deck is closed. Reporting the SLIDE NUMBERS is what makes it actionable:
+   * that is the number somebody can go back and look at. */
+  const noPhoto = toCreate.filter(r => r.uid && !(r.pics && r.pics.photo));
+  const withPhoto = toCreate.length - noPhoto.length;
+
   if (typeof toast === 'function') {
     let msg = '✔ Import เสร็จ — เพิ่ม ' + added + ' รายการ';
+    if (withPhoto) msg += ', รูป ' + withPhoto;
     if (skipped) msg += ', ข้าม ' + skipped;
-    if (docFail) msg += ', เอกสารพลาด ' + docFail;
+    if (docFail) msg += ', อัปโหลดพลาด ' + docFail;
     toast(msg, docFail ? 'warn' : 'ok');
+
+    if (noPhoto.length) {
+      const slides = noPhoto.map(r => r.slideNo).filter(Boolean).sort((a, b) => a - b);
+      const names  = noPhoto.map(r => r.copy.en_name || r.copy.worker_id || '?');
+      toast(bi(
+        'ບໍ່ມີຮູບ ' + noPhoto.length + ' ຄົນ' + (slides.length ? ' (ສະໄລ້ ' + slides.join(', ') + ')' : ''),
+        noPhoto.length + ' without a photo' + (slides.length ? ' (slides ' + slides.join(', ') + ')' : ''),
+        'ไม่มีรูป ' + noPhoto.length + ' คน' + (slides.length ? ' (สไลด์ ' + slides.join(', ') + ')' : ''),
+        '사진 없음 ' + noPhoto.length + '명' + (slides.length ? ' (슬라이드 ' + slides.join(', ') + ')' : '')
+      ), 'warn');
+      console.warn('[import] no photo:', names.join(', '));
+    }
   }
 }
 

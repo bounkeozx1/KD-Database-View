@@ -464,6 +464,36 @@ const DB = (() => {
       }
       _push('PATCH', '/employees/' + encodeURIComponent(uid), { ...patch, _by: _who() });   // always persist by uid
     },
+
+    /**
+     * Write a worker patch and WAIT for it — the same shape as uploadDocument.
+     *
+     * updateWorker hands its job to the durable queue and returns undefined, so
+     * a caller cannot tell a landed write from a queued one. That is right for
+     * someone editing a field: the queue survives a blip and the screen has
+     * already moved on. It is wrong for a bulk import, and the difference
+     * showed up as "some photos appear, some don't":
+     *
+     *   the import queued 150 PATCHes, each carrying ~200 KB of base64;
+     *   the queue is a single chain, so they went up one at a time;
+     *   the import then finished with `await DB.init()`, which replaces the
+     *   local cache with whatever the SERVER has — and the photos still in the
+     *   queue were not there yet, so they vanished from the screen.
+     *
+     * Nothing was lost — the queue kept going — but the app showed a half-done
+     * import, which is worse than a slow one. Awaiting the write puts photos on
+     * the same footing as documents: four at a time, real retries, and finished
+     * means finished.
+     */
+    async patchWorkerNow(groupId, uid, patch) {
+      const r = await _api('PATCH', '/employees/' + encodeURIComponent(uid), { ...patch, _by: _who() });
+      let g = _data.groups.find(x => (x.workers || []).some(w => w.uid === uid));
+      if (g) {
+        const i = g.workers.findIndex(w => w.uid === uid);
+        if (i >= 0) g.workers[i] = { ...g.workers[i], ...patch };
+      }
+      return r;
+    },
     deleteWorker(groupId, uid) {
       let g = _data.groups.find(x => x.id === groupId);
       if (!g || !g.workers.some(w => w.uid === uid))
