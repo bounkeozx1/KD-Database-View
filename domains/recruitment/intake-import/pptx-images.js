@@ -65,9 +65,30 @@
 
   /* The boundary between a screenshot and a person, and the one above which a
      picture is too wide to be either. Both sit in measured empty space. */
-  const PHONE_MAX  = 0.52;   // 0.461 below it, 0.563 above it
+  /* Where a phone certainly ends and a person certainly begins. Between them
+     lies a band that aspect ratio cannot split — see PHOTO_MIN_W. */
+  const PHONE_MAX  = 0.52;   // below: 0.448–0.462, every screenshot measured
+  const PERSON_MIN = 0.60;   // above: 0.663–0.781, every photograph measured
   const PORTRAIT_MAX = 1.15; // wider than this is a banner or a form
   const SQUARE_TOL = 0.06;   // 1.000 ± this is a badge or a logo
+
+  /**
+   * The rule that finally separates the overlap, and it is not a shape.
+   *
+   * Between 0.52 and 0.60 the two kinds of picture are the same proportions —
+   * a 900×1600 photograph is 0.563 and a 285×512 screenshot is 0.557, six
+   * thousandths apart. Ratio cannot tell them apart and no threshold on it
+   * ever will. Across every deck, measured:
+   *
+   *     screenshots    540 – 739 px wide     (a phone screen, scaled down)
+   *     photographs    860 – 1200 px wide    (a camera, never a screen)
+   *
+   * The two ranges do not touch, and the reason is physical rather than
+   * incidental: one is a capture of a handset display that has been shrunk to
+   * fit a slide, the other is a photograph that started life several times
+   * larger than any phone screen. 800 sits in the gap.
+   */
+  const PHOTO_MIN_W = 800;
 
   /** rel id → part path, from any _rels file. */
   function relMap(relsXml) {
@@ -186,7 +207,24 @@
         label(u, 'FACEBOOK', conf(r, PHONE_MAX, 0.461), 'phone-shaped (' + r.toFixed(3) + ')');
         return;
       }
-      label(u, 'PERSON', conf(r, PHONE_MAX, 0.750), 'portrait (' + r.toFixed(3) + ')');
+      if (r >= PERSON_MIN) {
+        label(u, 'PERSON', conf(r, PERSON_MIN, 0.750), 'portrait (' + r.toFixed(3) + ')');
+        return;
+      }
+
+      /* The overlap. A 900×1600 photograph and a 285×512 screenshot are the
+       * same shape to three decimal places, so the answer comes from how many
+       * pixels wide the file is — a phone screen scaled into a slide never
+       * reaches 800, and a camera photograph never falls below it. */
+      if (u.fileW && u.fileW >= PHOTO_MIN_W) {
+        label(u, 'PERSON', 0.8, 'portrait (' + r.toFixed(3) + '), ' + u.fileW + 'px wide');
+      } else if (u.fileW) {
+        label(u, 'FACEBOOK', 0.8, 'only ' + u.fileW + 'px wide at ' + r.toFixed(3) +
+              ' — a screen, not a camera');
+      } else {
+        // Ratio in the overlap and no width to break the tie: say so.
+        label(u, 'UNKNOWN', 0, 'ratio ' + r.toFixed(3) + ' is ambiguous and there is no width');
+      }
     });
 
     /* One profile photo per slide: the PERSON given the most room. The others
@@ -283,5 +321,5 @@
   }
 
   return { CLASSES, relMap, detectUsages, classifyUsages, buildManifest, verifyManifest, summarise,
-           PHONE_MAX, PORTRAIT_MAX, SQUARE_TOL };
+           PHONE_MAX, PERSON_MIN, PORTRAIT_MAX, SQUARE_TOL, PHOTO_MIN_W };
 });

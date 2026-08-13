@@ -1,6 +1,6 @@
 {
   "name": "kd-database",
-  "version": "2.6.1",
+  "version": "2.6.2",
   "private": true,
   "description": "KD Employment worker management — offline, SQLite-backed (zero dependencies).",
   "type": "commonjs",

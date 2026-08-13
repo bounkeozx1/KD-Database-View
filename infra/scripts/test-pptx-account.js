@@ -112,15 +112,17 @@ section('duplicates');
  * ══════════════════════════════════════════════════════════════════ */
 section('classification');
 {
-  const mk = (media, ratio, bw, bh) => ({
+  /* The file size defaults to a shape well clear of the 0.52–0.60 overlap, so
+     a case that is not about the overlap cannot accidentally land in it. */
+  const mk = (media, ratio, bw, bh, fw, fh) => ({
     id: media, slide: 1, media, source: 'pic',
     boxW: (bw || 3) * EMU, boxH: (bh || 4) * EMU, boxRatio: (bw || 3) / (bh || 4),
-    fileRatio: ratio,
+    fileRatio: ratio, fileW: fw || Math.round(1600 * ratio), fileH: fh || 1600,
   });
 
   const set = [
     mk('ppt/media/fb.jpeg', 738 / 1600),      // 0.461
-    mk('ppt/media/thin.jpeg', 900 / 1600),    // 0.563 — 0.10 away, and a person
+    mk('ppt/media/thin.jpeg', 900 / 1600, 3, 4, 900, 1600),   // 0.563 — a person, on width
     mk('ppt/media/me.jpeg', 1200 / 1600),     // 0.750
     mk('ppt/media/logo.png', 1),              // 1.000
     mk('ppt/media/banner.jpeg', 3),           // landscape
@@ -143,6 +145,49 @@ section('classification');
   ok('but with markedly less confidence than a typical one',
      edge[0].confidence < set[0].confidence,
      edge[0].confidence + ' vs ' + set[0].confidence);
+
+  /* ── The overlap that aspect ratio cannot split ──
+     Every one of these is verbatim from DAMYANG 37%. A 900×1600 photograph is
+     0.563 and a 285×512 screenshot is 0.557 — six thousandths apart, and the
+     screenshots were being filed as workers' profile photographs. What splits
+     them is pixel WIDTH: a phone screen scaled into a slide never reaches 800,
+     a camera photograph never falls below it. */
+  const wide = (media, w, h) => ({
+    id: media, slide: 1, media, source: 'pic',
+    boxW: 3 * EMU, boxH: 4 * EMU, boxRatio: 0.75,
+    fileW: w, fileH: h, fileRatio: w / h,
+  });
+  const overlap = [
+    wide('ppt/media/person900.jpeg', 900, 1600),   // 0.563 — a person
+    wide('ppt/media/shot285.jpeg', 285, 512),      // 0.557 — a screenshot
+    wide('ppt/media/shot273.jpeg', 273, 498),      // 0.548 — a screenshot
+    wide('ppt/media/shot670.jpeg', 670, 1280),     // 0.523 — a screenshot
+  ];
+  IMG.classifyUsages(overlap, { slideCount: 97, mediaUse: {} });
+  const oc = {}; overlap.forEach(u => { oc[u.media] = u.class; });
+  ok('900px wide at 0.563 is a person', oc['ppt/media/person900.jpeg'] === 'PERSON', oc['ppt/media/person900.jpeg']);
+  ok('285px wide at 0.557 is a screenshot', oc['ppt/media/shot285.jpeg'] === 'FACEBOOK', oc['ppt/media/shot285.jpeg']);
+  ok('273px wide at 0.548 is a screenshot', oc['ppt/media/shot273.jpeg'] === 'FACEBOOK', oc['ppt/media/shot273.jpeg']);
+  ok('670px wide at 0.523 is a screenshot', oc['ppt/media/shot670.jpeg'] === 'FACEBOOK', oc['ppt/media/shot670.jpeg']);
+  ok('the reason is recorded, not just the verdict',
+     /px wide|screen, not a camera/.test(overlap[1].why || ''), overlap[1].why);
+
+  // Width only decides inside the overlap; outside it the shape is unarguable.
+  const narrowPerson = [wide('ppt/media/small-portrait.jpeg', 664, 1000)];  // 0.664
+  IMG.classifyUsages(narrowPerson, { slideCount: 97, mediaUse: {} });
+  ok('a small portrait above the overlap is still a person',
+     narrowPerson[0].class === 'PERSON', narrowPerson[0].class);
+  const bigPhone = [wide('ppt/media/tall.jpeg', 1080, 2400)];               // 0.450
+  IMG.classifyUsages(bigPhone, { slideCount: 97, mediaUse: {} });
+  ok('a large screenshot below the overlap is still a screenshot',
+     bigPhone[0].class === 'FACEBOOK', bigPhone[0].class);
+
+  // In the overlap with no width at all, the honest answer is UNKNOWN.
+  const noWidth = [{ id: 'x', slide: 1, media: 'ppt/media/x.jpeg', source: 'pic',
+                     boxW: 1, boxH: 1, boxRatio: 1, fileRatio: 0.55 }];
+  IMG.classifyUsages(noWidth, { slideCount: 97, mediaUse: {} });
+  ok('the overlap without a width is UNKNOWN, not a guess',
+     noWidth[0].class === 'UNKNOWN', noWidth[0].class);
 
   // Repetition beats shape: a photograph-shaped file on most slides is furniture.
   const rep = [mk('ppt/media/frame.jpeg', 0.75)];
